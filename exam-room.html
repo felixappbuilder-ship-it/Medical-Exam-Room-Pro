@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam Room - Medical Exam Room Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/exam-room.css">
+    <link rel="icon" href="images/logo.png" type="image/png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('service-worker.js');
+            });
+        }
+    </script>
+</head>
+<body class="exam-mode">
+    <!-- Fullscreen Exam Container -->
+    <div class="exam-container" id="examContainer">
+        <!-- Exam Header -->
+        <header class="exam-header">
+            <div class="header-left">
+                <div class="exam-info">
+                    <span class="exam-title" id="examTitle">Medical Exam</span>
+                    <span class="exam-progress" id="examProgress">Question 1 of 25</span>
+                </div>
+            </div>
+            
+            <div class="header-center">
+                <div class="timer-container">
+                    <div class="timer-display" id="timerDisplay">
+                        <span class="timer-value" id="timerValue">00:30</span>
+                        <div class="timer-visual" id="timerVisual"></div>
+                    </div>
+                    <div class="timer-label" id="timerLabel">Time Remaining</div>
+                </div>
+            </div>
+            
+            <div class="header-right">
+                <div class="exam-controls">
+                    <button class="control-btn" id="flagBtn" title="Flag for Review">
+                        <span class="control-icon">🚩</span>
+                        <span class="control-text" id="flagText">Flag</span>
+                    </button>
+                    
+                    <button class="control-btn" id="pauseBtn" title="Pause Exam">
+                        <span class="control-icon">⏸️</span>
+                        <span class="control-text">Pause</span>
+                    </button>
+                    
+                    <button class="control-btn" id="fullscreenBtn" title="Toggle Fullscreen">
+                        <span class="control-icon">📺</span>
+                        <span class="control-text">Fullscreen</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Main Exam Content -->
+        <main class="exam-content">
+            <div class="question-container">
+                <!-- Question Number and Subject -->
+                <div class="question-header">
+                    <div class="question-meta">
+                        <span class="question-number" id="questionNumber">Q1</span>
+                        <span class="question-subject" id="questionSubject">Anatomy</span>
+                        <span class="question-topic" id="questionTopic">Upper Limb</span>
+                        <span class="question-difficulty" id="questionDifficulty">Medium</span>
+                    </div>
+                    <div class="question-time" id="questionTimeInfo">Avg time: 24s</div>
+                </div>
+                
+                <!-- Question Text -->
+                <div class="question-text" id="questionText">
+                    <p>Which bone forms the forehead?</p>
+                </div>
+                
+                <!-- Question Image (if available) -->
+                <div class="question-image" id="questionImage" style="display: none;">
+                    <img src="" alt="Question diagram" id="questionImg">
+                    <div class="image-caption" id="imageCaption"></div>
+                </div>
+                
+                <!-- Answer Options -->
+                <div class="options-container" id="optionsContainer">
+                    <!-- Options will be loaded dynamically -->
+                </div>
+                
+                <!-- Navigation Hints -->
+                <div class="navigation-hints">
+                    <div class="hint">
+                        <span class="hint-icon">💡</span>
+                        <span class="hint-text">Use <kbd>A</kbd>-<kbd>E</kbd> keys to select options</span>
+                    </div>
+                    <div class="hint">
+                        <span class="hint-icon">💡</span>
+                        <span class="hint-text">Press <kbd>Space</kbd> to flag/unflag</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Question Navigation Grid -->
+            <div class="navigation-container" id="navigationContainer">
+                <div class="navigation-header">
+                    <h3>Question Navigation</h3>
+                    <button class="btn-toggle-nav" id="toggleNavBtn">Hide</button>
+                </div>
+                
+                <div class="navigation-grid" id="navigationGrid">
+                    <!-- Question numbers will be loaded dynamically -->
+                </div>
+                
+                <div class="navigation-legend">
+                    <div class="legend-item">
+                        <div class="legend-color answered"></div>
+                        <span class="legend-text">Answered</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color flagged"></div>
+                        <span class="legend-text">Flagged</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color current"></div>
+                        <span class="legend-text">Current</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color unseen"></div>
+                        <span class="legend-text">Unseen</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Exam Footer -->
+        <footer class="exam-footer">
+            <div class="footer-left">
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">0% Complete</div>
+                </div>
+            </div>
+            
+            <div class="footer-center">
+                <div class="exam-stats">
+                    <div class="stat">
+                        <span class="stat-label">Flagged:</span>
+                        <span class="stat-value" id="flaggedCount">0</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Answered:</span>
+                        <span class="stat-value" id="answeredCount">0</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Time:</span>
+                        <span class="stat-value" id="totalTime">00:00</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer-right">
+                <div class="action-buttons">
+                    <button class="btn-secondary" id="prevBtn">
+                        <span class="btn-icon">←</span>
+                        <span class="btn-text">Previous</span>
+                    </button>
+                    
+                    <button class="btn-primary" id="nextBtn">
+                        <span class="btn-text">Next Question</span>
+                        <span class="btn-icon">→</span>
+                    </button>
+                    
+                    <button class="btn-submit" id="submitBtn">
+                        <span class="btn-icon">✓</span>
+                        <span class="btn-text">Submit Exam</span>
+                    </button>
+                </div>
+            </div>
+        </footer>
+        
+        <!-- Pause Modal -->
+        <div class="modal-overlay" id="pauseModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Exam Paused</h2>
+                    <button class="modal-close" id="closePauseModal">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="pause-info">
+                        <div class="info-item">
+                            <span class="info-label">Time Elapsed:</span>
+                            <span class="info-value" id="pauseTimeElapsed">00:00</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Questions Answered:</span>
+                            <span class="info-value" id="pauseAnswered">0/25</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Flagged Questions:</span>
+                            <span class="info-value" id="pauseFlagged">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="pause-options">
+                        <button class="btn-secondary" id="reviewFlaggedBtn">
+                            <span class="btn-icon">🚩</span>
+                            <span class="btn-text">Review Flagged</span>
+                        </button>
+                        
+                        <button class="btn-secondary" id="changeSettingsBtn">
+                            <span class="btn-icon">⚙️</span>
+                            <span class="btn-text">Change Settings</span>
+                        </button>
+                        
+                        <button class="btn-primary" id="resumeBtn">
+                            <span class="btn-icon">▶️</span>
+                            <span class="btn-text">Resume Exam</span>
+                        </button>
+                    </div>
+                    
+                    <div class="pause-warning">
+                        <span class="warning-icon">⚠️</span>
+                        <p>Your exam will auto-save. Do not close this window or navigate away.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Submit Confirmation Modal -->
+        <div class="modal-overlay" id="submitModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Submit Exam?</h2>
+                    <button class="modal-close" id="closeSubmitModal">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="submit-summary">
+                        <h3>Exam Summary</h3>
+                        <div class="summary-grid">
+                            <div class="summary-item">
+                                <span class="summary-label">Total Questions:</span>
+                                <span class="summary-value" id="submitTotal">25</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-label">Answered:</span>
+                                <span class="summary-value" id="submitAnswered">0</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-label">Flagged:</span>
+                                <span class="summary-value" id="submitFlagged">0</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-label">Time Used:</span>
+                                <span class="summary-value" id="submitTime">00:00</span>
+                            </div>
+                        </div>
+                        
+                        <div class="submit-warning" id="submitWarning" style="display: none;">
+                            <span class="warning-icon">⚠️</span>
+                            <p>You have <span id="unansweredCount">0</span> unanswered questions. Are you sure you want to submit?</p>
+                        </div>
+                    </div>
+                    
+                    <div class="submit-options">
+                        <button class="btn-secondary" id="cancelSubmitBtn">
+                            <span class="btn-icon">←</span>
+                            <span class="btn-text">Continue Exam</span>
+                        </button>
+                        
+                        <button class="btn-primary" id="confirmSubmitBtn">
+                            <span class="btn-icon">✓</span>
+                            <span class="btn-text">Submit & View Results</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Time Warning Modal -->
+        <div class="modal-overlay time-warning" id="timeWarningModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>⏰ Time Warning</h2>
+                </div>
+                <div class="modal-body">
+                    <p id="timeWarningMessage">10 seconds remaining for this question!</p>
+                    <div class="time-warning-actions">
+                        <button class="btn-primary" id="acknowledgeTimeBtn">
+                            Acknowledge
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="scripts/app.js"></script>
+    <script src="scripts/exam-engine.js"></script>
+    <script src="scripts/timer.js"></script>
+    <script src="scripts/questions.js"></script>
+    <script src="scripts/db.js"></script>
+    <script src="scripts/security.js"></script>
+    <script src="scripts/ui.js"></script>
+    <script src="scripts/utils.js"></script>
+    <script src="scripts/router.js"></script>
+    
+   <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+        // ==================== MODULE COORDINATION ====================
+        // Access imported modules (available globally via window object)
+        const examEngine = window.examEngine;  // From exam-engine.js
+        const db = window.db;                  // From db.js
+        const security = window.medicalExamSecurity || window.SecuritySystem; // From security.js
+        const TimerClass = window.AdaptiveTimer; // From timer.js
+        const questions = window.questions;    // From questions.js
+        const TimerUtils = window.TimerUtils;  // From timer.js
+        const SecurityUtils = window.SecurityUtils; // From security.js
+        
+        // UI State (only for UI-specific things)
+        const uiState = {
+            isFullscreen: false,
+            navVisible: true,
+            currentTimer: null,
+            examConfigLoaded: false,
+            uiElements: {}
+        };
+        
+        // ==================== INITIALIZATION ====================
+        
+        async function initializeExamRoom() {
+            console.log('Initializing exam room with modular coordination...');
+            
+            try {
+                // 1. Wait for database initialization
+                if (db && db.init) {
+                    await db.init();
+                    console.log('Database initialized');
+                }
+                
+                // 2. Wait for question bank loading
+                if (questions && questions.loadQuestionBank) {
+                    await questions.loadQuestionBank();
+                    console.log('Question bank loaded');
+                }
+                
+                // 3. Load exam configuration
+                await loadExamConfiguration();
+                
+                // 4. Initialize security system
+                await initializeSecurity();
+                
+                // 5. Setup exam engine
+                await setupExamEngine();
+                
+                // 6. Initialize UI
+                initializeUI();
+                
+                // 7. Start exam
+                await startExam();
+                
+                // 8. Setup periodic UI updates
+                setupPeriodicUpdates();
+                
+                console.log('Exam room fully initialized with module coordination');
+                
+            } catch (error) {
+                console.error('Failed to initialize exam room:', error);
+                showError('Failed to initialize exam. Please refresh the page.');
+            }
+        }
+        
+        // ==================== CONFIGURATION LOADING ====================
+        
+        async function loadExamConfiguration() {
+            try {
+                // Load from localStorage
+                const config = JSON.parse(localStorage.getItem('examConfiguration') || '{}');
+                
+                if (!config.examId) {
+                    throw new Error('No exam configuration found');
+                }
+                
+                // Store in exam engine
+                if (examEngine && examEngine.setupExam) {
+                    examEngine.setupExam(config);
+                }
+                
+                // Update UI with config
+                updateUIConfig(config);
+                
+                uiState.examConfigLoaded = true;
+                console.log('Exam configuration loaded:', config);
+                
+            } catch (error) {
+                console.error('Error loading exam configuration:', error);
+                throw error;
+            }
+        }
+        
+        // ==================== SECURITY INITIALIZATION ====================
+        
+        async function initializeSecurity() {
+            if (!security) return;
+            
+            try {
+                // Perform security validation
+                const securityCheck = await security.validateExamEnvironment();
+                
+                if (!securityCheck.valid) {
+                    throw new Error(`Security validation failed: ${securityCheck.message}`);
+                }
+                
+                // Setup security event listeners
+                setupSecurityListeners();
+                
+                console.log('Security system initialized');
+                
+            } catch (error) {
+                console.error('Security initialization failed:', error);
+                // Don't block exam if security fails, but log it
+                await db.logSecurityEvent?.({
+                    type: 'security_init_failed',
+                    error: error.message
+                });
+            }
+        }
+        
+        // ==================== EXAM ENGINE SETUP ====================
+        
+        async function setupExamEngine() {
+            if (!examEngine) {
+                throw new Error('Exam engine not available');
+            }
+            
+            try {
+                // Setup callbacks for exam engine events
+                setupExamEngineCallbacks();
+                
+                console.log('Exam engine setup complete');
+                
+            } catch (error) {
+                console.error('Failed to setup exam engine:', error);
+                throw error;
+            }
+        }
+        
+        // ==================== EXAM START ====================
+        
+        async function startExam() {
+            try {
+                // Start exam through exam engine
+                const firstQuestion = await examEngine.startExam();
+                
+                // Update UI with first question
+                loadQuestionUI(firstQuestion);
+                
+                // Start security monitoring
+                if (security && security.startExamMonitoring) {
+                    security.startExamMonitoring(examEngine.getConfig().examId);
+                }
+                
+                // Start timer display
+                startTimerDisplay();
+                
+                // Update navigation grid
+                updateNavigationGrid();
+                
+                console.log('Exam started successfully');
+                
+            } catch (error) {
+                console.error('Failed to start exam:', error);
+                throw error;
+            }
+        }
+        
+        // ==================== UI FUNCTIONS ====================
+        
+        function initializeUI() {
+            // Cache UI elements
+            uiState.uiElements = {
+                questionNumber: document.getElementById('questionNumber'),
+                questionSubject: document.getElementById('questionSubject'),
+                questionTopic: document.getElementById('questionTopic'),
+                questionDifficulty: document.getElementById('questionDifficulty'),
+                questionText: document.getElementById('questionText'),
+                questionImage: document.getElementById('questionImage'),
+                questionImg: document.getElementById('questionImg'),
+                imageCaption: document.getElementById('imageCaption'),
+                optionsContainer: document.getElementById('optionsContainer'),
+                timerValue: document.getElementById('timerValue'),
+                timerVisual: document.getElementById('timerVisual'),
+                timerLabel: document.getElementById('timerLabel'),
+                totalTime: document.getElementById('totalTime'),
+                flaggedCount: document.getElementById('flaggedCount'),
+                answeredCount: document.getElementById('answeredCount'),
+                progressFill: document.getElementById('progressFill'),
+                progressText: document.getElementById('progressText'),
+                navigationGrid: document.getElementById('navigationGrid'),
+                examProgress: document.getElementById('examProgress'),
+                flagBtn: document.getElementById('flagBtn'),
+                flagText: document.getElementById('flagText'),
+                prevBtn: document.getElementById('prevBtn'),
+                nextBtn: document.getElementById('nextBtn'),
+                pauseBtn: document.getElementById('pauseBtn'),
+                fullscreenBtn: document.getElementById('fullscreenBtn'),
+                toggleNavBtn: document.getElementById('toggleNavBtn'),
+                submitBtn: document.getElementById('submitBtn')
+            };
+            
+            // Setup event listeners
+            setupEventListeners();
+            
+            // Initialize navigation grid
+            initializeNavigationGrid();
+            
+            console.log('UI initialized');
+        }
+        
+        function updateUIConfig(config) {
+            const totalQuestions = config.questionCount || 25;
+            
+            // Update UI elements
+            if (uiState.uiElements.examProgress) {
+                uiState.uiElements.examProgress.textContent = `Question 1 of ${totalQuestions}`;
+            }
+            
+            // Update submit modal
+            const submitTotal = document.getElementById('submitTotal');
+            if (submitTotal) {
+                submitTotal.textContent = totalQuestions;
+            }
+        }
+        
+        function loadQuestionUI(question) {
+            if (!question) return;
+            
+            // Update question info
+            uiState.uiElements.questionNumber.textContent = `Q${question.examQuestionNumber}`;
+            uiState.uiElements.questionSubject.textContent = question.subject || '';
+            uiState.uiElements.questionTopic.textContent = question.topic || '';
+            uiState.uiElements.questionDifficulty.textContent = question.difficulty || '';
+            uiState.uiElements.questionText.innerHTML = `<p>${question.question}</p>`;
+            
+            // Update question image
+            if (question.image && uiState.uiElements.questionImage) {
+                uiState.uiElements.questionImage.style.display = 'block';
+                uiState.uiElements.questionImg.src = question.image;
+                uiState.uiElements.imageCaption.textContent = question.imageCaption || '';
+            } else if (uiState.uiElements.questionImage) {
+                uiState.uiElements.questionImage.style.display = 'none';
+            }
+            
+            // Load options
+            loadOptionsUI(question);
+            
+            // Update flag button
+            updateFlagButtonUI(question.flagged);
+            
+            // Update navigation buttons
+            updateNavigationButtonsUI(question.examQuestionNumber, question.totalQuestions);
+            
+            // Update exam progress
+            uiState.uiElements.examProgress.textContent = 
+                `Question ${question.examQuestionNumber} of ${question.totalQuestions}`;
+        }
+        
+        function loadOptionsUI(question) {
+            const optionsContainer = uiState.uiElements.optionsContainer;
+            optionsContainer.innerHTML = '';
+            
+            const optionLabels = ['A', 'B', 'C', 'D', 'E'];
+            
+            optionLabels.forEach((label, index) => {
+                if (question.options && question.options[index]) {
+                    const option = document.createElement('div');
+                    option.className = 'option';
+                    option.dataset.option = label;
+                    
+                    // Check if this option is selected
+                    if (question.userAnswer === label) {
+                        option.classList.add('selected');
+                    }
+                    
+                    option.innerHTML = `
+                        <div class="option-selector">
+                            <div class="option-letter">${label}</div>
+                            <div class="option-check"></div>
+                        </div>
+                        <div class="option-text">${question.options[index]}</div>
+                    `;
+                    
+                    option.addEventListener('click', () => {
+                        if (!examEngine.isPaused()) {
+                            handleOptionSelect(label);
+                        }
+                    });
+                    
+                    optionsContainer.appendChild(option);
+                }
+            });
+        }
+        
+        // ==================== TIMER FUNCTIONS ====================
+        
+        function startTimerDisplay() {
+            if (!examEngine || examEngine.config.timerMode === 'untimed') {
+                return;
+            }
+            
+            // Create timer instance for display
+            if (TimerClass) {
+                uiState.currentTimer = new TimerClass({
+                    displayElement: document.querySelector('.timer-container'),
+                    progressElement: uiState.uiElements.timerVisual,
+                    onTimeUpdate: handleTimerUpdate,
+                    onColorChange: handleTimerColorChange,
+                    onWarning: handleTimerWarning,
+                    onExpire: handleTimerExpire
+                });
+                
+                // Start with current question's time
+                const timeLimit = examEngine.getTimeLimit();
+                if (timeLimit) {
+                    const difficulty = examEngine.getCurrentQuestion()?.difficulty || 'medium';
+                    uiState.currentTimer.start(difficulty, examEngine.getCurrentQuestion()?.id);
+                }
+            } else {
+                // Fallback to manual timer update
+                setInterval(updateTimerDisplay, 1000);
+            }
+        }
+        
+        function updateTimerDisplay() {
+            if (!examEngine || !uiState.uiElements.timerValue) return;
+            
+            const timeRemaining = examEngine.getTimeRemaining();
+            const timeLimit = examEngine.getTimeLimit();
+            
+            if (timeRemaining === null) {
+                // Untimed mode
+                uiState.uiElements.timerValue.textContent = '∞';
+                uiState.uiElements.timerLabel.textContent = 'Untimed';
+                return;
+            }
+            
+            // Format time
+            const minutes = Math.floor(timeRemaining / 60);
+            const seconds = timeRemaining % 60;
+            uiState.uiElements.timerValue.textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            // Update visual
+            if (timeLimit && uiState.uiElements.timerVisual) {
+                const percentage = (timeRemaining / timeLimit) * 100;
+                uiState.uiElements.timerVisual.style.width = `${percentage}%`;
+                
+                // Update color based on warning level
+                const warningLevel = examEngine.getTimeWarningLevel();
+                updateTimerColor(warningLevel);
+                
+                // Update label
+                updateTimerLabel(timeRemaining);
+            }
+        }
+        
+        function updateTimerColor(warningLevel) {
+            if (!uiState.uiElements.timerValue || !uiState.uiElements.timerVisual) return;
+            
+            const colors = {
+                normal: { text: '#4CAF50', bg: '#4CAF50' },
+                warning: { text: '#FF9800', bg: '#FF9800' },
+                danger: { text: '#F44336', bg: '#F44336' },
+                critical: { text: '#D32F2F', bg: '#D32F2F' }
+            };
+            
+            const color = colors[warningLevel] || colors.normal;
+            
+            uiState.uiElements.timerValue.style.color = color.text;
+            uiState.uiElements.timerVisual.style.backgroundColor = color.bg;
+            
+            // Add/remove blinking class
+            if (warningLevel === 'critical') {
+                uiState.uiElements.timerValue.classList.add('blinking');
+                uiState.uiElements.timerValue.classList.add('flashing');
+            } else {
+                uiState.uiElements.timerValue.classList.remove('blinking');
+                uiState.uiElements.timerValue.classList.remove('flashing');
+            }
+        }
+        
+        function updateTimerLabel(timeRemaining) {
+            if (!uiState.uiElements.timerLabel) return;
+            
+            if (timeRemaining <= 10) {
+                uiState.uiElements.timerLabel.textContent = 'HURRY!';
+            } else if (timeRemaining <= 30) {
+                uiState.uiElements.timerLabel.textContent = 'Time Running Low';
+            } else {
+                uiState.uiElements.timerLabel.textContent = 'Time Remaining';
+            }
+        }
+        
+        // ==================== NAVIGATION FUNCTIONS ====================
+        
+        function initializeNavigationGrid() {
+            if (!examEngine || !uiState.uiElements.navigationGrid) return;
+            
+            const totalQuestions = examEngine.getState().questions.length || 25;
+            uiState.uiElements.navigationGrid.innerHTML = '';
+            
+            for (let i = 1; i <= totalQuestions; i++) {
+                const btn = document.createElement('button');
+                btn.className = 'nav-btn';
+                btn.dataset.question = i;
+                btn.textContent = i;
+                
+                btn.addEventListener('click', () => {
+                    if (!examEngine.isPaused()) {
+                        navigateToQuestion(i);
+                    }
+                });
+                
+                uiState.uiElements.navigationGrid.appendChild(btn);
+            }
+            
+            updateNavigationGrid();
+        }
+        
+        function updateNavigationGrid() {
+            if (!examEngine || !uiState.uiElements.navigationGrid) return;
+            
+            const questionStatus = examEngine.getAllQuestionsStatus();
+            const buttons = uiState.uiElements.navigationGrid.querySelectorAll('.nav-btn');
+            
+            buttons.forEach((btn, index) => {
+                const status = questionStatus[index];
+                btn.className = 'nav-btn';
+                
+                if (status && status.current) btn.classList.add('current');
+                if (status && status.answered) btn.classList.add('answered');
+                if (status && status.flagged) btn.classList.add('flagged');
+            });
+            
+            // Update counts
+            const summary = examEngine.getExamSummary();
+            uiState.uiElements.flaggedCount.textContent = summary.flagged || 0;
+            uiState.uiElements.answeredCount.textContent = summary.answered || 0;
+            
+            // Update progress bar
+            const progress = summary.progress || 0;
+            uiState.uiElements.progressFill.style.width = `${progress}%`;
+            uiState.uiElements.progressText.textContent = `${Math.round(progress)}% Complete`;
+            
+            // Update submit modal
+            updateSubmitModal();
+        }
+        
+        function updateNavigationButtonsUI(current, total) {
+            uiState.uiElements.prevBtn.disabled = current === 1;
+            uiState.uiElements.nextBtn.disabled = current === total;
+        }
+        
+        // ==================== EVENT HANDLERS ====================
+        
+        function handleOptionSelect(option) {
+            examEngine.answerQuestion(option);
+            
+            // Update UI
+            updateNavigationGrid();
+            loadQuestionUI(examEngine.getCurrentQuestion());
+        }
+        
+        function navigateToQuestion(questionNumber) {
+            const question = examEngine.navigateToQuestion(questionNumber);
+            if (question) {
+                loadQuestionUI(question);
+                updateNavigationGrid();
+                
+                // Update timer for new question
+                if (uiState.currentTimer && uiState.currentTimer.stop) {
+                    uiState.currentTimer.stop();
+                    
+                    const timeLimit = examEngine.getTimeLimit();
+                    if (timeLimit) {
+                        const difficulty = question.difficulty || 'medium';
+                        uiState.currentTimer.start(difficulty, question.id);
+                    }
+                }
+            }
+        }
+        
+        function handleFlagToggle() {
+            examEngine.toggleFlag();
+            const question = examEngine.getCurrentQuestion();
+            updateFlagButtonUI(question.flagged);
+            updateNavigationGrid();
+        }
+        
+        function updateFlagButtonUI(isFlagged) {
+            if (isFlagged) {
+                uiState.uiElements.flagBtn.classList.add('flagged');
+                uiState.uiElements.flagText.textContent = 'Unflag';
+            } else {
+                uiState.uiElements.flagBtn.classList.remove('flagged');
+                uiState.uiElements.flagText.textContent = 'Flag';
+            }
+        }
+        
+        function handlePauseResume() {
+            if (examEngine.isActive()) {
+                // Pause exam
+                examEngine.pauseExam();
+                if (uiState.currentTimer && uiState.currentTimer.pause) {
+                    uiState.currentTimer.pause();
+                }
+                showPauseModal();
+            } else if (examEngine.isPaused()) {
+                // Resume exam
+                examEngine.resumeExam();
+                if (uiState.currentTimer && uiState.currentTimer.resume) {
+                    uiState.currentTimer.resume();
+                }
+                hidePauseModal();
+            }
+        }
+        
+        // ==================== MODAL FUNCTIONS ====================
+        
+        function updateSubmitModal() {
+            const summary = examEngine.getExamSummary();
+            const answered = summary.answered || 0;
+            const total = summary.totalQuestions || 0;
+            const flagged = summary.flagged || 0;
+            const unanswered = total - answered;
+            
+            // Update modal
+            const submitAnswered = document.getElementById('submitAnswered');
+            const submitFlagged = document.getElementById('submitFlagged');
+            const submitTotal = document.getElementById('submitTotal');
+            const submitWarning = document.getElementById('submitWarning');
+            const unansweredCount = document.getElementById('unansweredCount');
+            
+            if (submitAnswered) submitAnswered.textContent = answered;
+            if (submitFlagged) submitFlagged.textContent = flagged;
+            if (submitTotal) submitTotal.textContent = total;
+            if (unansweredCount) unansweredCount.textContent = unanswered;
+            
+            if (submitWarning) {
+                if (unanswered > 0) {
+                    submitWarning.style.display = 'block';
+                } else {
+                    submitWarning.style.display = 'none';
+                }
+            }
+        }
+        
+        function showPauseModal() {
+            const modal = document.getElementById('pauseModal');
+            if (!modal) return;
+            
+            const summary = examEngine.getExamSummary();
+            const elapsed = summary.elapsedTime || 0;
+            
+            // Format elapsed time
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            // Update modal content
+            const pauseTimeElapsed = document.getElementById('pauseTimeElapsed');
+            const pauseAnswered = document.getElementById('pauseAnswered');
+            const pauseFlagged = document.getElementById('pauseFlagged');
+            
+            if (pauseTimeElapsed) pauseTimeElapsed.textContent = timeString;
+            if (pauseAnswered) pauseAnswered.textContent = `${summary.answered}/${summary.totalQuestions}`;
+            if (pauseFlagged) pauseFlagged.textContent = summary.flagged;
+            
+            modal.style.display = 'block';
+        }
+        
+        function hidePauseModal() {
+            const modal = document.getElementById('pauseModal');
+            if (modal) modal.style.display = 'none';
+        }
+        
+        // ==================== SECURITY FUNCTIONS ====================
+        
+        function setupSecurityListeners() {
+            if (!security) return;
+            
+            // Tab switching detection
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden && examEngine.isActive()) {
+                    security.logSecurityEvent?.({
+                        type: 'tab_switch_during_exam',
+                        data: { questionNumber: examEngine.getState().currentQuestion }
+                    });
+                }
+            });
+            
+            // Copy-paste prevention
+            if (examEngine.getConfig().preventCopy) {
+                SecurityUtils?.preventCopyPaste(document.body);
+            }
+        }
+        
+        // ==================== EXAM ENGINE CALLBACKS ====================
+        
+        function setupExamEngineCallbacks() {
+            // These would be called by examEngine events
+            // (Note: exam-engine.js needs to emit these events or have callback setters)
+            
+            // For now, we'll poll for updates
+            // In a real implementation, examEngine should have event listeners
+        }
+        
+        // ==================== PERIODIC UPDATES ====================
+        
+        function setupPeriodicUpdates() {
+            // Update total time every second
+            setInterval(() => {
+                const summary = examEngine.getExamSummary();
+                const elapsed = summary.elapsedTime || 0;
+                
+                // Format time
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                
+                uiState.uiElements.totalTime.textContent = timeString;
+                
+                // Update timer display (if not using AdaptiveTimer)
+                if (!uiState.currentTimer) {
+                    updateTimerDisplay();
+                }
+            }, 1000);
+            
+            // Update submit modal time
+            setInterval(() => {
+                const submitTime = document.getElementById('submitTime');
+                if (submitTime) {
+                    const summary = examEngine.getExamSummary();
+                    const elapsed = summary.elapsedTime || 0;
+                    const minutes = Math.floor(elapsed / 60);
+                    const seconds = elapsed % 60;
+                    submitTime.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                }
+            }, 1000);
+        }
+        
+        // ==================== TIMER CALLBACKS ====================
+        
+        function handleTimerUpdate(data) {
+            // Update timer display
+            if (uiState.uiElements.timerValue) {
+                uiState.uiElements.timerValue.textContent = TimerUtils?.formatTime(data.remaining) || 
+                    `${Math.floor(data.remaining / 60)}:${(data.remaining % 60).toString().padStart(2, '0')}`;
+            }
+            
+            // Update color
+            updateTimerColor(data.color);
+        }
+        
+        function handleTimerColorChange(data) {
+            // Color changed - could show notification
+            console.log('Timer color changed to:', data.to);
+        }
+        
+        function handleTimerWarning(data) {
+            // Show warning
+            showTimeWarning(data.type, data.remaining);
+        }
+        
+        function handleTimerExpire() {
+            // Time expired for current question
+            if (examEngine.getConfig().autoAdvance) {
+                navigateToQuestion(examEngine.getState().currentQuestion + 1);
+            } else {
+                showTimeWarning('expired', 0);
+            }
+        }
+        
+        function showTimeWarning(type, seconds) {
+            const modal = document.getElementById('timeWarningModal');
+            const message = document.getElementById('timeWarningMessage');
+            
+            if (!modal || !message) return;
+            
+            if (seconds === 0) {
+                message.textContent = 'Time expired for this question!';
+            } else if (seconds === 5) {
+                message.textContent = '5 seconds remaining!';
+            } else if (seconds === 10) {
+                message.textContent = '10 seconds remaining!';
+            } else {
+                message.textContent = `${seconds} seconds remaining!`;
+            }
+            
+            modal.style.display = 'block';
+            
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 2000);
+        }
+        
+        // ==================== EVENT LISTENERS ====================
+        
+        function setupEventListeners() {
+            // Navigation
+            uiState.uiElements.prevBtn.addEventListener('click', () => {
+                navigateToQuestion(examEngine.getState().currentQuestion - 1);
+            });
+            
+            uiState.uiElements.nextBtn.addEventListener('click', () => {
+                navigateToQuestion(examEngine.getState().currentQuestion + 1);
+            });
+            
+            // Flag
+            uiState.uiElements.flagBtn.addEventListener('click', handleFlagToggle);
+            
+            // Pause
+            uiState.uiElements.pauseBtn.addEventListener('click', handlePauseResume);
+            
+            // Fullscreen
+            uiState.uiElements.fullscreenBtn.addEventListener('click', toggleFullscreen);
+            
+            // Toggle navigation
+            uiState.uiElements.toggleNavBtn.addEventListener('click', toggleNavigation);
+            
+            // Submit
+            uiState.uiElements.submitBtn.addEventListener('click', showSubmitModal);
+            
+            // Modal buttons
+            setupModalEventListeners();
+            
+            // Keyboard shortcuts
+            setupKeyboardShortcuts();
+        }
+        
+        function setupModalEventListeners() {
+            // Pause modal
+            document.getElementById('closePauseModal')?.addEventListener('click', () => {
+                if (examEngine.isPaused()) {
+                    examEngine.resumeExam();
+                    if (uiState.currentTimer && uiState.currentTimer.resume) {
+                        uiState.currentTimer.resume();
+                    }
+                }
+                hidePauseModal();
+            });
+            
+            document.getElementById('resumeBtn')?.addEventListener('click', () => {
+                if (examEngine.isPaused()) {
+                    examEngine.resumeExam();
+                    if (uiState.currentTimer && uiState.currentTimer.resume) {
+                        uiState.currentTimer.resume();
+                    }
+                }
+                hidePauseModal();
+            });
+            
+            document.getElementById('reviewFlaggedBtn')?.addEventListener('click', () => {
+                const flagged = examEngine.getFlaggedQuestions();
+                if (flagged.length > 0) {
+                    navigateToQuestion(flagged[0]);
+                    hidePauseModal();
+                }
+            });
+            
+            // Submit modal
+            document.getElementById('closeSubmitModal')?.addEventListener('click', () => {
+                document.getElementById('submitModal').style.display = 'none';
+            });
+            
+            document.getElementById('cancelSubmitBtn')?.addEventListener('click', () => {
+                document.getElementById('submitModal').style.display = 'none';
+            });
+            
+            document.getElementById('confirmSubmitBtn')?.addEventListener('click', handleSubmitExam);
+            
+            // Time warning modal
+            document.getElementById('acknowledgeTimeBtn')?.addEventListener('click', () => {
+                document.getElementById('timeWarningModal').style.display = 'none';
+            });
+        }
+        
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                if (examEngine.isPaused()) return;
+                
+                // Prevent shortcuts in certain situations
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                
+                switch(e.key.toLowerCase()) {
+                    case '1':
+                    case 'a':
+                        handleOptionSelect('A');
+                        break;
+                    case '2':
+                    case 'b':
+                        handleOptionSelect('B');
+                        break;
+                    case '3':
+                    case 'c':
+                        handleOptionSelect('C');
+                        break;
+                    case '4':
+                    case 'd':
+                        handleOptionSelect('D');
+                        break;
+                    case '5':
+                    case 'e':
+                        handleOptionSelect('E');
+                        break;
+                    case ' ':
+                        handleFlagToggle();
+                        break;
+                    case 'arrowleft':
+                        navigateToQuestion(examEngine.getState().currentQuestion - 1);
+                        break;
+                    case 'arrowright':
+                        navigateToQuestion(examEngine.getState().currentQuestion + 1);
+                        break;
+                    case 'escape':
+                        handlePauseResume();
+                        break;
+                }
+            });
+        }
+        
+        // ==================== UTILITY FUNCTIONS ====================
+        
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log(`Fullscreen error: ${err.message}`);
+                });
+                uiState.isFullscreen = true;
+            } else {
+                document.exitFullscreen();
+                uiState.isFullscreen = false;
+            }
+        }
+        
+        function toggleNavigation() {
+            const navContainer = document.getElementById('navigationContainer');
+            if (navContainer.style.display === 'none') {
+                navContainer.style.display = 'block';
+                uiState.uiElements.toggleNavBtn.textContent = 'Hide';
+            } else {
+                navContainer.style.display = 'none';
+                uiState.uiElements.toggleNavBtn.textContent = 'Show';
+            }
+        }
+        
+        function showSubmitModal() {
+            document.getElementById('submitModal').style.display = 'block';
+        }
+        
+        async function handleSubmitExam() {
+            try {
+                // Submit through exam engine
+                const results = await examEngine.submitExam();
+                
+                // Save to database
+                if (db && db.saveExamResults) {
+                    await db.saveExamResults(results);
+                }
+                
+                // Log security event
+                if (security && security.logSecurityEvent) {
+                    await security.logSecurityEvent({
+                        type: 'exam_submitted',
+                        data: {
+                            examId: results.examId,
+                            score: results.score,
+                            totalQuestions: results.totalQuestions
+                        }
+                    });
+                }
+                
+                // Stop security monitoring
+                if (security && security.stopExamMonitoring) {
+                    security.stopExamMonitoring();
+                }
+                
+                // Stop timer
+                if (uiState.currentTimer && uiState.currentTimer.stop) {
+                    uiState.currentTimer.stop();
+                }
+                
+                // Navigate to results
+                window.location.href = `results.html?id=${results.examId}`;
+                
+            } catch (error) {
+                console.error('Error submitting exam:', error);
+                showError('Failed to submit exam. Please try again.');
+            }
+        }
+        
+        function showError(message) {
+            // Create error modal or show notification
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-notification';
+            errorDiv.innerHTML = `
+                <div class="error-content">
+                    <span class="error-icon">⚠️</span>
+                    <span class="error-message">${message}</span>
+                    <button class="error-close" onclick="this.parentElement.parentElement.remove()">×</button>
+                </div>
+            `;
+            
+            errorDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #f8d7da;
+                color: #721c24;
+                padding: 15px;
+                border-radius: 5px;
+                border: 1px solid #f5c6cb;
+                z-index: 10000;
+                max-width: 300px;
+            `;
+            
+            document.body.appendChild(errorDiv);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (errorDiv.parentElement) {
+                    errorDiv.remove();
+                }
+            }, 5000);
+        }
+        
+        // ==================== START INITIALIZATION ====================
+        
+        await initializeExamRoom();
+    });
+</script>
+</body>
+</html>

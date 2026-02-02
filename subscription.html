@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Plans - Medical Exam Room Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/subscription.css">
+    <link rel="icon" href="images/logo.png" type="image/png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('service-worker.js');
+            });
+        }
+    </script>
+</head>
+<body>
+    <header class="header">
+        <div class="header-container">
+            <div class="logo">
+                <img src="images/logo.png" alt="Logo" class="logo-image">
+                <h1 class="logo-text">Subscription Plans</h1>
+            </div>
+            
+            <div class="header-actions">
+                <button class="theme-toggle" id="themeToggle">
+                    <span class="theme-icon">🌙</span>
+                    <span class="theme-text">Dark Mode</span>
+                </button>
+                
+                <button class="btn-back" id="backBtn">
+                    <span class="back-icon">←</span>
+                    <span class="back-text">Back</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="subscription-container">
+            <div class="subscription-header">
+                <h2>Choose Your Plan</h2>
+                <p class="subscription-subtitle">Unlock full access to 5,000+ questions and advanced features</p>
+                
+                <div class="current-status" id="currentStatus">
+                    <!-- Current subscription status will be shown here -->
+                </div>
+            </div>
+            
+            <div class="plans-comparison">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>Free Trial</th>
+                            <th>Monthly</th>
+                            <th>Quarterly</th>
+                            <th>Yearly</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Access Duration</td><td>3 hours</td><td>30 days</td><td>90 days</td><td>365 days</td></tr>
+                        <tr><td>All 8 Subjects</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                        <tr><td>5,000+ Questions</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                        <tr><td>Offline Access</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                        <tr><td>Detailed Analytics</td><td>Basic</td><td>✓</td><td>✓</td><td>Premium</td></tr>
+                        <tr><td>Weak Area Analysis</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                        <tr><td>Progress Reports</td><td>✗</td><td>✓</td><td>✓</td><td>Advanced</td></tr>
+                        <tr><td>Certificate Generation</td><td>✗</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                        <tr><td>Priority Support</td><td>✗</td><td>✗</td><td>✗</td><td>✓</td></tr>
+                        <tr class="price-row"><td>Price</td><td>KES 0</td><td>KES 350</td><td>KES 850</td><td>KES 2,100</td></tr>
+                        <tr><td>Value/Month</td><td>Free</td><td>KES 350</td><td>KES 283</td><td>KES 175</td></tr>
+                        <tr><td>Savings</td><td>-</td><td>-</td><td>Save KES 200</td><td>Save KES 1,100</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="plans-grid">
+                <div class="plan-card" data-plan="trial">
+                    <div class="plan-header">
+                        <h3>Free Trial</h3>
+                        <div class="plan-price">KES 0</div>
+                        <div class="plan-period">3 hours full access</div>
+                    </div>
+                    <div class="plan-features">
+                        <div class="feature">✓ All 8 subjects</div>
+                        <div class="feature">✓ 5,000+ questions</div>
+                        <div class="feature">✓ 100% offline</div>
+                        <div class="feature">✓ Basic analytics</div>
+                        <div class="feature">✗ No certificates</div>
+                        <div class="feature">✗ Limited reports</div>
+                    </div>
+                    <button class="btn-plan" data-plan="trial">
+                        <span class="btn-icon">🎁</span>
+                        <span class="btn-text">Start Free Trial</span>
+                    </button>
+                </div>
+                
+                <div class="plan-card popular" data-plan="monthly">
+                    <div class="plan-badge">Most Flexible</div>
+                    <div class="plan-header">
+                        <h3>Monthly</h3>
+                        <div class="plan-price">KES 350</div>
+                        <div class="plan-period">per month</div>
+                    </div>
+                    <div class="plan-features">
+                        <div class="feature">✓ All 8 subjects</div>
+                        <div class="feature">✓ 5,000+ questions</div>
+                        <div class="feature">✓ 100% offline</div>
+                        <div class="feature">✓ Detailed analytics</div>
+                        <div class="feature">✓ Progress reports</div>
+                        <div class="feature">✓ Certificates</div>
+                    </div>
+                    <button class="btn-plan popular" data-plan="monthly">
+                        <span class="btn-icon">💳</span>
+                        <span class="btn-text">Subscribe Monthly</span>
+                    </button>
+                </div>
+                
+                <div class="plan-card" data-plan="quarterly">
+                    <div class="plan-header">
+                        <h3>Quarterly</h3>
+                        <div class="plan-price">KES 850</div>
+                        <div class="plan-period">3 months</div>
+                        <div class="plan-save">Save KES 200</div>
+                    </div>
+                    <div class="plan-features">
+                        <div class="feature">✓ All 8 subjects</div>
+                        <div class="feature">✓ 5,000+ questions</div>
+                        <div class="feature">✓ 100% offline</div>
+                        <div class="feature">✓ Detailed analytics</div>
+                        <div class="feature">✓ Progress reports</div>
+                        <div class="feature">✓ Certificates</div>
+                    </div>
+                    <button class="btn-plan" data-plan="quarterly">
+                        <span class="btn-icon">💳</span>
+                        <span class="btn-text">Subscribe Quarterly</span>
+                    </button>
+                </div>
+                
+                <div class="plan-card best-value" data-plan="yearly">
+                    <div class="plan-badge">Best Value</div>
+                    <div class="plan-header">
+                        <h3>Yearly</h3>
+                        <div class="plan-price">KES 2,100</div>
+                        <div class="plan-period">per year</div>
+                        <div class="plan-save">Save KES 1,100</div>
+                    </div>
+                    <div class="plan-features">
+                        <div class="feature">✓ All 8 subjects</div>
+                        <div class="feature">✓ 5,000+ questions</div>
+                        <div class="feature">✓ 100% offline</div>
+                        <div class="feature">✓ Premium analytics</div>
+                        <div class="feature">✓ Advanced reports</div>
+                        <div class="feature">✓ Priority support</div>
+                    </div>
+                    <button class="btn-plan best-value" data-plan="yearly">
+                        <span class="btn-icon">💳</span>
+                        <span class="btn-text">Subscribe Yearly</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="payment-info">
+                <h3>Payment Information</h3>
+                <div class="payment-details">
+                    <div class="payment-method">
+                        <div class="method-icon">📱</div>
+                        <div class="method-details">
+                            <h4>M-Pesa Payment</h4>
+                            <p>Pay via M-Pesa STK Push. Enter your phone number and confirm payment on your phone.</p>
+                            <ul>
+                                <li>Instant activation</li>
+                                <li>Secure payment processing</li>
+                                <li>Receipt sent via SMS</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="payment-note">
+                        <div class="note-icon">ℹ️</div>
+                        <p><strong>Note:</strong> All payments are processed securely via M-Pesa. No credit card information is stored. Subscriptions auto-renew unless cancelled 24 hours before expiry.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="faq-section">
+                <h3>Frequently Asked Questions</h3>
+                <div class="faq-item">
+                    <div class="faq-question">Can I cancel my subscription?</div>
+                    <div class="faq-answer">Yes, you can cancel auto-renewal at any time. You'll retain access until the end of your billing period.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">What happens after free trial?</div>
+                    <div class="faq-answer">After 3 hours, you'll need to subscribe to continue accessing all features. Your progress is saved.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">Is there a refund policy?</div>
+                    <div class="faq-answer">Refunds are available within 24 hours of purchase if you haven't used the app extensively. Contact support.</div>
+                </div>
+            </div>
+            
+            <div class="contact-support">
+                <p>Need help? Contact us: <strong>felixappbuilder@gmail.com</strong> or call <strong>0746834527</strong></p>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer-minimal">
+        <p>© 2024 Medical Exam Room Pro. All subscription plans include our strict anti-cheating protection.</p>
+    </footer>
+
+    <script src="scripts/app.js"></script>
+    <script src="scripts/subscription.js"></script>
+    <script src="scripts/payment.js"></script>
+    <script src="scripts/ui.js"></script>
+    <script src="scripts/utils.js"></script>
+    <script src="scripts/router.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Theme toggle
+            const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = themeToggle.querySelector('.theme-icon');
+            const themeText = themeToggle.querySelector('.theme-text');
+            
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.classList.toggle('dark-theme', savedTheme === 'dark');
+            
+            if (savedTheme === 'dark') {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = 'Light Mode';
+            }
+            
+            themeToggle.addEventListener('click', function() {
+                const isDark = document.body.classList.toggle('dark-theme');
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                
+                if (isDark) {
+                    themeIcon.textContent = '☀️';
+                    themeText.textContent = 'Light Mode';
+                } else {
+                    themeIcon.textContent = '🌙';
+                    themeText.textContent = 'Dark Mode';
+                }
+            });
+            
+            // Navigation
+            const backBtn = document.getElementById('backBtn');
+            backBtn.addEventListener('click', function() {
+                window.history.back() || (window.location.href = 'subjects.html');
+            });
+            
+            // Load current subscription status
+            const currentStatus = document.getElementById('currentStatus');
+            const subscriptionData = JSON.parse(localStorage.getItem('subscription') || '{}');
+            
+            if (subscriptionData.isActive && subscriptionData.expiryDate) {
+                const expiryDate = new Date(subscriptionData.expiryDate);
+                const daysRemaining = Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24));
+                
+                currentStatus.innerHTML = `
+                    <div class="status-active">
+                        <span class="status-icon">✓</span>
+                        <div class="status-details">
+                            <h4>Active Subscription: ${subscriptionData.plan}</h4>
+                            <p>Expires: ${expiryDate.toLocaleDateString()} (${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining)</p>
+                            <button class="btn-manage" id="manageSubscription">Manage Subscription</button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                currentStatus.innerHTML = `
+                    <div class="status-inactive">
+                        <span class="status-icon">⚠️</span>
+                        <div class="status-details">
+                            <h4>No Active Subscription</h4>
+                            <p>Subscribe to unlock full access to all features</p>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Plan selection
+            document.querySelectorAll('.btn-plan').forEach(button => {
+                button.addEventListener('click', function() {
+                    const plan = this.dataset.plan;
+                    
+                    if (plan === 'trial') {
+                        // Check if trial already used
+                        const deviceId = localStorage.getItem('deviceId');
+                        const trialUsed = localStorage.getItem('trialUsed_' + deviceId);
+                        
+                        if (trialUsed === 'true') {
+                            alert('Free trial already used on this device. Please choose a paid plan.');
+                            return;
+                        }
+                        
+                        window.location.href = 'free-trial.html';
+                    } else {
+                        // Save selected plan and go to payment
+                        localStorage.setItem('selectedPlan', plan);
+                        window.location.href = 'payment.html';
+                    }
+                });
+            });
+            
+            // Manage subscription button
+            document.addEventListener('click', function(e) {
+                if (e.target.id === 'manageSubscription') {
+                    alert('Please contact support at felixappbuilder@gmail.com to manage your subscription.');
+                }
+            });
+            
+            // Initialize app state
+            if (typeof initApp === 'function') {
+                initApp();
+            }
+        });
+    </script>
+</body>
+</html>

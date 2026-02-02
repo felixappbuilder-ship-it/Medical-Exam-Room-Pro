@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - Medical Exam Room Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/profile.css">
+    <link rel="icon" href="images/logo.png" type="image/png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('service-worker.js');
+            });
+        }
+    </script>
+</head>
+<body>
+    <header class="header">
+        <div class="header-container">
+            <div class="logo">
+                <img src="images/logo.png" alt="Logo" class="logo-image">
+                <h1 class="logo-text">My Profile</h1>
+            </div>
+            
+            <div class="header-actions">
+                <button class="theme-toggle" id="themeToggle">
+                    <span class="theme-icon">🌙</span>
+                    <span class="theme-text">Dark Mode</span>
+                </button>
+                
+                <button class="btn-back" id="backBtn">
+                    <span class="back-icon">←</span>
+                    <span class="back-text">Back to App</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="profile-container">
+            <!-- Profile Header -->
+            <div class="profile-header">
+                <div class="profile-avatar">
+                    <div class="avatar-image" id="avatarImage">👤</div>
+                    <button class="btn-change-avatar" id="changeAvatarBtn">
+                        <span class="btn-icon">📷</span>
+                        <span class="btn-text">Change</span>
+                    </button>
+                </div>
+                
+                <div class="profile-info">
+                    <h2 id="userName">Loading...</h2>
+                    <p class="user-email" id="userEmail">Loading...</p>
+                    <p class="user-phone" id="userPhone">Loading...</p>
+                    <div class="profile-badges" id="profileBadges">
+                        <!-- Badges will be loaded here -->
+                    </div>
+                </div>
+                
+                <div class="profile-stats">
+                    <div class="stat">
+                        <div class="stat-value" id="totalExams">0</div>
+                        <div class="stat-label">Exams</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="avgScore">0%</div>
+                        <div class="stat-label">Avg Score</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="studyDays">0</div>
+                        <div class="stat-label">Study Days</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="streakDays">0</div>
+                        <div class="stat-label">Day Streak</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Subscription Status -->
+            <div class="subscription-section">
+                <h3>Subscription Status</h3>
+                <div class="subscription-card" id="subscriptionCard">
+                    <!-- Subscription info will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Profile Tabs -->
+            <div class="profile-tabs">
+                <div class="tabs-header">
+                    <button class="tab-btn active" data-tab="personal">Personal Info</button>
+                    <button class="tab-btn" data-tab="preferences">Preferences</button>
+                    <button class="tab-btn" data-tab="security">Security</button>
+                    <button class="tab-btn" data-tab="devices">Devices</button>
+                    <button class="tab-btn" data-tab="data">Data Management</button>
+                </div>
+                
+                <div class="tabs-content">
+                    <!-- Personal Info Tab -->
+                    <div class="tab-pane active" id="personalTab">
+                        <form id="personalInfoForm" class="profile-form">
+                            <div class="form-section">
+                                <h4>Basic Information</h4>
+                                
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="firstName">First Name *</label>
+                                        <input type="text" id="firstName" name="firstName" required>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label for="lastName">Last Name *</label>
+                                        <input type="text" id="lastName" name="lastName" required>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="email">Email Address *</label>
+                                    <input type="email" id="email" name="email" required>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="phone">Phone Number *</label>
+                                    <input type="tel" id="phone" name="phone" required>
+                                    <div class="input-hint">Used for M-Pesa payments</div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-section">
+                                <h4>Educational Information</h4>
+                                
+                                <div class="form-group">
+                                    <label for="institution">Medical Institution</label>
+                                    <select id="institution" name="institution">
+                                        <option value="">Select institution</option>
+                                        <option value="uon">University of Nairobi</option>
+                                        <option value="kemu">Kenyatta University</option>
+                                        <option value="mmust">Moi University</option>
+                                        <option value="egerton">Egerton University</option>
+                                        <option value="mku">Mount Kenya University</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="course">Course</label>
+                                        <input type="text" id="course" name="course" placeholder="e.g., Medicine">
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label for="yearOfStudy">Year of Study</label>
+                                        <select id="yearOfStudy" name="yearOfStudy">
+                                            <option value="">Select year</option>
+                                            <option value="1">Year 1</option>
+                                            <option value="2">Year 2</option>
+                                            <option value="3">Year 3</option>
+                                            <option value="4">Year 4</option>
+                                            <option value="5">Year 5</option>
+                                            <option value="6">Year 6</option>
+                                            <option value="intern">Intern</option>
+                                            <option value="postgrad">Postgraduate</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="button" class="btn-secondary" id="cancelPersonalBtn">
+                                    Cancel
+                                </button>
+                                <button type="submit" class="btn-primary" id="savePersonalBtn">
+                                    Save Changes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Preferences Tab -->
+                    <div class="tab-pane" id="preferencesTab">
+                        <form id="preferencesForm" class="profile-form">
+                            <div class="form-section">
+                                <h4>Exam Preferences</h4>
+                                
+                                <div class="preference-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="autoFullscreen" name="autoFullscreen">
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text">Start exams in fullscreen mode</span>
+                                    </label>
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="showTimer" name="showTimer" checked>
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text">Show timer during exams</span>
+                                    </label>
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="soundEffects" name="soundEffects">
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text">Enable sound effects</span>
+                                    </label>
+                                    
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="vibrateOnTime" name="vibrateOnTime">
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text">Vibrate on time warnings (mobile)</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="form-section">
+                                <h4>Study Preferences</h4>
+                                
+                                <div class="form-group">
+                                    <label for="dailyGoal">Daily Question Goal</label>
+                                    <select id="dailyGoal" name="dailyGoal">
+                                        <option value="10">10 questions</option>
+                                        <option value="25" selected>25 questions</option>
+                                        <option value="50">50 questions</option>
+                                        <option value="100">100 questions</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="preferredSubjects">Preferred Subjects</label>
+                                    <div class="subject-selector" id="preferredSubjects">
+                                        <!-- Subjects will be loaded here -->
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="studyReminders">Study Reminders</label>
+                                    <select id="studyReminders" name="studyReminders">
+                                        <option value="none">No reminders</option>
+                                        <option value="daily">Daily at 7:00 PM</option>
+                                        <option value="custom">Custom schedule</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="form-section">
+                                <h4>Display Preferences</h4>
+                                
+                                <div class="form-group">
+                                    <label for="fontSize">Font Size</label>
+                                    <select id="fontSize" name="fontSize">
+                                        <option value="small">Small</option>
+                                        <option value="medium" selected>Medium</option>
+                                        <option value="large">Large</option>
+                                        <option value="xlarge">Extra Large</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="colorScheme">Color Scheme</label>
+                                    <select id="colorScheme" name="colorScheme">
+                                        <option value="system">System Default</option>
+                                        <option value="light">Light Mode</option>
+                                        <option value="dark">Dark Mode</option>
+                                        <option value="blue">Blue Theme</option>
+                                        <option value="green">Green Theme</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="animations">Animations</label>
+                                    <select id="animations" name="animations">
+                                        <option value="full">Full animations</option>
+                                        <option value="reduced">Reduced animations</option>
+                                        <option value="none">No animations</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="button" class="btn-secondary" id="resetPrefsBtn">
+                                    Reset to Defaults
+                                </button>
+                                <button type="submit" class="btn-primary" id="savePrefsBtn">
+                                    Save Preferences
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Security Tab -->
+                    <div class="tab-pane" id="securityTab">
+                        <div class="security-section">
+                            <h4>Password Management</h4>
+                            
+                            <form id="changePasswordForm" class="security-form">
+                                <div class="form-group">
+                                    <label for="currentPassword">Current Password</label>
+                                    <input type="password" id="currentPassword" name="currentPassword" required>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="newPassword">New Password</label>
+                                    <input type="password" id="newPassword" name="newPassword" required>
+                                    <div class="password-strength" id="passwordStrength">
+                                        <div class="strength-bar"></div>
+                                        <div class="strength-text">Password strength</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="confirmPassword">Confirm New Password</label>
+                                    <input type="password" id="confirmPassword" name="confirmPassword" required>
+                                    <div class="password-match" id="passwordMatch"></div>
+                                </div>
+                                
+                                <button type="submit" class="btn-primary" id="changePasswordBtn">
+                                    Change Password
+                                </button>
+                            </form>
+                        </div>
+                        
+                        <div class="security-section">
+                            <h4>Two-Factor Authentication</h4>
+                            <div class="security-status">
+                                <div class="status-info">
+                                    <span class="status-label">2FA Status:</span>
+                                    <span class="status-value disabled">Disabled</span>
+                                </div>
+                                <button class="btn-secondary" id="enable2FABtn">
+                                    Enable 2FA
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="security-section">
+                            <h4>Security Questions</h4>
+                            <div class="security-questions">
+                                <p>Set up security questions for account recovery:</p>
+                                <button class="btn-secondary" id="setupQuestionsBtn">
+                                    Set Up Security Questions
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="security-section">
+                            <h4>Session Management</h4>
+                            <div class="session-controls">
+                                <button class="btn-secondary" id="logoutAllBtn">
+                                    Logout from All Devices
+                                </button>
+                                <button class="btn-secondary" id="viewSessionsBtn">
+                                    View Active Sessions
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Devices Tab -->
+                    <div class="tab-pane" id="devicesTab">
+                        <div class="devices-list" id="devicesList">
+                            <!-- Devices will be loaded here -->
+                        </div>
+                        
+                        <div class="device-actions">
+                            <button class="btn-secondary" id="addDeviceBtn">
+                                Add Current Device
+                            </button>
+                            <button class="btn-secondary" id="refreshDevicesBtn">
+                                Refresh List
+                            </button>
+                        </div>
+                        
+                        <div class="device-limits">
+                            <h4>Device Limits</h4>
+                            <p>You can use the app on up to 3 devices simultaneously.</p>
+                            <div class="limit-status">
+                                <span class="status-label">Current devices:</span>
+                                <span class="status-value" id="deviceCount">0</span>
+                                <span class="status-label">of 3</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Data Management Tab -->
+                    <div class="tab-pane" id="dataTab">
+                        <div class="data-section">
+                            <h4>Data Export</h4>
+                            <p>Download all your data in a portable format.</p>
+                            <div class="export-options">
+                                <button class="btn-secondary" id="exportProfileBtn">
+                                    Export Profile Data
+                                </button>
+                                <button class="btn-secondary" id="exportExamDataBtn">
+                                    Export Exam History
+                                </button>
+                                <button class="btn-secondary" id="exportAllDataBtn">
+                                    Export All Data
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="data-section">
+                            <h4>Data Sync</h4>
+                            <div class="sync-status">
+                                <div class="status-info">
+                                    <span class="status-label">Last Sync:</span>
+                                    <span class="status-value" id="lastSyncTime">Never</span>
+                                </div>
+                                <button class="btn-secondary" id="syncNowBtn">
+                                    Sync Now
+                                </button>
+                            </div>
+                            <div class="sync-options">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="autoSync" name="autoSync">
+                                    <span class="checkbox-custom"></span>
+                                    <span class="checkbox-text">Auto-sync when online</span>
+                                </label>
+                                
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="syncOverMobile" name="syncOverMobile">
+                                    <span class="checkbox-custom"></span>
+                                    <span class="checkbox-text">Allow sync over mobile data</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="data-section warning">
+                            <h4>Account Deletion</h4>
+                            <p>Permanently delete your account and all associated data.</p>
+                            <div class="warning-message">
+                                <span class="warning-icon">⚠️</span>
+                                <p>This action cannot be undone. All your exam history, progress, and personal data will be permanently deleted.</p>
+                            </div>
+                            <button class="btn-danger" id="deleteAccountBtn">
+                                Delete Account
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Actions -->
+            <div class="quick-actions-section">
+                <h3>Quick Actions</h3>
+                <div class="action-buttons">
+                    <button class="btn-action" id="upgradePlanBtn">
+                        <span class="action-icon">💳</span>
+                        <span class="action-text">Upgrade Plan</span>
+                    </button>
+                    
+                    <button class="btn-action" id="contactSupportBtn">
+                        <span class="action-icon">📞</span>
+                        <span class="action-text">Contact Support</span>
+                    </button>
+                    
+                    <button class="btn-action" id="rateAppBtn">
+                        <span class="action-icon">⭐</span>
+                        <span class="action-text">Rate App</span>
+                    </button>
+                    
+                    <button class="btn-action" id="shareAppBtn">
+                        <span class="action-icon">📤</span>
+                        <span class="action-text">Share App</span>
+                    </button>
+                    
+                    <button class="btn-action" id="logoutBtn">
+                        <span class="action-icon">🚪</span>
+                        <span class="action-text">Logout</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer-minimal">
+        <p>Profile last updated: <span id="profileUpdated">Loading...</span></p>
+        <p>App Version: 1.0.0 | © 2024 Medical Exam Room Pro</p>
+    </footer>
+
+    <script src="scripts/app.js"></script>
+    <script src="scripts/auth.js"></script>
+    <script src="scripts/db.js"></script>
+    <script src="scripts/sync.js"></script>
+    <script src="scripts/ui.js"></script>
+    <script src="scripts/utils.js"></script>
+    <script src="scripts/router.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Theme toggle
+            const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = themeToggle.querySelector('.theme-icon');
+            const themeText = themeToggle.querySelector('.theme-text');
+            
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.classList.toggle('dark-theme', savedTheme === 'dark');
+            
+            if (savedTheme === 'dark') {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = 'Light Mode';
+            }
+            
+            themeToggle.addEventListener('click', function() {
+                const isDark = document.body.classList.toggle('dark-theme');
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                
+                if (isDark) {
+                    themeIcon.textContent = '☀️';
+                    themeText.textContent = 'Light Mode';
+                } else {
+                    themeIcon.textContent = '🌙';
+                    themeText.textContent = 'Dark Mode';
+                }
+            });
+            
+            // Navigation
+            const backBtn = document.getElementById('backBtn');
+            backBtn.addEventListener('click', function() {
+                window.history.back() || (window.location.href = 'subjects.html');
+            });
+            
+            // Load user data
+            let userData = {};
+            let userPreferences = {};
+            
+            function loadUserData() {
+                // Load from localStorage
+                const savedUser = localStorage.getItem('userData');
+                const savedPrefs = localStorage.getItem('userPreferences');
+                
+                if (savedUser) {
+                    try {
+                        userData = JSON.parse(savedUser);
+                    } catch (e) {
+                        userData = {};
+                    }
+                }
+                
+                if (savedPrefs) {
+                    try {
+                        userPreferences = JSON.parse(savedPrefs);
+                    } catch (e) {
+                        userPreferences = {};
+                    }
+                }
+                
+                // If no user data, load sample data for demo
+                if (!userData || Object.keys(userData).length === 0) {
+                    loadSampleUserData();
+                }
+                
+                // Update UI
+                updateProfileHeader();
+                updateSubscriptionStatus();
+                updatePersonalInfoForm();
+                updatePreferencesForm();
+                updateDevicesList();
+                updateDataManagement();
+            }
+            
+            // Load sample user data for demo
+            function loadSampleUserData() {
+                userData = {
+                    firstName: 'John',
+                    lastName: 'Doe',
+                    email: 'john.doe@example.com',
+                    phone: '254712345678',
+                    institution: 'uon',
+                    course: 'Medicine',
+                    yearOfStudy: '3',
+                    avatar: '👤',
+                    createdAt: new Date().toISOString(),
+                    lastLogin: new Date().toISOString(),
+                    totalExams: 15,
+                    avgScore: 78,
+                    studyDays: 45,
+                    streakDays: 7,
+                    badges: ['early_adopter', 'exam_master', 'streak_7'],
+                    devices: [
+                        {
+                            id: 'device_1',
+                            name: 'Chrome on Windows',
+                            lastActive: new Date().toISOString(),
+                            isCurrent: true
+                        },
+                        {
+                            id: 'device_2',
+                            name: 'Safari on iPhone',
+                            lastActive: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+                            isCurrent: false
+                        }
+                    ]
+                };
+                
+                userPreferences = {
+                    autoFullscreen: true,
+                    showTimer: true,
+                    soundEffects: false,
+                    vibrateOnTime: false,
+                    dailyGoal: '25',
+                    preferredSubjects: ['anatomy', 'physiology', 'biochemistry'],
+                    studyReminders: 'daily',
+                    fontSize: 'medium',
+                    colorScheme: 'system',
+                    animations: 'full',
+                    autoSync: true,
+                    syncOverMobile: false
+                };
+                
+                // Save to localStorage for demo
+                localStorage.setItem('userData', JSON.stringify(userData));
+                localStorage.setItem('userPreferences', JSON.stringify(userPreferences));
+            }
+            
+            // Update profile header
+            function updateProfileHeader() {
+                document.getElementById('userName').textContent = `${userData.firstName} ${userData.lastName}`;
+                document.getElementById('userEmail').textContent = userData.email;
+                document.getElementById('userPhone').textContent = userData.phone;
+                document.getElementById('avatarImage').textContent = userData.avatar || '👤';
+                
+                document.getElementById('totalExams').textContent = userData.totalExams || 0;
+                document.getElementById('avgScore').textContent = `${userData.avgScore || 0}%`;
+                document.getElementById('studyDays').textContent = userData.studyDays || 0;
+                document.getElementById('streakDays').textContent = userData.streakDays || 0;
+                
+                // Update badges
+                const badgesContainer = document.getElementById('profileBadges');
+                const badges = userData.badges || [];
+                
+                if (badges.length > 0) {
+                    const badgeIcons = {
+                        'early_adopter': '🚀',
+                        'exam_master': '🏆',
+                        'streak_7': '🔥',
+                        'perfect_score': '💯',
+                        'quick_learner': '⚡'
+                    };
+                    
+                    badgesContainer.innerHTML = badges.map(badge => `
+                        <span class="badge" title="${badge.replace('_', ' ')}">
+                            ${badgeIcons[badge] || '🏅'}
+                        </span>
+                    `).join('');
+                } else {
+                    badgesContainer.innerHTML = '<span class="no-badges">No badges yet</span>';
+                }
+                
+                // Update last updated time
+                document.getElementById('profileUpdated').textContent = 
+                    new Date(userData.lastLogin || Date.now()).toLocaleString();
+            }
+            
+            // Update subscription status
+            function updateSubscriptionStatus() {
+                const subscriptionCard = document.getElementById('subscriptionCard');
+                const subscription = JSON.parse(localStorage.getItem('subscription') || '{}');
+                
+                if (subscription.isActive && subscription.expiryDate && new Date(subscription.expiryDate) > new Date()) {
+                    const expiryDate = new Date(subscription.expiryDate);
+                    const daysRemaining = Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24));
+                    
+                    subscriptionCard.innerHTML = `
+                        <div class="subscription-active">
+                            <div class="subscription-icon">✓</div>
+                            <div class="subscription-details">
+                                <h4>${subscription.plan === 'trial' ? 'Free Trial' : subscription.plan + ' Plan'} Active</h4>
+                                <p>Expires: ${expiryDate.toLocaleDateString()} (${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining)</p>
+                            </div>
+                            <button class="btn-manage" id="manageSubscriptionBtn">
+                                Manage
+                            </button>
+                        </div>
+                    `;
+                    
+                    document.getElementById('manageSubscriptionBtn').addEventListener('click', function() {
+                        window.location.href = 'subscription.html';
+                    });
+                } else {
+                    subscriptionCard.innerHTML = `
+                        <div class="subscription-inactive">
+                            <div class="subscription-icon">⚠️</div>
+                            <div class="subscription-details">
+                                <h4>No Active Subscription</h4>
+                                <p>Subscribe to unlock full features</p>
+                            </div>
+                            <button class="btn-subscribe" id="subscribeNowBtn">
+                                Subscribe Now
+                            </button>
+                        </div>
+                    `;
+                    
+                    document.getElementById('subscribeNowBtn').addEventListener('click', function() {
+                        window.location.href = 'subscription.html';
+                    });
+                }
+            }
+            
+            // Update personal info form
+            function updatePersonalInfoForm() {
+                document.getElementById('firstName').value = userData.firstName || '';
+                document.getElementById('lastName').value = userData.lastName || '';
+                document.getElementById('email').value = userData.email || '';
+                document.getElementById('phone').value = userData.phone || '';
+                document.getElementById('institution').value = userData.institution || '';
+                document.getElementById('course').value = userData.course || '';
+                document.getElementById('yearOfStudy').value = userData.yearOfStudy || '';
+            }
+            
+            // Update preferences form
+            function updatePreferencesForm() {
+                // Exam preferences
+                document.getElementById('autoFullscreen').checked = userPreferences.autoFullscreen || false;
+                document.getElementById('showTimer').checked = userPreferences.showTimer !== false; // Default true
+                document.getElementById('soundEffects').checked = userPreferences.soundEffects || false;
+                document.getElementById('vibrateOnTime').checked = userPreferences.vibrateOnTime || false;
+                
+                // Study preferences
+                document.getElementById('dailyGoal').value = userPreferences.dailyGoal || '25';
+                document.getElementById('studyReminders').value = userPreferences.studyReminders || 'none';
+                
+                // Display preferences
+                document.getElementById('fontSize').value = userPreferences.fontSize || 'medium';
+                document.getElementById('colorScheme').value = userPreferences.colorScheme || 'system';
+                document.getElementById('animations').value = userPreferences.animations || 'full';
+                
+                // Update preferred subjects
+                updatePreferredSubjects();
+            }
+            
+            // Update preferred subjects
+            function updatePreferredSubjects() {
+                const container = document.getElementById('preferredSubjects');
+                const subjects = [
+                    { id: 'anatomy', name: 'Anatomy', icon: '🦴' },
+                    { id: 'physiology', name: 'Physiology', icon: '❤️' },
+                    { id: 'biochemistry', name: 'Biochemistry', icon: '🧪' },
+                    { id: 'histology', name: 'Histology', icon: '🔬' },
+                    { id: 'embryology', name: 'Embryology', icon: '👶' },
+                    { id: 'pathology', name: 'Pathology', icon: '🩺' },
+                    { id: 'pharmacology', name: 'Pharmacology', icon: '💊' },
+                    { id: 'microbiology', name: 'Microbiology', icon: '🦠' }
+                ];
+                
+                const preferred = userPreferences.preferredSubjects || [];
+                
+                container.innerHTML = subjects.map(subject => `
+                    <label class="subject-option ${preferred.includes(subject.id) ? 'selected' : ''}">
+                        <input type="checkbox" value="${subject.id}" ${preferred.includes(subject.id) ? 'checked' : ''}>
+                        <span class="subject-icon">${subject.icon}</span>
+                        <span class="subject-name">${subject.name}</span>
+                    </label>
+                `).join('');
+                
+                // Add event listeners
+                container.querySelectorAll('.subject-option').forEach(option => {
+                    option.addEventListener('click', function() {
+                        this.classList.toggle('selected');
+                        const checkbox = this.querySelector('input');
+                        checkbox.checked = !checkbox.checked;
+                    });
+                });
+            }
+            
+            // Update devices list
+            function updateDevicesList() {
+                const container = document.getElementById('devicesList');
+                const devices = userData.devices || [];
+                
+                if (devices.length === 0) {
+                    container.innerHTML = `
+                        <div class="no-devices">
+                            <p>No devices registered yet.</p>
+                        </div>
+                    `;
+                } else {
+                    container.innerHTML = devices.map(device => `
+                        <div class="device-item ${device.isCurrent ? 'current' : ''}">
+                            <div class="device-info">
+                                <div class="device-name">${device.name}</div>
+                                <div class="device-last-active">
+                                    Last active: ${new Date(device.lastActive).toLocaleString()}
+                                </div>
+                            </div>
+                            <div class="device-actions">
+                                ${device.isCurrent ? 
+                                    '<span class="current-label">Current Device</span>' :
+                                    `<button class="btn-remove-device" data-id="${device.id}">
+                                        Remove
+                                    </button>`
+                                }
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    // Add remove device listeners
+                    container.querySelectorAll('.btn-remove-device').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const deviceId = this.dataset.id;
+                            if (confirm('Remove this device?')) {
+                                userData.devices = userData.devices.filter(d => d.id !== deviceId);
+                                localStorage.setItem('userData', JSON.stringify(userData));
+                                updateDevicesList();
+                                updateDeviceCount();
+                            }
+                        });
+                    });
+                }
+                
+                updateDeviceCount();
+            }
+            
+            // Update device count
+            function updateDeviceCount() {
+                const deviceCount = userData.devices?.length || 0;
+                document.getElementById('deviceCount').textContent = deviceCount;
+            }
+            
+            // Update data management
+            function updateDataManagement() {
+                // Update sync status
+                const lastSync = localStorage.getItem('lastSyncTime');
+                document.getElementById('lastSyncTime').textContent = lastSync ? 
+                    new Date(lastSync).toLocaleString() : 'Never';
+                
+                // Update sync preferences
+                document.getElementById('autoSync').checked = userPreferences.autoSync || false;
+                document.getElementById('syncOverMobile').checked = userPreferences.syncOverMobile || false;
+            }
+            
+            // Tab switching
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const tabId = this.dataset.tab;
+                    
+                    // Update active tab button
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Show corresponding tab content
+                    document.querySelectorAll('.tab-pane').forEach(pane => {
+                        pane.classList.remove('active');
+                    });
+                    document.getElementById(tabId + 'Tab').classList.add('active');
+                });
+            });
+            
+            // Form submissions
+            
+            // Personal info form
+            const personalInfoForm = document.getElementById('personalInfoForm');
+            personalInfoForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Get form values
+                userData.firstName = document.getElementById('firstName').value.trim();
+                userData.lastName = document.getElementById('lastName').value.trim();
+                userData.email = document.getElementById('email').value.trim();
+                userData.phone = document.getElementById('phone').value.trim();
+                userData.institution = document.getElementById('institution').value;
+                userData.course = document.getElementById('course').value.trim();
+                userData.yearOfStudy = document.getElementById('yearOfStudy').value;
+                
+                // Validate
+                if (!userData.firstName || !userData.lastName) {
+                    alert('Please enter your name');
+                    return;
+                }
+                
+                if (!userData.email || !userData.email.includes('@')) {
+                    alert('Please enter a valid email address');
+                    return;
+                }
+                
+                // Validate phone number
+                const phoneDigits = userData.phone.replace(/\D/g, '');
+                if (!(phoneDigits.length === 12 && phoneDigits.startsWith('254')) && 
+                    !(phoneDigits.length === 9 && phoneDigits.startsWith('7')) &&
+                    !(phoneDigits.length === 10 && phoneDigits.startsWith('07'))) {
+                    alert('Please enter a valid Kenyan phone number (e.g., 2547XXXXXXXX or 07XXXXXXXX)');
+                    return;
+                }
+                
+                // Format phone number
+                if (phoneDigits.length === 9 && phoneDigits.startsWith('7')) {
+                    userData.phone = '254' + phoneDigits;
+                } else if (phoneDigits.length === 10 && phoneDigits.startsWith('07')) {
+                    userData.phone = '254' + phoneDigits.substring(1);
+                }
+                
+                // Save to localStorage
+                localStorage.setItem('userData', JSON.stringify(userData));
+                
+                // Update UI
+                updateProfileHeader();
+                
+                alert('Profile updated successfully!');
+            });
+            
+            // Cancel personal info changes
+            document.getElementById('cancelPersonalBtn').addEventListener('click', function() {
+                if (confirm('Discard changes?')) {
+                    updatePersonalInfoForm();
+                }
+            });
+            
+            // Preferences form
+            const preferencesForm = document.getElementById('preferencesForm');
+            preferencesForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Get form values
+                userPreferences.autoFullscreen = document.getElementById('autoFullscreen').checked;
+                userPreferences.showTimer = document.getElementById('showTimer').checked;
+                userPreferences.soundEffects = document.getElementById('soundEffects').checked;
+                userPreferences.vibrateOnTime = document.getElementById('vibrateOnTime').checked;
+                userPreferences.dailyGoal = document.getElementById('dailyGoal').value;
+                userPreferences.studyReminders = document.getElementById('studyReminders').value;
+                userPreferences.fontSize = document.getElementById('fontSize').value;
+                userPreferences.colorScheme = document.getElementById('colorScheme').value;
+                userPreferences.animations = document.getElementById('animations').value;
+                
+                // Get preferred subjects
+                const preferredSubjects = [];
+                document.querySelectorAll('#preferredSubjects input:checked').forEach(checkbox => {
+                    preferredSubjects.push(checkbox.value);
+                });
+                userPreferences.preferredSubjects = preferredSubjects;
+                
+                // Save to localStorage
+                localStorage.setItem('userPreferences', JSON.stringify(userPreferences));
+                
+                // Apply theme if changed
+                if (userPreferences.colorScheme === 'dark') {
+                    document.body.classList.add('dark-theme');
+                    localStorage.setItem('theme', 'dark');
+                } else if (userPreferences.colorScheme === 'light') {
+                    document.body.classList.remove('dark-theme');
+                    localStorage.setItem('theme', 'light');
+                }
+                
+                alert('Preferences saved successfully!');
+            });
+            
+            // Reset preferences
+            document.getElementById('resetPrefsBtn').addEventListener('click', function() {
+                if (confirm('Reset all preferences to defaults?')) {
+                    userPreferences = {
+                        autoFullscreen: true,
+                        showTimer: true,
+                        soundEffects: false,
+                        vibrateOnTime: false,
+                        dailyGoal: '25',
+                        preferredSubjects: ['anatomy', 'physiology', 'biochemistry'],
+                        studyReminders: 'none',
+                        fontSize: 'medium',
+                        colorScheme: 'system',
+                        animations: 'full',
+                        autoSync: true,
+                        syncOverMobile: false
+                    };
+                    
+                    localStorage.setItem('userPreferences', JSON.stringify(userPreferences));
+                    updatePreferencesForm();
+                    alert('Preferences reset to defaults!');
+                }
+            });
+            
+            // Change password form
+            const changePasswordForm = document.getElementById('changePasswordForm');
+            changePasswordForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const currentPassword = document.getElementById('currentPassword').value;
+                const newPassword = document.getElementById('newPassword').value;
+                const confirmPassword = document.getElementById('confirmPassword').value;
+                
+                // Validate
+                if (!currentPassword) {
+                    alert('Please enter your current password');
+                    return;
+                }
+                
+                if (newPassword.length < 8) {
+                    alert('New password must be at least 8 characters long');
+                    return;
+                }
+                
+                if (newPassword !== confirmPassword) {
+                    alert('New passwords do not match');
+                    return;
+                }
+                
+                // In a real app, this would call an API
+                // For demo, just show success message
+                alert('Password changed successfully!');
+                
+                // Clear form
+                changePasswordForm.reset();
+                document.getElementById('passwordStrength').querySelector('.strength-bar').style.width = '0%';
+                document.getElementById('passwordMatch').textContent = '';
+            });
+            
+            // Password strength checker
+            const newPasswordInput = document.getElementById('newPassword');
+            const passwordStrength = document.getElementById('passwordStrength');
+            const strengthBar = passwordStrength.querySelector('.strength-bar');
+            const strengthText = passwordStrength.querySelector('.strength-text');
+            
+            newPasswordInput.addEventListener('input', function() {
+                const password = this.value;
+                let strength = 0;
+                
+                if (password.length >= 8) strength += 25;
+                if (password.length >= 12) strength += 15;
+                if (/[A-Z]/.test(password)) strength += 20;
+                if (/[a-z]/.test(password)) strength += 20;
+                if (/[0-9]/.test(password)) strength += 20;
+                if (/[^A-Za-z0-9]/.test(password)) strength += 20;
+                
+                strength = Math.min(strength, 100);
+                strengthBar.style.width = strength + '%';
+                
+                if (strength < 40) {
+                    strengthBar.style.backgroundColor = '#f44336';
+                    strengthText.textContent = 'Weak';
+                } else if (strength < 70) {
+                    strengthBar.style.backgroundColor = '#ff9800';
+                    strengthText.textContent = 'Fair';
+                } else if (strength < 90) {
+                    strengthBar.style.backgroundColor = '#4caf50';
+                    strengthText.textContent = 'Good';
+                } else {
+                    strengthBar.style.backgroundColor = '#2196f3';
+                    strengthText.textContent = 'Strong';
+                }
+            });
+            
+            // Password confirmation
+            const confirmPasswordInput = document.getElementById('confirmPassword');
+            const passwordMatch = document.getElementById('passwordMatch');
+            
+            function checkPasswordMatch() {
+                const password = newPasswordInput.value;
+                const confirm = confirmPasswordInput.value;
+                
+                if (!password || !confirm) {
+                    passwordMatch.textContent = '';
+                    return;
+                }
+                
+                if (password === confirm) {
+                    passwordMatch.textContent = '✓ Passwords match';
+                    passwordMatch.style.color = '#4caf50';
+                } else {
+                    passwordMatch.textContent = '✗ Passwords do not match';
+                    passwordMatch.style.color = '#f44336';
+                }
+            }
+            
+            newPasswordInput.addEventListener('input', checkPasswordMatch);
+            confirmPasswordInput.addEventListener('input', checkPasswordMatch);
+            
+            // Security buttons
+            document.getElementById('enable2FABtn').addEventListener('click', function() {
+                alert('Two-factor authentication setup would be implemented here.');
+            });
+            
+            document.getElementById('setupQuestionsBtn').addEventListener('click', function() {
+                alert('Security questions setup would be implemented here.');
+            });
+            
+            document.getElementById('logoutAllBtn').addEventListener('click', function() {
+                if (confirm('Logout from all devices?')) {
+                    // Clear all sessions except current
+                    alert('Logged out from all other devices.');
+                }
+            });
+            
+            document.getElementById('viewSessionsBtn').addEventListener('click', function() {
+                alert('Active sessions would be displayed here.');
+            });
+            
+            // Device buttons
+            document.getElementById('addDeviceBtn').addEventListener('click', function() {
+                const deviceCount = userData.devices?.length || 0;
+                if (deviceCount >= 3) {
+                    alert('Device limit reached (3 devices maximum). Remove a device to add a new one.');
+                    return;
+                }
+                
+                const deviceName = navigator.userAgent.substring(0, 50);
+                const newDevice = {
+                    id: 'device_' + Date.now(),
+                    name: deviceName,
+                    lastActive: new Date().toISOString(),
+                    isCurrent: true
+                };
+                
+                // Mark all other devices as not current
+                if (userData.devices) {
+                    userData.devices.forEach(device => {
+                        device.isCurrent = false;
+                    });
+                } else {
+                    userData.devices = [];
+                }
+                
+                userData.devices.push(newDevice);
+                localStorage.setItem('userData', JSON.stringify(userData));
+                
+                updateDevicesList();
+                alert('Current device added successfully!');
+            });
+            
+            document.getElementById('refreshDevicesBtn').addEventListener('click', function() {
+                updateDevicesList();
+                alert('Device list refreshed!');
+            });
+            
+            // Data export buttons
+            document.getElementById('exportProfileBtn').addEventListener('click', function() {
+                exportData('profile');
+            });
+            
+            document.getElementById('exportExamDataBtn').addEventListener('click', function() {
+                exportData('exams');
+            });
+            
+            document.getElementById('exportAllDataBtn').addEventListener('click', function() {
+                exportData('all');
+            });
+            
+            // Export data function
+            function exportData(type) {
+                let data, filename;
+                
+                switch(type) {
+                    case 'profile':
+                        data = userData;
+                        filename = `profile_data_${new Date().toISOString().split('T')[0]}.json`;
+                        break;
+                    case 'exams':
+                        const exams = JSON.parse(localStorage.getItem('previousExams') || '[]');
+                        data = exams;
+                        filename = `exam_history_${new Date().toISOString().split('T')[0]}.json`;
+                        break;
+                    case 'all':
+                        data = {
+                            profile: userData,
+                            preferences: userPreferences,
+                            exams: JSON.parse(localStorage.getItem('previousExams') || '[]'),
+                            subscription: JSON.parse(localStorage.getItem('subscription') || '{}')
+                        };
+                        filename = `all_data_${new Date().toISOString().split('T')[0]}.json`;
+                        break;
+                }
+                
+                const dataStr = JSON.stringify(data, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                
+                alert('Data exported successfully!');
+            }
+            
+            // Sync button
+            document.getElementById('syncNowBtn').addEventListener('click', function() {
+                const btn = this;
+                const originalText = btn.textContent;
+                
+                btn.disabled = true;
+                btn.textContent = 'Syncing...';
+                
+                // Simulate sync
+                setTimeout(() => {
+                    const now = new Date().toISOString();
+                    localStorage.setItem('lastSyncTime', now);
+                    updateDataManagement();
+                    
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                    alert('Sync completed successfully!');
+                }, 1500);
+            });
+            
+            // Sync preferences
+            document.getElementById('autoSync').addEventListener('change', function() {
+                userPreferences.autoSync = this.checked;
+                localStorage.setItem('userPreferences', JSON.stringify(userPreferences));
+            });
+            
+            document.getElementById('syncOverMobile').addEventListener('change', function() {
+                userPreferences.syncOverMobile = this.checked;
+                localStorage.setItem('userPreferences', JSON.stringify(userPreferences));
+            });
+            
+            // Delete account
+            document.getElementById('deleteAccountBtn').addEventListener('click', function() {
+                if (confirm('ARE YOU SURE? This will permanently delete your account and all data.')) {
+                    if (prompt('Type "DELETE" to confirm:') === 'DELETE') {
+                        // Clear all user data
+                        localStorage.removeItem('userData');
+                        localStorage.removeItem('userPreferences');
+                        localStorage.removeItem('previousExams');
+                        localStorage.removeItem('syncedExams');
+                        localStorage.removeItem('subscription');
+                        localStorage.removeItem('accessToken');
+                        localStorage.removeItem('userData');
+                        localStorage.removeItem('tokenExpiry');
+                        
+                        alert('Account deleted. You will now be logged out.');
+                        window.location.href = 'index.html';
+                    }
+                }
+            });
+            
+            // Quick action buttons
+            document.getElementById('upgradePlanBtn').addEventListener('click', function() {
+                window.location.href = 'subscription.html';
+            });
+            
+            document.getElementById('contactSupportBtn').addEventListener('click', function() {
+                alert('Contact support at felixappbuilder@gmail.com or call 0746834527');
+            });
+            
+            document.getElementById('rateAppBtn').addEventListener('click', function() {
+                alert('Thank you for considering to rate our app!');
+            });
+            
+            document.getElementById('shareAppBtn').addEventListener('click', function() {
+                if (navigator.share) {
+                    navigator.share({
+                        title: 'Medical Exam Room Pro',
+                        text: 'Check out this amazing medical exam preparation app!',
+                        url: window.location.origin
+                    });
+                } else {
+                    alert('Share the app with your friends: ' + window.location.origin);
+                }
+            });
+            
+            document.getElementById('logoutBtn').addEventListener('click', function() {
+                if (confirm('Are you sure you want to logout?')) {
+                    // Clear authentication data
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('userData');
+                    localStorage.removeItem('tokenExpiry');
+                    
+                    alert('Logged out successfully');
+                    window.location.href = 'index.html';
+                }
+            });
+            
+            // Change avatar
+            document.getElementById('changeAvatarBtn').addEventListener('click', function() {
+                const avatars = ['👤', '👨‍⚕️', '👩‍⚕️', '🧑‍🎓', '👨‍🎓', '👩‍🎓', '🦸', '🦸‍♂️', '🦸‍♀️'];
+                const currentIndex = avatars.indexOf(userData.avatar || '👤');
+                const nextIndex = (currentIndex + 1) % avatars.length;
+                
+                userData.avatar = avatars[nextIndex];
+                localStorage.setItem('userData', JSON.stringify(userData));
+                updateProfileHeader();
+            });
+            
+            // Initialize
+            loadUserData();
+            
+            // Initialize app state
+            if (typeof initApp === 'function') {
+                initApp();
+            }
+        });
+    </script>
+</body>
+</html>

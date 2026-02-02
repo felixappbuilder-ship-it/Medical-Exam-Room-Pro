@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Exam Room Pro - Premium Medical Exam Preparation</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Common CSS -->
+    <link rel="stylesheet" href="css/common.css">
+    
+    <!-- Page-specific CSS -->
+    <link rel="stylesheet" href="css/index.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="images/logo.png" type="image/png">
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(function(registration) {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch(function(error) {
+                        console.log('Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+</head>
+<body>
+    <!-- Header with Logo and Navigation -->
+    <header class="header">
+        <div class="header-container">
+            <div class="logo">
+                <img src="images/logo.png" alt="Medical Exam Room Pro Logo" class="logo-image">
+                <h1 class="logo-text">Medical Exam Room <span class="logo-highlight">Pro</span></h1>
+            </div>
+            
+            <div class="header-actions">
+                <!-- Theme Toggle -->
+                <button class="theme-toggle" id="themeToggle">
+                    <span class="theme-icon">🌙</span>
+                    <span class="theme-text">Dark Mode</span>
+                </button>
+                
+                <!-- Download App Button -->
+                <button class="btn-download" id="downloadBtn">
+                    <span class="download-icon">📱</span>
+                    <span class="download-text">Install App</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Hero Section -->
+    <main class="main-content">
+        <section class="hero-section">
+            <div class="hero-content">
+                <h2 class="hero-title">Master Your Medical Exams</h2>
+                <p class="hero-subtitle">5,000+ Questions • 100% Offline • Kenyan Medical Curriculum</p>
+                
+                <div class="hero-features">
+                    <div class="feature">
+                        <span class="feature-icon">📚</span>
+                        <span class="feature-text">8 Core Subjects</span>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">⏱️</span>
+                        <span class="feature-text">Adaptive Timing</span>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">💰</span>
+                        <span class="feature-text">M-Pesa Payments</span>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">🔒</span>
+                        <span class="feature-text">Anti-Cheating</span>
+                    </div>
+                </div>
+                
+                <div class="hero-buttons">
+                    <button class="btn-primary" id="getStartedBtn">Get Started</button>
+                    <button class="btn-secondary" id="loginBtn">Login</button>
+                </div>
+                
+                <div class="trial-info">
+                    <p>🎁 <strong>3-Hour Free Trial</strong> - Test all features</p>
+                </div>
+            </div>
+            
+            <div class="hero-image">
+                <div class="app-mockup">
+                    <div class="mockup-screen">
+                        <div class="mockup-header">
+                            <span class="mockup-subject">Anatomy</span>
+                            <span class="mockup-timer">0:21</span>
+                        </div>
+                        <div class="mockup-question">
+                            <p>Which bone forms the forehead?</p>
+                            <div class="mockup-options">
+                                <div class="option">A. Parietal</div>
+                                <div class="option">B. Temporal</div>
+                                <div class="option correct">C. Frontal</div>
+                                <div class="option">D. Occipital</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="features-section">
+            <h3 class="section-title">Why Choose Medical Exam Room Pro?</h3>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-card-icon">🇰🇪</div>
+                    <h4>Kenyan-Focused</h4>
+                    <p>M-Pesa payments, KES pricing, local medical curriculum tailored for Kenyan students.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-card-icon">📶</div>
+                    <h4>100% Offline</h4>
+                    <p>Study anywhere - bus, village, anytime. No internet required for exams.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-card-icon">⚡</div>
+                    <h4>Smart Exam System</h4>
+                    <p>Adaptive timing (21-54 secs), intelligent question selection, no repetition.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-card-icon">📊</div>
+                    <h4>Detailed Analytics</h4>
+                    <p>Track progress, identify weak areas, get personalized recommendations.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Subjects Preview -->
+        <section class="subjects-section">
+            <h3 class="section-title">8 Core Medical Subjects</h3>
+            
+            <div class="subjects-grid">
+                <div class="subject-card" data-subject="anatomy">
+                    <div class="subject-icon">🦴</div>
+                    <h4>Anatomy</h4>
+                    <p class="question-count">720 Questions</p>
+                </div>
+                
+                <div class="subject-card" data-subject="physiology">
+                    <div class="subject-icon">❤️</div>
+                    <h4>Physiology</h4>
+                    <p class="question-count">1,150 Questions</p>
+                </div>
+                
+                <div class="subject-card" data-subject="biochemistry">
+                    <div class="subject-icon">🧪</div>
+                    <h4>Biochemistry</h4>
+                    <p class="question-count">810 Questions</p>
+                </div>
+                
+                <div class="subject-card" data-subject="histology">
+                    <div class="subject-icon">🔬</div>
+                    <h4>Histology</h4>
+                    <p class="question-count">450 Questions</p>
+                </div>
+                
+                <div class="subject-card" data-subject="embryology">
+                    <div class="subject-icon">👶</div>
+                    <h4>Embryology</h4>
+                    <p class="question-count">390 Questions</p>
+                </div>
+                
+                <div class="subject-card" data-subject="pathology">
+                    <div class="subject-icon">🩺</div>
+                    <h4>Pathology</h4>
+                    <p class="question-count">540 Questions</p>
+                </div>
+                
+                <div class="subject-card" data-subject="pharmacology">
+                    <div class="subject-icon">💊</div>
+                    <h4>Pharmacology</h4>
+                    <p class="question-count">460 Questions</p>
+                </div>
+                
+                <div class="subject-card" data-subject="microbiology">
+                    <div class="subject-icon">🦠</div>
+                    <h4>Microbiology</h4>
+                    <p class="question-count">430 Questions</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pricing Section -->
+        <section class="pricing-section">
+            <h3 class="section-title">Affordable Plans for Every Student</h3>
+            
+            <div class="pricing-cards">
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h4>Free Trial</h4>
+                        <div class="price">KES 0</div>
+                    </div>
+                    <div class="pricing-features">
+                        <div class="feature-item">✓ 3 Hours Full Access</div>
+                        <div class="feature-item">✓ All 8 Subjects</div>
+                        <div class="feature-item">✓ All Exam Modes</div>
+                        <div class="feature-item">✓ Basic Analytics</div>
+                    </div>
+                    <button class="btn-pricing" id="tryFreeBtn">Try Free</button>
+                </div>
+                
+                <div class="pricing-card featured">
+                    <div class="pricing-badge">Most Popular</div>
+                    <div class="pricing-header">
+                        <h4>Monthly</h4>
+                        <div class="price">KES 350</div>
+                        <div class="price-period">per month</div>
+                    </div>
+                    <div class="pricing-features">
+                        <div class="feature-item">✓ Full Access 30 Days</div>
+                        <div class="feature-item">✓ All 8 Subjects</div>
+                        <div class="feature-item">✓ Advanced Analytics</div>
+                        <div class="feature-item">✓ Progress Reports</div>
+                    </div>
+                    <button class="btn-pricing featured" id="subscribeMonthlyBtn">Subscribe</button>
+                </div>
+                
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h4>Yearly</h4>
+                        <div class="price">KES 2,100</div>
+                        <div class="price-period">per year</div>
+                        <div class="price-save">Save KES 1,100</div>
+                    </div>
+                    <div class="pricing-features">
+                        <div class="feature-item">✓ Full Access 365 Days</div>
+                        <div class="feature-item">✓ All 8 Subjects</div>
+                        <div class="feature-item">✓ Premium Analytics</div>
+                        <div class="feature-item">✓ Priority Support</div>
+                    </div>
+                    <button class="btn-pricing" id="subscribeYearlyBtn">Subscribe</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h5>Medical Exam Room Pro</h5>
+                <p>Premium medical exam preparation for Kenyan medical students.</p>
+                <p class="footer-contact">Email: felixappbuilder@gmail.com</p>
+                <p class="footer-contact">Phone: 0746834527</p>
+            </div>
+            
+            <div class="footer-section">
+                <h5>Quick Links</h5>
+                <a href="#about" class="footer-link">About</a>
+                <a href="#subjects" class="footer-link">Subjects</a>
+                <a href="#pricing" class="footer-link">Pricing</a>
+                <a href="#faq" class="footer-link">FAQ</a>
+            </div>
+            
+            <div class="footer-section">
+                <h5>Legal</h5>
+                <a href="#privacy" class="footer-link">Privacy Policy</a>
+                <a href="#terms" class="footer-link">Terms of Service</a>
+                <a href="#refund" class="footer-link">Refund Policy</a>
+            </div>
+        </div>
+        
+        <div class="footer-bottom">
+            <p>© 2024 Medical Exam Room Pro. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript Files -->
+    <script src="scripts/app.js"></script>
+    <script src="scripts/ui.js"></script>
+    <script src="scripts/utils.js"></script>
+    <script src="scripts/router.js"></script>
+    
+    <script>
+        // Initialize theme
+        document.addEventListener('DOMContentLoaded', function() {
+            // Theme toggle functionality
+            const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = themeToggle.querySelector('.theme-icon');
+            const themeText = themeToggle.querySelector('.theme-text');
+            
+            // Check saved theme or default to light
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.classList.toggle('dark-theme', savedTheme === 'dark');
+            
+            if (savedTheme === 'dark') {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = 'Light Mode';
+            }
+            
+            themeToggle.addEventListener('click', function() {
+                const isDark = document.body.classList.toggle('dark-theme');
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                
+                if (isDark) {
+                    themeIcon.textContent = '☀️';
+                    themeText.textContent = 'Light Mode';
+                } else {
+                    themeIcon.textContent = '🌙';
+                    themeText.textContent = 'Dark Mode';
+                }
+            });
+            
+            // Navigation buttons
+            const getStartedBtn = document.getElementById('getStartedBtn');
+            const loginBtn = document.getElementById('loginBtn');
+            const tryFreeBtn = document.getElementById('tryFreeBtn');
+            const subscribeMonthlyBtn = document.getElementById('subscribeMonthlyBtn');
+            const subscribeYearlyBtn = document.getElementById('subscribeYearlyBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            
+            // Check if user is logged in from localStorage
+            const userToken = localStorage.getItem('accessToken');
+            const userData = localStorage.getItem('userData');
+            
+            if (userToken && userData) {
+                getStartedBtn.textContent = 'Continue Studying';
+                loginBtn.textContent = 'Profile';
+            }
+            
+            // Navigation handlers
+            getStartedBtn.addEventListener('click', function() {
+                if (userToken && userData) {
+                    // Navigate to subjects page
+                    window.location.href = 'subjects.html';
+                } else {
+                    // Navigate to welcome page
+                    window.location.href = 'welcome.html';
+                }
+            });
+            
+            loginBtn.addEventListener('click', function() {
+                if (userToken && userData) {
+                    window.location.href = 'profile.html';
+                } else {
+                    window.location.href = 'login.html';
+                }
+            });
+            
+            tryFreeBtn.addEventListener('click', function() {
+                if (userToken && userData) {
+                    window.location.href = 'free-trial.html';
+                } else {
+                    window.location.href = 'welcome.html';
+                }
+            });
+            
+            subscribeMonthlyBtn.addEventListener('click', function() {
+                if (userToken && userData) {
+                    window.location.href = 'subscription.html?plan=monthly';
+                } else {
+                    window.location.href = 'welcome.html';
+                }
+            });
+            
+            subscribeYearlyBtn.addEventListener('click', function() {
+                if (userToken && userData) {
+                    window.location.href = 'subscription.html?plan=yearly';
+                } else {
+                    window.location.href = 'welcome.html';
+                }
+            });
+            
+            // PWA Installation
+            downloadBtn.addEventListener('click', function() {
+                // Check if PWA is installable
+                if (window.matchMedia('(display-mode: standalone)').matches) {
+                    alert('App is already installed!');
+                } else {
+                    // Show installation prompt if available
+                    if (window.deferredPrompt) {
+                        window.deferredPrompt.prompt();
+                        window.deferredPrompt.userChoice.then((choiceResult) => {
+                            if (choiceResult.outcome === 'accepted') {
+                                console.log('User accepted the install prompt');
+                            } else {
+                                console.log('User dismissed the install prompt');
+                            }
+                            window.deferredPrompt = null;
+                        });
+                    } else {
+                        // If deferred prompt is not available, show instructions
+                        alert('To install the app:\n1. Click the menu button (⋮)\n2. Select "Install app" or "Add to Home Screen"');
+                    }
+                }
+            });
+            
+            // Initialize app state
+            if (typeof initApp === 'function') {
+                initApp();
+            }
+        });
+    </script>
+</body>
+</html>

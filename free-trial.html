@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Free Trial - Medical Exam Room Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/free-trial.css">
+    <link rel="icon" href="images/logo.png" type="image/png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('service-worker.js');
+            });
+        }
+    </script>
+</head>
+<body>
+    <header class="header">
+        <div class="header-container">
+            <div class="logo">
+                <img src="images/logo.png" alt="Logo" class="logo-image">
+                <h1 class="logo-text">Free Trial</h1>
+            </div>
+            
+            <div class="header-actions">
+                <button class="theme-toggle" id="themeToggle">
+                    <span class="theme-icon">🌙</span>
+                    <span class="theme-text">Dark Mode</span>
+                </button>
+                
+                <button class="btn-back" id="backBtn">
+                    <span class="back-icon">←</span>
+                    <span class="back-text">Back</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="trial-container">
+            <div class="trial-header">
+                <div class="trial-icon">🎁</div>
+                <h2>Start Your 3-Hour Free Trial</h2>
+                <p class="trial-subtitle">Full access to all features - No payment required</p>
+            </div>
+            
+            <div class="trial-content">
+                <div class="trial-card">
+                    <h3>What's Included</h3>
+                    <div class="trial-features">
+                        <div class="feature">
+                            <span class="feature-icon">✓</span>
+                            <span class="feature-text">Access to all 8 subjects</span>
+                        </div>
+                        <div class="feature">
+                            <span class="feature-icon">✓</span>
+                            <span class="feature-text">5,000+ practice questions</span>
+                        </div>
+                        <div class="feature">
+                            <span class="feature-icon">✓</span>
+                            <span class="feature-text">All exam modes (Timed, Practice, Review)</span>
+                        </div>
+                        <div class="feature">
+                            <span class="feature-icon">✓</span>
+                            <span class="feature-text">100% offline functionality</span>
+                        </div>
+                        <div class="feature">
+                            <span class="feature-icon">✓</span>
+                            <span class="feature-text">Basic performance analytics</span>
+                        </div>
+                        <div class="feature">
+                            <span class="feature-icon">✓</span>
+                            <span class="feature-text">Weak area identification</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="trial-card warning">
+                    <h3>⚠️ Important Notice</h3>
+                    <div class="warning-content">
+                        <p><strong>One trial per device:</strong> Each device can only use the free trial once.</p>
+                        <p><strong>Strict anti-cheating:</strong> Any time manipulation will permanently lock your account.</p>
+                        <p><strong>No extensions:</strong> Trial cannot be extended or restarted.</p>
+                        <p><strong>Progress saved:</strong> Your progress will be saved if you subscribe later.</p>
+                    </div>
+                </div>
+                
+                <div class="trial-timer" id="trialTimer" style="display: none;">
+                    <h3>⏳ Trial Countdown</h3>
+                    <div class="timer-display">
+                        <div class="time-unit">
+                            <div class="time-value" id="hours">03</div>
+                            <div class="time-label">Hours</div>
+                        </div>
+                        <div class="time-separator">:</div>
+                        <div class="time-unit">
+                            <div class="time-value" id="minutes">00</div>
+                            <div class="time-label">Minutes</div>
+                        </div>
+                        <div class="time-separator">:</div>
+                        <div class="time-unit">
+                            <div class="time-value" id="seconds">00</div>
+                            <div class="time-label">Seconds</div>
+                        </div>
+                    </div>
+                    <div class="timer-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="trialProgress"></div>
+                        </div>
+                        <div class="progress-text" id="progressText">100% remaining</div>
+                    </div>
+                </div>
+                
+                <div class="device-check" id="deviceCheck">
+                    <h3>Device Verification</h3>
+                    <div class="device-info">
+                        <div class="info-item">
+                            <span class="info-label">Device ID:</span>
+                            <span class="info-value" id="deviceId">Checking...</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Trial Status:</span>
+                            <span class="info-value" id="trialStatus">Checking...</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Time Verification:</span>
+                            <span class="info-value" id="timeStatus">Checking...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="trial-actions">
+                <button class="btn-primary btn-large" id="startTrialBtn" disabled>
+                    <span class="btn-icon">🚀</span>
+                    <span class="btn-text">Start 3-Hour Free Trial</span>
+                </button>
+                
+                <button class="btn-secondary btn-large" id="subscribeInsteadBtn">
+                    <span class="btn-icon">💳</span>
+                    <span class="btn-text">Subscribe Instead</span>
+                </button>
+            </div>
+            
+            <div class="security-notice">
+                <div class="security-icon">🔒</div>
+                <div class="security-content">
+                    <h4>Security & Anti-Cheating System Active</h4>
+                    <p>This app has zero-tolerance for time manipulation. Any attempt to change your device time will:</p>
+                    <ul>
+                        <li>Immediately lock your account</li>
+                        <li>Prevent any future access</li>
+                        <li>Require contacting support to unlock</li>
+                    </ul>
+                    <p class="warning"><strong>Warning:</strong> Do not change your device time while using this app.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer-minimal">
+        <p>Need help? Contact: felixappbuilder@gmail.com | 0746834527</p>
+        <p>© 2024 Medical Exam Room Pro</p>
+    </footer>
+
+    <script src="scripts/app.js"></script>
+    <script src="scripts/subscription.js"></script>
+    <script src="scripts/security.js"></script>
+    <script src="scripts/ui.js"></script>
+    <script src="scripts/utils.js"></script>
+    <script src="scripts/router.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Theme toggle
+            const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = themeToggle.querySelector('.theme-icon');
+            const themeText = themeToggle.querySelector('.theme-text');
+            
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.classList.toggle('dark-theme', savedTheme === 'dark');
+            
+            if (savedTheme === 'dark') {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = 'Light Mode';
+            }
+            
+            themeToggle.addEventListener('click', function() {
+                const isDark = document.body.classList.toggle('dark-theme');
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                
+                if (isDark) {
+                    themeIcon.textContent = '☀️';
+                    themeText.textContent = 'Light Mode';
+                } else {
+                    themeIcon.textContent = '🌙';
+                    themeText.textContent = 'Dark Mode';
+                }
+            });
+            
+            // Navigation
+            const backBtn = document.getElementById('backBtn');
+            backBtn.addEventListener('click', function() {
+                window.history.back() || (window.location.href = 'welcome.html');
+            });
+            
+            // Generate device fingerprint
+            function generateDeviceFingerprint() {
+                const components = [
+                    navigator.userAgent,
+                    navigator.language,
+                    navigator.platform,
+                    screen.width + 'x' + screen.height,
+                    new Date().getTimezoneOffset(),
+                    localStorage.getItem('deviceId') || 'default'
+                ].join('|');
+                
+                let hash = 0;
+                for (let i = 0; i < components.length; i++) {
+                    const char = components.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash;
+                }
+                
+                const deviceId = 'device_' + Math.abs(hash).toString(16);
+                localStorage.setItem('deviceId', deviceId);
+                return deviceId;
+            }
+            
+            // Check trial eligibility
+            function checkTrialEligibility() {
+                const deviceId = generateDeviceFingerprint();
+                const trialUsed = localStorage.getItem('trialUsed_' + deviceId);
+                const currentSubscription = JSON.parse(localStorage.getItem('subscription') || '{}');
+                
+                document.getElementById('deviceId').textContent = deviceId.substring(0, 12) + '...';
+                
+                // Check if trial already used
+                if (trialUsed === 'true') {
+                    document.getElementById('trialStatus').innerHTML = '<span class="status-bad">✗ Already Used</span>';
+                    document.getElementById('startTrialBtn').disabled = true;
+                    document.getElementById('startTrialBtn').innerHTML = '<span class="btn-icon">❌</span><span class="btn-text">Trial Already Used on This Device</span>';
+                    return false;
+                }
+                
+                // Check if already has active subscription
+                if (currentSubscription.isActive && currentSubscription.expiryDate && 
+                    new Date(currentSubscription.expiryDate) > new Date()) {
+                    document.getElementById('trialStatus').innerHTML = '<span class="status-good">✓ Already Subscribed</span>';
+                    document.getElementById('startTrialBtn').disabled = true;
+                    document.getElementById('startTrialBtn').innerHTML = '<span class="btn-icon">✓</span><span class="btn-text">You Already Have Active Subscription</span>';
+                    return false;
+                }
+                
+                // Check time verification
+                const serverTime = Date.now(); // In production, this would come from server
+                const clientTime = Date.now();
+                const timeDiff = Math.abs(serverTime - clientTime);
+                
+                if (timeDiff > 300000) { // 5 minutes tolerance
+                    document.getElementById('timeStatus').innerHTML = '<span class="status-bad">✗ Time Not Verified</span>';
+                    document.getElementById('startTrialBtn').disabled = true;
+                    return false;
+                } else {
+                    document.getElementById('timeStatus').innerHTML = '<span class="status-good">✓ Time Verified</span>';
+                }
+                
+                document.getElementById('trialStatus').innerHTML = '<span class="status-good">✓ Eligible</span>';
+                document.getElementById('startTrialBtn').disabled = false;
+                return true;
+            }
+            
+            // Start trial
+            const startTrialBtn = document.getElementById('startTrialBtn');
+            const subscribeInsteadBtn = document.getElementById('subscribeInsteadBtn');
+            
+            startTrialBtn.addEventListener('click', function() {
+                if (!checkTrialEligibility()) {
+                    alert('You are not eligible for free trial on this device.');
+                    return;
+                }
+                
+                // Set trial start time
+                const trialStartTime = Date.now();
+                const trialEndTime = trialStartTime + (3 * 60 * 60 * 1000); // 3 hours
+                
+                // Save trial data
+                localStorage.setItem('trialStartTime', trialStartTime.toString());
+                localStorage.setItem('trialEndTime', trialEndTime.toString());
+                localStorage.setItem('trialUsed_' + localStorage.getItem('deviceId'), 'true');
+                
+                // Create subscription record
+                const subscription = {
+                    plan: 'trial',
+                    isActive: true,
+                    expiryDate: new Date(trialEndTime).toISOString(),
+                    trial: true,
+                    startedAt: new Date(trialStartTime).toISOString()
+                };
+                
+                localStorage.setItem('subscription', JSON.stringify(subscription));
+                
+                // Show success and start countdown
+                alert('🎉 Free trial activated! You now have 3 hours of full access.');
+                showTrialCountdown(trialStartTime, trialEndTime);
+            });
+            
+            // Show trial countdown
+            function showTrialCountdown(startTime, endTime) {
+                document.getElementById('trialTimer').style.display = 'block';
+                document.getElementById('deviceCheck').style.display = 'none';
+                startTrialBtn.style.display = 'none';
+                subscribeInsteadBtn.style.display = 'none';
+                
+                // Start countdown timer
+                function updateCountdown() {
+                    const now = Date.now();
+                    const remaining = Math.max(0, endTime - now);
+                    
+                    if (remaining <= 0) {
+                        // Trial expired
+                        clearInterval(countdownInterval);
+                        document.getElementById('hours').textContent = '00';
+                        document.getElementById('minutes').textContent = '00';
+                        document.getElementById('seconds').textContent = '00';
+                        document.getElementById('trialProgress').style.width = '0%';
+                        document.getElementById('progressText').textContent = 'Trial expired';
+                        
+                        // Update subscription status
+                        const subscription = JSON.parse(localStorage.getItem('subscription') || '{}');
+                        subscription.isActive = false;
+                        localStorage.setItem('subscription', JSON.stringify(subscription));
+                        
+                        // Show expired message
+                        setTimeout(function() {
+                            alert('Your free trial has expired. Please subscribe to continue.');
+                            window.location.href = 'subscription.html';
+                        }, 1000);
+                        
+                        return;
+                    }
+                    
+                    // Calculate time units
+                    const hours = Math.floor(remaining / (1000 * 60 * 60));
+                    const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                    
+                    // Update display
+                    document.getElementById('hours').textContent = hours.toString().padStart(2, '0');
+                    document.getElementById('minutes').textContent = minutes.toString().padStart(2, '0');
+                    document.getElementById('seconds').textContent = seconds.toString().padStart(2, '0');
+                    
+                    // Update progress bar
+                    const totalDuration = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+                    const progress = (remaining / totalDuration) * 100;
+                    document.getElementById('trialProgress').style.width = `${progress}%`;
+                    document.getElementById('progressText').textContent = `${Math.round(progress)}% remaining`;
+                    
+                    // Change color as time runs low
+                    if (hours === 0 && minutes < 30) {
+                        document.getElementById('trialProgress').style.backgroundColor = '#ff9800'; // Orange
+                    }
+                    if (hours === 0 && minutes < 10) {
+                        document.getElementById('trialProgress').style.backgroundColor = '#f44336'; // Red
+                    }
+                }
+                
+                // Update immediately and every second
+                updateCountdown();
+                const countdownInterval = setInterval(updateCountdown, 1000);
+                
+                // Show continue button
+                const continueBtn = document.createElement('button');
+                continueBtn.className = 'btn-primary btn-large';
+                continueBtn.innerHTML = '<span class="btn-icon">🚀</span><span class="btn-text">Continue to App</span>';
+                continueBtn.addEventListener('click', function() {
+                    window.location.href = 'subjects.html';
+                });
+                
+                document.querySelector('.trial-actions').appendChild(continueBtn);
+            }
+            
+            // Subscribe instead
+            subscribeInsteadBtn.addEventListener('click', function() {
+                window.location.href = 'subscription.html';
+            });
+            
+            // Check for existing trial
+            const existingTrialEnd = localStorage.getItem('trialEndTime');
+            if (existingTrialEnd && parseInt(existingTrialEnd) > Date.now()) {
+                // Trial is still active
+                showTrialCountdown(
+                    parseInt(localStorage.getItem('trialStartTime') || Date.now()),
+                    parseInt(existingTrialEnd)
+                );
+            } else {
+                // Check eligibility for new trial
+                checkTrialEligibility();
+            }
+            
+            // Initialize app state
+            if (typeof initApp === 'function') {
+                initApp();
+            }
+        });
+    </script>
+</body>
+</html>

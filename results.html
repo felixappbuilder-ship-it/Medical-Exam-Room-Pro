@@ -1,0 +1,1588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam Results - Medical Exam Room Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/results.css">
+    <link rel="icon" href="images/logo.png" type="image/png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('service-worker.js');
+            });
+        }
+    </script>
+</head>
+<body>
+    <!-- Three Dots Menu (Hamburger Menu) -->
+    <div class="hamburger-menu" id="hamburgerMenu">
+        <button class="hamburger-btn" id="hamburgerBtn">
+            <span class="hamburger-icon">☰</span>
+        </button>
+        <div class="hamburger-content" id="hamburgerContent">
+            <div class="menu-header">
+                <h3>Results Menu</h3>
+                <button class="close-menu" id="closeMenu">&times;</button>
+            </div>
+            <div class="menu-items">
+                <a href="subjects.html" class="menu-item">
+                    <span class="menu-icon">📚</span>
+                    <span class="menu-text">Subjects</span>
+                </a>
+                <a href="performance.html" class="menu-item">
+                    <span class="menu-icon">📊</span>
+                    <span class="menu-text">Performance Analytics</span>
+                </a>
+                <a href="profile.html" class="menu-item">
+                    <span class="menu-icon">👤</span>
+                    <span class="menu-text">Profile</span>
+                </a>
+                <button class="menu-item" id="menuSync">
+                    <span class="menu-icon">🔄</span>
+                    <span class="menu-text">Sync Results</span>
+                </button>
+                <button class="menu-item" id="menuPrint">
+                    <span class="menu-icon">🖨️</span>
+                    <span class="menu-text">Print Results</span>
+                </button>
+                <button class="menu-item" id="menuShare">
+                    <span class="menu-icon">📤</span>
+                    <span class="menu-text">Share Results</span>
+                </button>
+                <button class="menu-item" id="menuNewExam">
+                    <span class="menu-icon">🔄</span>
+                    <span class="menu-text">New Exam</span>
+                </button>
+                <button class="menu-item" id="menuRetryWeak">
+                    <span class="menu-icon">🎯</span>
+                    <span class="menu-text">Retry Weak Areas</span>
+                </button>
+                <hr class="menu-divider">
+                <button class="menu-item" id="menuClearAll">
+                    <span class="menu-icon">🗑️</span>
+                    <span class="menu-text">Clear All Results</span>
+                </button>
+                <button class="menu-item" id="menuHelp">
+                    <span class="menu-icon">❓</span>
+                    <span class="menu-text">Help</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <header class="header">
+        <div class="header-container">
+            <div class="logo">
+                <img src="images/logo.png" alt="Logo" class="logo-image">
+                <div class="header-title">
+                    <h1 class="logo-text">Exam Results</h1>
+                    <div class="exam-info" id="examInfo">
+                        <span class="exam-subject">Loading...</span>
+                        <span class="exam-date" id="examDate"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="header-actions">
+                <button class="theme-toggle" id="themeToggle">
+                    <span class="theme-icon">🌙</span>
+                    <span class="theme-text">Dark Mode</span>
+                </button>
+                
+                <button class="btn-action" id="homeBtn" title="Home">
+                    <span class="btn-icon">🏠</span>
+                    <span class="btn-text">Home</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="results-container">
+            <!-- Quick Stats Bar -->
+            <div class="quick-stats-bar">
+                <div class="stat-item">
+                    <div class="stat-value" id="overallScore">0%</div>
+                    <div class="stat-label">Score</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="correctAnswers">0</div>
+                    <div class="stat-label">Correct</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="totalQuestions">0</div>
+                    <div class="stat-label">Total</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="totalTime">0:00</div>
+                    <div class="stat-label">Time</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="accuracy">0%</div>
+                    <div class="stat-label">Accuracy</div>
+                </div>
+            </div>
+            
+            <!-- Tab Navigation -->
+            <div class="results-tabs" id="resultsTabs">
+                <button class="tab-btn active" data-tab="detailed">Detailed Review</button>
+                <button class="tab-btn" data-tab="breakdown">Performance Breakdown</button>
+                <button class="tab-btn" data-tab="weak">Weak Areas</button>
+                <button class="tab-btn" data-tab="comparison">Comparison</button>
+            </div>
+            
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <!-- Detailed Review Tab -->
+                <div class="tab-pane active" id="detailedTab">
+                    <div class="tab-header">
+                        <h2>Question-by-Question Review</h2>
+                        <div class="tab-actions">
+                            <div class="filter-group">
+                                <label for="questionFilter">Filter:</label>
+                                <select id="questionFilter">
+                                    <option value="all">All Questions</option>
+                                    <option value="correct">Correct Only</option>
+                                    <option value="incorrect">Incorrect Only</option>
+                                    <option value="flagged">Flagged Questions</option>
+                                    <option value="unanswered">Unanswered</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="questionSort">Sort by:</label>
+                                <select id="questionSort">
+                                    <option value="number">Question Number</option>
+                                    <option value="subject">Subject</option>
+                                    <option value="difficulty">Difficulty</option>
+                                    <option value="time">Time Taken</option>
+                                    <option value="correctness">Correctness</option>
+                                </select>
+                            </div>
+                            <button class="btn-secondary" id="jumpToQuestion">
+                                <span class="btn-icon">↗️</span>
+                                <span class="btn-text">Jump to Question</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="questions-review-container">
+                        <div class="questions-list" id="questionsList">
+                            <!-- Questions will be loaded here -->
+                            <div class="loading-message" id="loadingMessage">
+                                <div class="spinner">⏳</div>
+                                <p>Loading exam results...</p>
+                            </div>
+                        </div>
+                        
+                        <div class="pagination-controls" id="paginationControls">
+                            <!-- Pagination will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Performance Breakdown Tab -->
+                <div class="tab-pane" id="breakdownTab">
+                    <div class="tab-header">
+                        <h2>Performance Breakdown</h2>
+                    </div>
+                    
+                    <div class="breakdown-grid">
+                        <div class="breakdown-card">
+                            <h3>By Subject</h3>
+                            <div class="subject-breakdown" id="subjectBreakdown">
+                                <!-- Subject breakdown will be loaded here -->
+                            </div>
+                        </div>
+                        
+                        <div class="breakdown-card">
+                            <h3>By Topic</h3>
+                            <div class="topic-breakdown" id="topicBreakdown">
+                                <!-- Topic breakdown will be loaded here -->
+                            </div>
+                        </div>
+                        
+                        <div class="breakdown-card">
+                            <h3>By Difficulty</h3>
+                            <div class="difficulty-breakdown" id="difficultyBreakdown">
+                                <!-- Difficulty breakdown will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="performance-chart-container">
+                        <h3>Time Distribution</h3>
+                        <div class="time-chart" id="timeChart">
+                            <!-- Time chart will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Weak Areas Tab -->
+                <div class="tab-pane" id="weakTab">
+                    <div class="tab-header">
+                        <h2>Weak Areas & Recommendations</h2>
+                        <button class="btn-primary" id="startPracticeBtn">
+                            <span class="btn-icon">🎯</span>
+                            <span class="btn-text">Practice Weak Areas</span>
+                        </button>
+                    </div>
+                    
+                    <div class="weak-areas-container">
+                        <div class="weak-areas-list" id="weakAreasList">
+                            <!-- Weak areas will be loaded here -->
+                        </div>
+                        
+                        <div class="recommendations-box">
+                            <h3>Study Recommendations</h3>
+                            <div class="recommendations-list" id="recommendationsList">
+                                <!-- Recommendations will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Comparison Tab -->
+                <div class="tab-pane" id="comparisonTab">
+                    <div class="tab-header">
+                        <h2>Performance Comparison</h2>
+                    </div>
+                    
+                    <div class="comparison-container">
+                        <div class="comparison-card">
+                            <h3>Vs Your Average</h3>
+                            <div class="comparison-stats">
+                                <div class="stat-item">
+                                    <div class="stat-label">This Exam:</div>
+                                    <div class="stat-value" id="currentScore">0%</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label">Your Average:</div>
+                                    <div class="stat-value" id="averageScore">0%</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label">Difference:</div>
+                                    <div class="stat-value" id="scoreDifference">0%</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="comparison-card">
+                            <h3>Progress Trend</h3>
+                            <div class="trend-indicator" id="trendIndicator">
+                                <!-- Trend indicator will be loaded here -->
+                            </div>
+                            <div class="trend-details" id="trendDetails">
+                                <!-- Trend details will be loaded here -->
+                            </div>
+                        </div>
+                        
+                        <div class="comparison-card">
+                            <h3>Time Efficiency</h3>
+                            <div class="efficiency-stats">
+                                <div class="stat-item">
+                                    <div class="stat-label">Avg Time/Question:</div>
+                                    <div class="stat-value" id="avgTime">0s</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label">Fastest Answer:</div>
+                                    <div class="stat-value" id="fastestTime">0s</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label">Slowest Answer:</div>
+                                    <div class="stat-value" id="slowestTime">0s</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer-minimal">
+        <div class="footer-content">
+            <p>Use this page for thorough revision. All questions, your answers, correct answers, and explanations are shown.</p>
+            <p>Results are saved locally. Use the Sync option in the menu to save to cloud.</p>
+        </div>
+    </footer>
+
+    <!-- Jump to Question Modal -->
+    <div class="modal" id="jumpModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Jump to Question</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Enter question number (1-<span id="maxQuestion">0</span>):</p>
+                <input type="number" id="jumpInput" min="1" max="50" value="1">
+                <div class="question-grid" id="questionGrid">
+                    <!-- Question grid will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelJump">Cancel</button>
+                <button class="btn-primary" id="confirmJump">Jump</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Question Notes Modal -->
+    <div class="modal" id="notesModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Note for Question <span id="noteQuestionNumber">0</span></h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="question-preview" id="questionPreview"></div>
+                <textarea id="noteText" placeholder="Add your notes here..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelNote">Cancel</button>
+                <button class="btn-primary" id="saveNote">Save Note</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts/app.js"></script>
+    <script src="scripts/analytics.js"></script>
+    <script src="scripts/db.js"></script>
+    <script src="scripts/sync.js"></script>
+    <script src="scripts/ui.js"></script>
+    <script src="scripts/utils.js"></script>
+    <script src="scripts/router.js"></script>
+    <script src="scripts/questions.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // State variables
+            let examResults = null;
+            let currentQuestions = [];
+            let currentPage = 1;
+            const questionsPerPage = 5;
+            let currentFilter = 'all';
+            let currentSort = 'number';
+            let currentQuestionNotes = {};
+            
+            // DOM Elements
+            const themeToggle = document.getElementById('themeToggle');
+            const hamburgerBtn = document.getElementById('hamburgerBtn');
+            const hamburgerContent = document.getElementById('hamburgerContent');
+            const closeMenu = document.getElementById('closeMenu');
+            const homeBtn = document.getElementById('homeBtn');
+            const resultsTabs = document.getElementById('resultsTabs');
+            const tabPanes = document.querySelectorAll('.tab-pane');
+            const questionFilter = document.getElementById('questionFilter');
+            const questionSort = document.getElementById('questionSort');
+            const jumpToQuestionBtn = document.getElementById('jumpToQuestion');
+            const jumpModal = document.getElementById('jumpModal');
+            const notesModal = document.getElementById('notesModal');
+            const startPracticeBtn = document.getElementById('startPracticeBtn');
+            
+            // Theme toggle
+            const themeIcon = themeToggle.querySelector('.theme-icon');
+            const themeText = themeToggle.querySelector('.theme-text');
+            
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.classList.toggle('dark-theme', savedTheme === 'dark');
+            
+            if (savedTheme === 'dark') {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = 'Light Mode';
+            }
+            
+            themeToggle.addEventListener('click', function() {
+                const isDark = document.body.classList.toggle('dark-theme');
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                
+                if (isDark) {
+                    themeIcon.textContent = '☀️';
+                    themeText.textContent = 'Light Mode';
+                } else {
+                    themeIcon.textContent = '🌙';
+                    themeText.textContent = 'Dark Mode';
+                }
+            });
+            
+            // Hamburger menu
+            hamburgerBtn.addEventListener('click', function() {
+                hamburgerContent.classList.toggle('active');
+            });
+            
+            closeMenu.addEventListener('click', function() {
+                hamburgerContent.classList.remove('active');
+            });
+            
+            // Close menu when clicking outside
+            document.addEventListener('click', function(event) {
+                if (!hamburgerContent.contains(event.target) && !hamburgerBtn.contains(event.target)) {
+                    hamburgerContent.classList.remove('active');
+                }
+            });
+            
+            // Navigation
+            homeBtn.addEventListener('click', function() {
+                window.location.href = 'subjects.html';
+            });
+            
+            // Menu item handlers
+            document.getElementById('menuSync').addEventListener('click', function() {
+                syncResults();
+                hamburgerContent.classList.remove('active');
+            });
+            
+            document.getElementById('menuPrint').addEventListener('click', function() {
+                window.print();
+                hamburgerContent.classList.remove('active');
+            });
+            
+            document.getElementById('menuShare').addEventListener('click', function() {
+                shareResults();
+                hamburgerContent.classList.remove('active');
+            });
+            
+            document.getElementById('menuNewExam').addEventListener('click', function() {
+                window.location.href = 'subjects.html';
+            });
+            
+            document.getElementById('menuRetryWeak').addEventListener('click', function() {
+                startPracticeSession();
+                hamburgerContent.classList.remove('active');
+            });
+            
+            document.getElementById('menuClearAll').addEventListener('click', function() {
+                if (confirm('Are you sure you want to clear all exam results? This cannot be undone.')) {
+                    clearAllResults();
+                    hamburgerContent.classList.remove('active');
+                }
+            });
+            
+            document.getElementById('menuHelp').addEventListener('click', function() {
+                showHelp();
+                hamburgerContent.classList.remove('active');
+            });
+            
+            // Tab switching
+            resultsTabs.addEventListener('click', function(e) {
+                if (e.target.classList.contains('tab-btn')) {
+                    // Update active tab button
+                    document.querySelectorAll('.tab-btn').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    e.target.classList.add('active');
+                    
+                    // Show corresponding tab pane
+                    const tabId = e.target.dataset.tab + 'Tab';
+                    tabPanes.forEach(pane => {
+                        pane.classList.remove('active');
+                        if (pane.id === tabId) {
+                            pane.classList.add('active');
+                        }
+                    });
+                    
+                    // Update content for the tab
+                    updateTabContent(e.target.dataset.tab);
+                }
+            });
+            
+            // Filter and sort changes
+            questionFilter.addEventListener('change', function() {
+                currentFilter = this.value;
+                currentPage = 1;
+                displayQuestions();
+            });
+            
+            questionSort.addEventListener('change', function() {
+                currentSort = this.value;
+                currentPage = 1;
+                displayQuestions();
+            });
+            
+            // Jump to question
+            jumpToQuestionBtn.addEventListener('click', function() {
+                showJumpModal();
+            });
+            
+            // Practice weak areas
+            startPracticeBtn.addEventListener('click', function() {
+                startPracticeSession();
+            });
+            
+            // Modal close buttons
+            document.querySelectorAll('.close-modal').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    this.closest('.modal').style.display = 'none';
+                });
+            });
+            
+            // Cancel buttons
+            document.getElementById('cancelJump').addEventListener('click', function() {
+                jumpModal.style.display = 'none';
+            });
+            
+            document.getElementById('cancelNote').addEventListener('click', function() {
+                notesModal.style.display = 'none';
+            });
+            
+            // Save note button
+            document.getElementById('saveNote').addEventListener('click', function() {
+                saveCurrentNote();
+            });
+            
+            // Load exam results
+            async function loadExamResults() {
+                try {
+                    // Get exam ID from URL or localStorage
+                    const urlParams = new URLSearchParams(window.location.search);
+                    let examId = urlParams.get('examId');
+                    
+                    if (!examId) {
+                        // Try to get from localStorage
+                        examId = localStorage.getItem('lastExamId');
+                    }
+                    
+                    if (!examId) {
+                        showNoResults();
+                        return;
+                    }
+                    
+                    // Load exam results from IndexedDB
+                    if (typeof db !== 'undefined' && db.getExamResults) {
+                        examResults = await db.getExamResults(examId);
+                    } else {
+                        // Fallback to localStorage
+                        const resultsJson = localStorage.getItem(`exam_results_${examId}`);
+                        if (resultsJson) {
+                            examResults = JSON.parse(resultsJson);
+                        }
+                    }
+                    
+                    if (!examResults) {
+                        showNoResults();
+                        return;
+                    }
+                    
+                    // Load questions from question bank
+                    await loadExamQuestions();
+                    
+                    // Display results
+                    displayResults();
+                    
+                    // Load notes
+                    loadQuestionNotes();
+                    
+                } catch (error) {
+                    console.error('Error loading exam results:', error);
+                    showNoResults();
+                }
+            }
+            
+            // Load exam questions from question bank
+            async function loadExamQuestions() {
+                if (!examResults || !examResults.questions || !examResults.questions.length) {
+                    console.error('No questions found in exam results');
+                    return;
+                }
+                
+                try {
+                    currentQuestions = [];
+                    
+                    // Load question bank if available
+                    let questionBank = {};
+                    if (typeof questions !== 'undefined' && questions.getQuestion) {
+                        // Use questions.js module
+                        for (const qData of examResults.questions) {
+                            const question = await questions.getQuestion(qData.questionId);
+                            if (question) {
+                                currentQuestions.push({
+                                    ...question,
+                                    userAnswer: qData.userAnswer,
+                                    timeSpent: qData.timeSpent,
+                                    isCorrect: qData.isCorrect,
+                                    flagged: qData.flagged || false,
+                                    questionNumber: qData.questionNumber
+                                });
+                            }
+                        }
+                    } else {
+                        // Fallback: Use questions from exam results
+                        currentQuestions = examResults.questions.map(q => ({
+                            ...q,
+                            questionNumber: q.questionNumber || q.number
+                        }));
+                    }
+                    
+                    if (currentQuestions.length === 0) {
+                        throw new Error('Could not load questions');
+                    }
+                    
+                } catch (error) {
+                    console.error('Error loading questions:', error);
+                    // Use whatever data we have
+                    if (examResults.questions && examResults.questions.length > 0) {
+                        currentQuestions = examResults.questions.map(q => ({
+                            ...q,
+                            questionNumber: q.questionNumber || q.number
+                        }));
+                    }
+                }
+            }
+            
+            // Load question notes
+            function loadQuestionNotes() {
+                try {
+                    const notesJson = localStorage.getItem('question_notes');
+                    if (notesJson) {
+                        currentQuestionNotes = JSON.parse(notesJson);
+                    }
+                } catch (error) {
+                    console.error('Error loading notes:', error);
+                    currentQuestionNotes = {};
+                }
+            }
+            
+            // Display results
+            function displayResults() {
+                if (!examResults) return;
+                
+                // Update exam info
+                const date = new Date(examResults.completedAt || examResults.submittedAt || Date.now());
+                document.getElementById('examDate').textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                if (examResults.subject) {
+                    document.querySelector('.exam-subject').textContent = examResults.subject;
+                } else if (examResults.subjects && examResults.subjects.length > 0) {
+                    document.querySelector('.exam-subject').textContent = examResults.subjects.join(', ');
+                }
+                
+                // Update quick stats
+                const totalQuestions = examResults.totalQuestions || currentQuestions.length;
+                const correctAnswers = examResults.correctAnswers || 
+                    currentQuestions.filter(q => q.isCorrect).length;
+                const score = examResults.score || 
+                    Math.round((correctAnswers / totalQuestions) * 100);
+                const totalTime = examResults.totalTime || 
+                    currentQuestions.reduce((sum, q) => sum + (q.timeSpent || 0), 0);
+                
+                document.getElementById('overallScore').textContent = `${score}%`;
+                document.getElementById('correctAnswers').textContent = correctAnswers;
+                document.getElementById('totalQuestions').textContent = totalQuestions;
+                document.getElementById('accuracy').textContent = `${Math.round((correctAnswers / totalQuestions) * 100)}%`;
+                
+                // Format time
+                const minutes = Math.floor(totalTime / 60);
+                const seconds = totalTime % 60;
+                document.getElementById('totalTime').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                
+                // Display questions
+                displayQuestions();
+                
+                // Update comparison tab
+                updateComparisonTab();
+            }
+            
+            // Display questions
+            function displayQuestions() {
+                const questionsList = document.getElementById('questionsList');
+                const loadingMessage = document.getElementById('loadingMessage');
+                
+                if (!currentQuestions || currentQuestions.length === 0) {
+                    questionsList.innerHTML = `
+                        <div class="no-questions">
+                            <div class="no-questions-icon">❓</div>
+                            <h3>No Questions Found</h3>
+                            <p>Could not load exam questions. The exam data might be corrupted.</p>
+                        </div>
+                    `;
+                    loadingMessage.style.display = 'none';
+                    return;
+                }
+                
+                // Filter questions
+                let filteredQuestions = [...currentQuestions];
+                
+                switch(currentFilter) {
+                    case 'correct':
+                        filteredQuestions = filteredQuestions.filter(q => q.isCorrect);
+                        break;
+                    case 'incorrect':
+                        filteredQuestions = filteredQuestions.filter(q => !q.isCorrect);
+                        break;
+                    case 'flagged':
+                        filteredQuestions = filteredQuestions.filter(q => q.flagged);
+                        break;
+                    case 'unanswered':
+                        filteredQuestions = filteredQuestions.filter(q => !q.userAnswer);
+                        break;
+                }
+                
+                // Sort questions
+                switch(currentSort) {
+                    case 'subject':
+                        filteredQuestions.sort((a, b) => (a.subject || '').localeCompare(b.subject || ''));
+                        break;
+                    case 'difficulty':
+                        const difficultyOrder = { 'Easy': 1, 'Medium': 2, 'Hard': 3, 'Expert': 4 };
+                        filteredQuestions.sort((a, b) => 
+                            (difficultyOrder[a.difficulty] || 0) - (difficultyOrder[b.difficulty] || 0));
+                        break;
+                    case 'time':
+                        filteredQuestions.sort((a, b) => (b.timeSpent || 0) - (a.timeSpent || 0));
+                        break;
+                    case 'correctness':
+                        filteredQuestions.sort((a, b) => (a.isCorrect === b.isCorrect ? 0 : a.isCorrect ? -1 : 1));
+                        break;
+                    default: // 'number'
+                        filteredQuestions.sort((a, b) => (a.questionNumber || 0) - (b.questionNumber || 0));
+                }
+                
+                // Pagination
+                const totalPages = Math.ceil(filteredQuestions.length / questionsPerPage);
+                const startIndex = (currentPage - 1) * questionsPerPage;
+                const endIndex = startIndex + questionsPerPage;
+                const pageQuestions = filteredQuestions.slice(startIndex, endIndex);
+                
+                // Display questions
+                questionsList.innerHTML = pageQuestions.map(q => {
+                    const questionNumber = q.questionNumber || q.number;
+                    const userAnswer = q.userAnswer || 'Not answered';
+                    const isCorrect = q.isCorrect === true;
+                    const timeSpent = q.timeSpent || 0;
+                    const flagged = q.flagged || false;
+                    const hasNote = currentQuestionNotes[`${examResults.examId}_${questionNumber}`];
+                    
+                    return `
+                        <div class="question-review ${isCorrect ? 'correct' : 'incorrect'} ${flagged ? 'flagged' : ''}">
+                            <div class="question-header">
+                                <div class="question-meta">
+                                    <span class="question-number">Q${questionNumber}</span>
+                                    <span class="question-subject">${q.subject || 'Unknown Subject'}</span>
+                                    <span class="question-topic">${q.topic || 'General'}</span>
+                                    <span class="question-difficulty">${q.difficulty || 'Medium'}</span>
+                                    ${flagged ? '<span class="question-flag">🚩 Flagged</span>' : ''}
+                                </div>
+                                <div class="question-stats">
+                                    <span class="status ${isCorrect ? 'correct' : 'incorrect'}">
+                                        ${isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                                    </span>
+                                    <span class="time-spent">${timeSpent}s</span>
+                                    ${hasNote ? '<span class="has-note" title="Has note">📝</span>' : ''}
+                                </div>
+                            </div>
+                            
+                            <div class="question-content">
+                                <div class="question-text">${q.question || q.text || 'No question text available'}</div>
+                                
+                                ${q.image ? `
+                                <div class="question-image">
+                                    <img src="images/${q.image}" alt="Question diagram" onerror="this.style.display='none'">
+                                </div>
+                                ` : ''}
+                                
+                                <div class="options-list">
+                                    ${(q.options || []).map((option, index) => {
+                                        const optionLetter = String.fromCharCode(65 + index);
+                                        const isUserAnswer = optionLetter === userAnswer;
+                                        const isCorrectAnswer = optionLetter === q.correct;
+                                        let optionClass = 'option';
+                                        if (isUserAnswer) optionClass += ' user-answer';
+                                        if (isCorrectAnswer) optionClass += ' correct-answer';
+                                        
+                                        return `
+                                            <div class="${optionClass}">
+                                                <span class="option-letter">${optionLetter}.</span>
+                                                <span class="option-text">${option}</span>
+                                                ${isUserAnswer ? '<span class="answer-indicator">Your Answer</span>' : ''}
+                                                ${isCorrectAnswer ? '<span class="correct-indicator">✓ Correct</span>' : ''}
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                                
+                                <div class="answer-summary">
+                                    <div class="summary-item">
+                                        <span class="summary-label">Your Answer:</span>
+                                        <span class="summary-value ${isCorrect ? 'correct' : 'incorrect'}">
+                                            ${userAnswer} ${!isCorrect && userAnswer !== 'Not answered' ? '(Incorrect)' : ''}
+                                        </span>
+                                    </div>
+                                    ${!isCorrect && q.correct ? `
+                                    <div class="summary-item">
+                                        <span class="summary-label">Correct Answer:</span>
+                                        <span class="summary-value correct">${q.correct}</span>
+                                    </div>
+                                    ` : ''}
+                                    <div class="summary-item">
+                                        <span class="summary-label">Time Spent:</span>
+                                        <span class="summary-value">${timeSpent} seconds</span>
+                                    </div>
+                                </div>
+                                
+                                ${q.explanation ? `
+                                <div class="explanation">
+                                    <div class="explanation-header">Explanation:</div>
+                                    <div class="explanation-text">${q.explanation}</div>
+                                </div>
+                                ` : ''}
+                                
+                                ${q.reference ? `
+                                <div class="reference">
+                                    <div class="reference-header">Reference:</div>
+                                    <div class="reference-text">${q.reference}</div>
+                                </div>
+                                ` : ''}
+                                
+                                <div class="question-actions">
+                                    <button class="btn-action add-note" data-question="${questionNumber}" title="Add note">
+                                        <span class="btn-icon">📝</span>
+                                        <span class="btn-text">Add Note</span>
+                                    </button>
+                                    <button class="btn-action review-again" data-question="${questionNumber}" title="Mark for review">
+                                        <span class="btn-icon">⏰</span>
+                                        <span class="btn-text">Review Again</span>
+                                    </button>
+                                    <button class="btn-action find-similar" data-question="${questionNumber}" title="Find similar questions">
+                                        <span class="btn-icon">🔍</span>
+                                        <span class="btn-text">Similar Questions</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                loadingMessage.style.display = 'none';
+                
+                // Display pagination
+                displayPagination(totalPages);
+                
+                // Add event listeners to action buttons
+                attachQuestionActions();
+            }
+            
+            // Display pagination
+            function displayPagination(totalPages) {
+                const paginationControls = document.getElementById('paginationControls');
+                
+                if (totalPages <= 1) {
+                    paginationControls.innerHTML = '';
+                    return;
+                }
+                
+                let paginationHTML = `
+                    <div class="pagination-info">
+                        Page ${currentPage} of ${totalPages}
+                    </div>
+                    <div class="pagination-buttons">
+                `;
+                
+                if (currentPage > 1) {
+                    paginationHTML += `
+                        <button class="page-btn first" data-page="1">« First</button>
+                        <button class="page-btn prev" data-page="${currentPage - 1}">‹ Previous</button>
+                    `;
+                }
+                
+                // Show page numbers
+                const maxVisiblePages = 5;
+                let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+                let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+                
+                if (endPage - startPage + 1 < maxVisiblePages) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                }
+                
+                for (let i = startPage; i <= endPage; i++) {
+                    if (i === currentPage) {
+                        paginationHTML += `<span class="page-current">${i}</span>`;
+                    } else {
+                        paginationHTML += `<button class="page-btn" data-page="${i}">${i}</button>`;
+                    }
+                }
+                
+                if (currentPage < totalPages) {
+                    paginationHTML += `
+                        <button class="page-btn next" data-page="${currentPage + 1}">Next ›</button>
+                        <button class="page-btn last" data-page="${totalPages}">Last »</button>
+                    `;
+                }
+                
+                paginationHTML += '</div>';
+                paginationControls.innerHTML = paginationHTML;
+                
+                // Add pagination event listeners
+                document.querySelectorAll('.page-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        currentPage = parseInt(this.dataset.page);
+                        displayQuestions();
+                        // Scroll to top of questions list
+                        document.querySelector('.questions-review-container').scrollTop = 0;
+                    });
+                });
+            }
+            
+            // Attach question action event listeners
+            function attachQuestionActions() {
+                // Add note buttons
+                document.querySelectorAll('.add-note').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const questionNumber = parseInt(this.dataset.question);
+                        showNotesModal(questionNumber);
+                    });
+                });
+                
+                // Review again buttons
+                document.querySelectorAll('.review-again').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const questionNumber = parseInt(this.dataset.question);
+                        markForReview(questionNumber);
+                    });
+                });
+                
+                // Find similar buttons
+                document.querySelectorAll('.find-similar').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const questionNumber = parseInt(this.dataset.question);
+                        findSimilarQuestions(questionNumber);
+                    });
+                });
+            }
+            
+            // Show notes modal
+            function showNotesModal(questionNumber) {
+                const question = currentQuestions.find(q => q.questionNumber === questionNumber);
+                if (!question) return;
+                
+                document.getElementById('noteQuestionNumber').textContent = questionNumber;
+                
+                // Load existing note
+                const noteKey = `${examResults.examId}_${questionNumber}`;
+                const existingNote = currentQuestionNotes[noteKey];
+                document.getElementById('noteText').value = existingNote || '';
+                
+                // Show question preview
+                const preview = document.getElementById('questionPreview');
+                preview.innerHTML = `
+                    <div class="preview-question">${question.question || question.text || ''}</div>
+                    <div class="preview-answer">Your answer: ${question.userAnswer || 'Not answered'}</div>
+                `;
+                
+                notesModal.style.display = 'block';
+            }
+            
+            // Save current note
+            function saveCurrentNote() {
+                const questionNumber = parseInt(document.getElementById('noteQuestionNumber').textContent);
+                const noteText = document.getElementById('noteText').value.trim();
+                const noteKey = `${examResults.examId}_${questionNumber}`;
+                
+                if (noteText) {
+                    currentQuestionNotes[noteKey] = noteText;
+                } else {
+                    delete currentQuestionNotes[noteKey];
+                }
+                
+                // Save to localStorage
+                localStorage.setItem('question_notes', JSON.stringify(currentQuestionNotes));
+                
+                // Update UI
+                const questionElement = document.querySelector(`.add-note[data-question="${questionNumber}"]`);
+                if (questionElement) {
+                    const hasNoteIcon = questionElement.closest('.question-review').querySelector('.has-note');
+                    if (noteText && !hasNoteIcon) {
+                        questionElement.closest('.question-review').querySelector('.question-stats').innerHTML += 
+                            '<span class="has-note" title="Has note">📝</span>';
+                    } else if (!noteText && hasNoteIcon) {
+                        hasNoteIcon.remove();
+                    }
+                }
+                
+                notesModal.style.display = 'none';
+                alert('Note saved successfully!');
+            }
+            
+            // Mark question for review
+            function markForReview(questionNumber) {
+                // Save to review list
+                const reviewList = JSON.parse(localStorage.getItem('review_questions') || '[]');
+                const reviewItem = {
+                    examId: examResults.examId,
+                    questionNumber: questionNumber,
+                    timestamp: Date.now(),
+                    reason: 'Manual review request'
+                };
+                
+                // Check if already in list
+                if (!reviewList.some(item => item.examId === examResults.examId && item.questionNumber === questionNumber)) {
+                    reviewList.push(reviewItem);
+                    localStorage.setItem('review_questions', JSON.stringify(reviewList));
+                    alert('Question marked for review!');
+                } else {
+                    alert('This question is already in your review list.');
+                }
+            }
+            
+            // Find similar questions
+            function findSimilarQuestions(questionNumber) {
+                const question = currentQuestions.find(q => q.questionNumber === questionNumber);
+                if (!question) return;
+                
+                // Save search criteria
+                const searchCriteria = {
+                    topic: question.topic,
+                    subject: question.subject,
+                    difficulty: question.difficulty,
+                    timestamp: Date.now()
+                };
+                
+                localStorage.setItem('similar_questions_search', JSON.stringify(searchCriteria));
+                
+                alert(`Search saved for similar questions in ${question.topic} (${question.subject}). Go to Subjects page to practice.`);
+            }
+            
+            // Show jump modal
+            function showJumpModal() {
+                const maxQuestion = currentQuestions.length;
+                document.getElementById('maxQuestion').textContent = maxQuestion;
+                document.getElementById('jumpInput').max = maxQuestion;
+                document.getElementById('jumpInput').value = 1;
+                
+                // Create question grid
+                const questionGrid = document.getElementById('questionGrid');
+                let gridHTML = '<div class="grid-container">';
+                
+                for (let i = 1; i <= maxQuestion; i++) {
+                    const question = currentQuestions.find(q => q.questionNumber === i);
+                    const isCorrect = question ? question.isCorrect : false;
+                    const isFlagged = question ? question.flagged : false;
+      
+                    gridHTML += `
+                        <button class="grid-btn ${isCorrect ? 'correct' : 'incorrect'} ${isFlagged ? 'flagged' : ''}" 
+                                data-question="${i}">
+                            ${i}
+                        </button>
+                    `;
+                }
+                
+                gridHTML += '</div>';
+                questionGrid.innerHTML = gridHTML;
+                
+                // Add grid button listeners
+                document.querySelectorAll('.grid-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        document.getElementById('jumpInput').value = this.dataset.question;
+                    });
+                });
+                
+                jumpModal.style.display = 'block';
+            }
+            
+            // Update tab content
+            function updateTabContent(tab) {
+                switch(tab) {
+                    case 'breakdown':
+                        updateBreakdownTab();
+                        break;
+                    case 'weak':
+                        updateWeakAreasTab();
+                        break;
+                    case 'comparison':
+                        updateComparisonTab();
+                        break;
+                }
+            }
+            
+            // Update breakdown tab
+            function updateBreakdownTab() {
+                if (!currentQuestions.length) return;
+                
+                // Subject breakdown
+                const subjectBreakdown = document.getElementById('subjectBreakdown');
+                const subjects = {};
+                
+                currentQuestions.forEach(q => {
+                    const subject = q.subject || 'Unknown';
+                    if (!subjects[subject]) {
+                        subjects[subject] = { total: 0, correct: 0 };
+                    }
+                    subjects[subject].total++;
+                    if (q.isCorrect) subjects[subject].correct++;
+                });
+                
+                subjectBreakdown.innerHTML = Object.entries(subjects).map(([subject, data]) => {
+                    const percentage = Math.round((data.correct / data.total) * 100);
+                    return `
+                        <div class="breakdown-item">
+                            <div class="item-header">
+                                <span class="item-name">${subject}</span>
+                                <span class="item-score">${percentage}%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${percentage}%"></div>
+                            </div>
+                            <div class="item-details">${data.correct}/${data.total} correct</div>
+                        </div>
+                    `;
+                }).join('');
+                
+                // Topic breakdown
+                const topicBreakdown = document.getElementById('topicBreakdown');
+                const topics = {};
+                
+                currentQuestions.forEach(q => {
+                    const topic = q.topic || 'General';
+                    if (!topics[topic]) {
+                        topics[topic] = { total: 0, correct: 0 };
+                    }
+                    topics[topic].total++;
+                    if (q.isCorrect) topics[topic].correct++;
+                });
+                
+                // Sort by accuracy (lowest first)
+                const sortedTopics = Object.entries(topics).sort((a, b) => {
+                    const accA = a[1].correct / a[1].total;
+                    const accB = b[1].correct / b[1].total;
+                    return accA - accB;
+                }).slice(0, 8); // Show top 8 worst topics
+                
+                topicBreakdown.innerHTML = sortedTopics.map(([topic, data]) => {
+                    const percentage = Math.round((data.correct / data.total) * 100);
+                    return `
+                        <div class="breakdown-item">
+                            <div class="item-header">
+                                <span class="item-name">${topic}</span>
+                                <span class="item-score ${percentage < 60 ? 'low' : ''}">${percentage}%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${percentage}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                // Difficulty breakdown
+                const difficultyBreakdown = document.getElementById('difficultyBreakdown');
+                const difficulties = {};
+                
+                currentQuestions.forEach(q => {
+                    const difficulty = q.difficulty || 'Medium';
+                    if (!difficulties[difficulty]) {
+                        difficulties[difficulty] = { total: 0, correct: 0 };
+                    }
+                    difficulties[difficulty].total++;
+                    if (q.isCorrect) difficulties[difficulty].correct++;
+                });
+                
+                difficultyBreakdown.innerHTML = Object.entries(difficulties).map(([difficulty, data]) => {
+                    const percentage = Math.round((data.correct / data.total) * 100);
+                    return `
+                        <div class="breakdown-item">
+                            <div class="item-header">
+                                <span class="item-name">${difficulty}</span>
+                                <span class="item-score">${percentage}%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${percentage}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            // Update weak areas tab
+            function updateWeakAreasTab() {
+                if (!currentQuestions.length) return;
+                
+                const weakAreasList = document.getElementById('weakAreasList');
+                const recommendationsList = document.getElementById('recommendationsList');
+                
+                // Identify weak areas (topics with < 60% accuracy)
+                const weakTopics = {};
+                currentQuestions.forEach(q => {
+                    if (!q.isCorrect) {
+                        const topic = q.topic || 'General';
+                        const subject = q.subject || 'Unknown';
+                        const key = `${subject}:${topic}`;
+                        
+                        if (!weakTopics[key]) {
+                            weakTopics[key] = {
+                                subject: subject,
+                                topic: topic,
+                                total: 0,
+                                incorrect: 0,
+                                questions: []
+                            };
+                        }
+                        weakTopics[key].total++;
+                        weakTopics[key].incorrect++;
+                        weakTopics[key].questions.push(q.questionNumber);
+                    }
+                });
+                
+                // Calculate error rates and sort
+                const weakAreas = Object.values(weakTopics)
+                    .map(area => ({
+                        ...area,
+                        errorRate: (area.incorrect / area.total) * 100
+                    }))
+                    .sort((a, b) => b.errorRate - a.errorRate)
+                    .slice(0, 5); // Top 5 weak areas
+                
+                if (weakAreas.length > 0) {
+                    // Display weak areas
+                    weakAreasList.innerHTML = weakAreas.map(area => {
+                        return `
+                            <div class="weak-area-item">
+                                <div class="area-header">
+                                    <span class="area-subject">${area.subject}</span>
+                                    <span class="area-topic">${area.topic}</span>
+                                </div>
+                                <div class="area-stats">
+                                    <div class="error-rate">
+                                        <div class="rate-value">${Math.round(area.errorRate)}% error rate</div>
+                                        <div class="rate-details">${area.incorrect} incorrect of ${area.total}</div>
+                                    </div>
+                                    <div class="question-numbers">
+                                        Questions: ${area.questions.join(', ')}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    // Display recommendations
+                    recommendationsList.innerHTML = weakAreas.map((area, index) => {
+                        return `
+                            <div class="recommendation-item">
+                                <div class="rec-step">Step ${index + 1}</div>
+                                <div class="rec-content">
+                                    <h4>Focus on ${area.topic}</h4>
+                                    <p>Review ${area.topic} concepts in ${area.subject}. Practice 10-15 questions daily.</p>
+                                    <div class="rec-questions">Target questions: ${area.questions.join(', ')}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    weakAreasList.innerHTML = `
+                        <div class="no-weak-areas">
+                            <div class="success-icon">🎉</div>
+                            <div class="success-message">
+                                <h3>Excellent Performance!</h3>
+                                <p>No significant weak areas identified. Keep up the good work!</p>
+                            </div>
+                        </div>
+                    `;
+                    
+                    recommendationsList.innerHTML = `
+                        <div class="maintenance-plan">
+                            <h4>Maintenance Plan</h4>
+                            <ul>
+                                <li>Continue regular practice sessions</li>
+                                <li>Focus on speed improvement</li>
+                                <li>Review random topics to maintain knowledge</li>
+                                <li>Take full exams weekly to track progress</li>
+                            </ul>
+                        </div>
+                    `;
+                }
+            }
+            
+            // Update comparison tab
+            function updateComparisonTab() {
+                if (!examResults) return;
+                
+                const currentScore = examResults.score || 
+                    Math.round((currentQuestions.filter(q => q.isCorrect).length / currentQuestions.length) * 100);
+                
+                document.getElementById('currentScore').textContent = `${currentScore}%`;
+                
+                // Get average score from previous exams
+                const previousExams = JSON.parse(localStorage.getItem('previous_exams') || '[]');
+                const averageScore = previousExams.length > 0 ? 
+                    Math.round(previousExams.reduce((sum, exam) => sum + (exam.score || 0), 0) / previousExams.length) : 
+                    currentScore;
+                
+                document.getElementById('averageScore').textContent = `${averageScore}%`;
+                
+                const difference = currentScore - averageScore;
+                const differenceElement = document.getElementById('scoreDifference');
+                differenceElement.textContent = `${difference >= 0 ? '+' : ''}${difference}%`;
+                differenceElement.className = `stat-value ${difference >= 0 ? 'positive' : 'negative'}`;
+                
+                // Calculate time stats
+                const times = currentQuestions.map(q => q.timeSpent || 0).filter(t => t > 0);
+                const avgTime = times.length > 0 ? Math.round(times.reduce((a, b) => a + b) / times.length) : 0;
+                const fastestTime = times.length > 0 ? Math.min(...times) : 0;
+                const slowestTime = times.length > 0 ? Math.max(...times) : 0;
+                
+                document.getElementById('avgTime').textContent = `${avgTime}s`;
+                document.getElementById('fastestTime').textContent = `${fastestTime}s`;
+                document.getElementById('slowestTime').textContent = `${slowestTime}s`;
+                
+                // Update trend indicator
+                updateTrendIndicator();
+            }
+            
+            // Update trend indicator
+            function updateTrendIndicator() {
+                const trendIndicator = document.getElementById('trendIndicator');
+                const trendDetails = document.getElementById('trendDetails');
+                
+                const previousExams = JSON.parse(localStorage.getItem('previous_exams') || '[]');
+                
+                if (previousExams.length > 0) {
+                    const lastExam = previousExams[previousExams.length - 1];
+                    const currentScore = examResults.score;
+                    const lastScore = lastExam.score || 0;
+                    const trend = currentScore - lastScore;
+                    
+                    if (trend > 5) {
+                        trendIndicator.innerHTML = '<span class="trend-up">📈 Improving</span>';
+                        trendDetails.textContent = `Up ${trend}% from last exam`;
+                    } else if (trend < -5) {
+                        trendIndicator.innerHTML = '<span class="trend-down">📉 Declining</span>';
+                        trendDetails.textContent = `Down ${Math.abs(trend)}% from last exam`;
+                    } else {
+                        trendIndicator.innerHTML = '<span class="trend-stable">➡️ Stable</span>';
+                        trendDetails.textContent = 'Performance consistent with previous';
+                    }
+                } else {
+                    trendIndicator.innerHTML = '<span class="trend-new">🆕 First Exam</span>';
+                    trendDetails.textContent = 'This is your first recorded exam';
+                }
+            }
+            
+            // Sync results
+            async function syncResults() {
+                if (!examResults) {
+                    alert('No results to sync');
+                    return;
+                }
+                
+                try {
+                    // Show syncing indicator
+                    const syncBtn = document.getElementById('menuSync');
+                    const originalText = syncBtn.querySelector('.menu-text').textContent;
+                    syncBtn.querySelector('.menu-text').textContent = 'Syncing...';
+                    syncBtn.disabled = true;
+                    
+                    // Save to localStorage as synced
+                    examResults.synced = true;
+                    examResults.syncedAt = new Date().toISOString();
+                    
+                    // Save to IndexedDB if available
+                    if (typeof db !== 'undefined' && db.saveExamResults) {
+                        await db.saveExamResults(examResults);
+                    }
+                    
+                    // Save to localStorage
+                    localStorage.setItem(`exam_results_${examResults.examId}`, JSON.stringify(examResults));
+                    
+                    // Add to previous exams list
+                    const previousExams = JSON.parse(localStorage.getItem('previous_exams') || '[]');
+                    previousExams.push({
+                        examId: examResults.examId,
+                        score: examResults.score,
+                        date: examResults.completedAt || examResults.submittedAt,
+                        subject: examResults.subject,
+                        totalQuestions: examResults.totalQuestions
+                    });
+                    localStorage.setItem('previous_exams', JSON.stringify(previousExams));
+                    
+                    // Update sync status
+                    setTimeout(() => {
+                        syncBtn.querySelector('.menu-text').textContent = '✓ Synced';
+                        setTimeout(() => {
+                            syncBtn.querySelector('.menu-text').textContent = originalText;
+                            syncBtn.disabled = false;
+                        }, 2000);
+                    }, 1000);
+                    
+                } catch (error) {
+                    console.error('Sync error:', error);
+                    alert('Sync failed: ' + error.message);
+                }
+            }
+            
+            // Share results
+            function shareResults() {
+                if (!examResults) {
+                    alert('No results to share');
+                    return;
+                }
+                
+                const shareText = `I scored ${examResults.score}% on my medical exam! ${examResults.correctAnswers || 0} out of ${examResults.totalQuestions || 0} questions correct.`;
+                
+                if (navigator.share) {
+                    navigator.share({
+                        title: 'Medical Exam Results',
+                        text: shareText,
+                        url: window.location.href
+                    });
+                } else {
+                    // Fallback: Copy to clipboard
+                    navigator.clipboard.writeText(shareText + ' ' + window.location.href)
+                        .then(() => alert('Results copied to clipboard!'))
+                        .catch(() => alert('Could not share results.'));
+                }
+            }
+            
+            // Start practice session
+            function startPracticeSession() {
+                // Identify weak topics
+                const weakTopics = {};
+                currentQuestions.forEach(q => {
+                    if (!q.isCorrect && q.topic) {
+                        if (!weakTopics[q.topic]) {
+                            weakTopics[q.topic] = { subject: q.subject, count: 0 };
+                        }
+                        weakTopics[q.topic].count++;
+                    }
+                });
+                
+                const sortedTopics = Object.entries(weakTopics)
+                    .sort((a, b) => b[1].count - a[1].count)
+                    .slice(0, 3)
+                    .map(([topic, data]) => ({ topic, subject: data.subject }));
+                
+                if (sortedTopics.length === 0) {
+                    alert('No weak areas identified for practice.');
+                    return;
+                }
+                
+                // Create practice session configuration
+                const practiceConfig = {
+                    type: 'practice',
+                    focus: 'weak_areas',
+                    topics: sortedTopics,
+                    questionCount: 15,
+                    difficulty: 'mixed',
+                    examMode: 'practice',
+                    timestamp: Date.now()
+                };
+                
+                localStorage.setItem('practice_config', JSON.stringify(practiceConfig));
+                localStorage.setItem('last_practice_topics', JSON.stringify(sortedTopics));
+                
+                // Navigate to exam settings
+                window.location.href = 'exam-settings.html?practice=true';
+            }
+            
+            // Clear all results
+            function clearAllResults() {
+                // Clear exam results from localStorage
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith('exam_results_')) {
+                        keysToRemove.push(key);
+                    }
+                }
+                
+                keysToRemove.forEach(key => localStorage.removeItem(key));
+                
+                // Clear previous exams
+                localStorage.removeItem('previous_exams');
+                
+                // Clear notes
+                localStorage.removeItem('question_notes');
+                
+                // Clear review list
+                localStorage.removeItem('review_questions');
+                
+                alert('All exam results have been cleared.');
+                showNoResults();
+            }
+            
+            // Show help
+            function showHelp() {
+                const helpText = `
+EXAM RESULTS PAGE HELP:
+
+1. DETAILED REVIEW TAB:
+   - View all questions from your exam
+   - See your answers vs correct answers
+   - Read explanations for each question
+   - Add personal notes to questions
+   - Filter and sort questions
+
+2. PERFORMANCE BREAKDOWN:
+   - See your performance by subject, topic, and difficulty
+   - Identify areas of strength and weakness
+   - Track your time distribution
+
+3. WEAK AREAS TAB:
+   - Automatically identifies topics where you struggled
+   - Provides personalized study recommendations
+   - Start practice sessions for weak areas
+
+4. COMPARISON TAB:
+   - Compare with your average performance
+   - Track progress over time
+   - Analyze time efficiency
+
+MENU OPTIONS:
+   - Sync: Save results to cloud
+   - Print: Print your results
+   - Share: Share your results
+   - New Exam: Start a new exam
+   - Retry Weak Areas: Practice your weak topics
+   - Clear All: Remove all saved results
+
+TIPS:
+   - Use notes to mark important concepts
+   - Review incorrect questions regularly
+   - Practice weak areas to improve
+   - Sync results to track progress over time
+                `;
+                
+                alert(helpText);
+            }
+            
+            // Show no results message
+            function showNoResults() {
+                const container = document.querySelector('.results-container');
+                container.innerHTML = `
+                    <div class="no-results">
+                        <div class="no-results-icon">📊</div>
+                        <h2>No Exam Results Found</h2>
+                        <p>Complete an exam to see your detailed results here.</p>
+                        <p>You can review all questions, see your answers, and get explanations.</p>
+                        <div class="no-results-actions">
+                            <button class="btn-primary" id="startNewExamBtn">
+                                <span class="btn-icon">▶️</span>
+                                <span class="btn-text">Start New Exam</span>
+                            </button>
+                            <button class="btn-secondary" id="viewPerformanceBtn">
+                                <span class="btn-icon">📊</span>
+                                <span class="btn-text">View Performance Analytics</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('startNewExamBtn').addEventListener('click', function() {
+                    window.location.href = 'subjects.html';
+                });
+                
+                document.getElementById('viewPerformanceBtn').addEventListener('click', function() {
+                    window.location.href = 'performance.html';
+                });
+            }
+            
+            // Initialize
+            loadExamResults();
+            
+            // Initialize app state
+            if (typeof initApp === 'function') {
+                initApp();
+            }
+        });
+    </script>
+</body>
+</html>

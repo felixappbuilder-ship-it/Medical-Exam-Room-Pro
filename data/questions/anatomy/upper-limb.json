@@ -1,0 +1,763 @@
+[
+  {
+    "id": "anatomy_upperlimb_041",
+    "question": "Identify the structure indicated by arrow U in this sagittal MRI of the shoulder:",
+    "options": [
+      "A. Subacromial bursa",
+      "B. Subcoracoid bursa",
+      "C. Subdeltoid bursa",
+      "D. Subscapularis bursa"
+    ],
+    "correct": "A",
+    "explanation": "Arrow U indicates subacromial bursa, located between acromion and supraspinatus tendon, commonly inflamed in impingement syndrome.",
+    "difficulty": 3,
+    "image": "shoulder_mri_subacromial_bursa.png",
+    "reference": "MRI of the Shoulder, 3rd ed., Fig. 4-12",
+    "hints": [
+      "Between acromion and rotator cuff",
+      "Common site of impingement"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_042",
+    "question": "A patient with radial head fracture develops posterior interosseous nerve palsy. Which movement is preserved?",
+    "options": [
+      "A. Wrist extension",
+      "B. Finger extension at MCP joints",
+      "C. Thumb extension",
+      "D. Supination"
+    ],
+    "correct": "A",
+    "explanation": "Posterior interosseous nerve (deep radial) innervates extensors except extensor carpi radialis longus (radial nerve proper). Wrist extension is preserved but with radial deviation.",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Green's Operative Hand Surgery, 8th ed., p. 1123",
+    "hints": [
+      "ECRL innervated proximal to PIN",
+      "Radial nerve proper vs deep branch"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_043",
+    "question": "Identify the muscle indicated by arrow V in this cross-section of the forearm (proximal third):",
+    "options": [
+      "A. Flexor digitorum profundus",
+      "B. Flexor pollicis longus",
+      "C. Pronator quadratus",
+      "D. Flexor digitorum superficialis"
+    ],
+    "correct": "B",
+    "explanation": "Arrow V indicates flexor pollicis longus, deepest anterior forearm muscle, originating from radius and interosseous membrane, inserting on distal phalanx of thumb.",
+    "difficulty": 4,
+    "image": "forearm_cross_section_fpl.png",
+    "reference": "Cross-Sectional Anatomy, CT and MRI, p. 156",
+    "hints": [
+      "Only thumb flexor in forearm",
+      "Deep anterior compartment"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_044",
+    "question": "Which artery is the dominant blood supply to the scaphoid bone?",
+    "options": [
+      "A. Radial artery via dorsal branch",
+      "B. Ulnar artery via palmar branch",
+      "C. Anterior interosseous artery",
+      "D. Posterior interosseous artery"
+    ],
+    "correct": "A",
+    "explanation": "The scaphoid receives 70-80% of its blood supply from dorsal branches of radial artery entering distal pole, flowing retrograde toward proximal pole.",
+    "difficulty": 4,
+    "image": null,
+    "reference": "Journal of Hand Surgery, Vol. 25, p. 341-345",
+    "hints": [
+      "Retrograde flow pattern",
+      "Enters through dorsal ridge"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_045",
+    "question": "Identify the nerve indicated by arrow W in this dissection of the triangular interval:",
+    "options": [
+      "A. Radial nerve",
+      "B. Axillary nerve",
+      "C. Thoracodorsal nerve",
+      "D. Lower subscapular nerve"
+    ],
+    "correct": "A",
+    "explanation": "Arrow W indicates radial nerve passing through triangular interval (teres major, long head triceps, humerus) to enter posterior compartment of arm.",
+    "difficulty": 4,
+    "image": "triangular_interval_radial_nerve.png",
+    "reference": "Surgical Approaches in Orthopedics, 6th ed., Plate 2",
+    "hints": [
+      "Between teres major and long head triceps",
+      "Enters spiral groove"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_046",
+    "question": "A patient with severe rheumatoid arthritis develops rupture of which tendon from bony spurs at distal ulna?",
+    "options": [
+      "A. Extensor pollicis longus",
+      "B. Extensor digitorum",
+      "C. Extensor carpi ulnaris",
+      "D. Extensor indicis"
+    ],
+    "correct": "A",
+    "explanation": "Extensor pollicis longus passes around Lister's tubercle. Rheumatoid spurs at distal ulna (caput ulnae) can cause attrition rupture, resulting in loss of thumb extension.",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Textbook of Rheumatology, 11th ed., p. 712",
+    "hints": [
+      "Vaughn-Jackson syndrome",
+      "Attrition over bony prominence"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_047",
+    "question": "Identify the ligament indicated by arrow X in this coracoclavicular ligament complex illustration:",
+    "options": [
+      "A. Conoid ligament",
+      "B. Trapezoid ligament",
+      "C. Coracoacromial ligament",
+      "D. Coracoclavicular ligament"
+    ],
+    "correct": "B",
+    "explanation": "Arrow X indicates trapezoid ligament, lateral component of coracoclavicular complex, quadrilateral shape, preventing shoulder compression.",
+    "difficulty": 3,
+    "image": "coracoclavicular_trapezoid.png",
+    "reference": "Gray's Anatomy, 42nd ed., Fig. 46.15",
+    "hints": [
+      "Lateral to conoid ligament",
+      "Quadrilateral shape"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_048",
+    "question": "During axillary lymph node dissection, which nerve injury causes loss of cutaneous sensation over upper medial arm?",
+    "options": [
+      "A. Intercostobrachial nerve",
+      "B. Medial cutaneous nerve of arm",
+      "C. Medial cutaneous nerve of forearm",
+      "D. Long thoracic nerve"
+    ],
+    "correct": "A",
+    "explanation": "Intercostobrachial nerve (T2) provides sensation to upper medial arm. Often sacrificed in axillary dissection, causing numbness in this region.",
+    "difficulty": 4,
+    "image": null,
+    "reference": "Sabiston Textbook of Surgery, 21st ed., p. 802",
+    "hints": [
+      "From second intercostal nerve",
+      "Often sacrificed in surgery"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_049",
+    "question": "Identify the muscle indicated by arrow Y in this deep posterior forearm dissection:",
+    "options": [
+      "A. Supinator",
+      "B. Abductor pollicis longus",
+      "C. Extensor pollicis brevis",
+      "D. Extensor indicis"
+    ],
+    "correct": "D",
+    "explanation": "Arrow Y indicates extensor indicis, deepest extensor compartment muscle, with tendon joining extensor digitorum to index finger.",
+    "difficulty": 3,
+    "image": "deep_posterior_forearm_extensor_indicis.png",
+    "reference": "Grant's Atlas, 15th ed., Plate 433",
+    "hints": [
+      "Deepest extensor",
+      "Index finger only"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_050",
+    "question": "Which test specifically evaluates the integrity of the anterior interosseous nerve?",
+    "options": [
+      "A. Tinel's sign at wrist",
+      "B. Froment's sign",
+      "C. OK sign (pinch test)",
+      "D. Phalen's test"
+    ],
+    "correct": "C",
+    "explanation": "OK sign tests anterior interosseous nerve function: inability to form perfect 'O' with thumb and index indicates FPL and FDP (index) weakness.",
+    "difficulty": 4,
+    "image": null,
+    "reference": "Neurological Examination, 7th ed., p. 267",
+    "hints": [
+      "Tests thumb and index tip pinch",
+      "Kiloh-Nevin syndrome"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_051",
+    "question": "Identify the artery indicated by arrow Z in this vascular study of the arm:",
+    "options": [
+      "A. Profunda brachii artery",
+      "B. Brachial artery",
+      "C. Superior ulnar collateral artery",
+      "D. Inferior ulnar collateral artery"
+    ],
+    "correct": "A",
+    "explanation": "Arrow Z indicates profunda brachii artery, main branch of brachial artery, supplying posterior arm compartment and accompanying radial nerve in spiral groove.",
+    "difficulty": 4,
+    "image": "arm_profunda_brachii.png",
+    "reference": "Atlas of Human Anatomy, Netter, Plate 419",
+    "hints": [
+      "Main posterior arm supply",
+      "With radial nerve in groove"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_052",
+    "question": "A patient with quadrilateral space syndrome would have weakness in which movement?",
+    "options": [
+      "A. Shoulder abduction",
+      "B. Shoulder external rotation",
+      "C. Elbow flexion",
+      "D. Wrist extension"
+    ],
+    "correct": "A",
+    "explanation": "Quadrilateral space syndrome involves axillary nerve compression, affecting deltoid (abduction) and teres minor (external rotation).",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Journal of Shoulder and Elbow Surgery, Vol. 12, p. 314-319",
+    "hints": [
+      "Axillary nerve compression",
+      "Between teres muscles"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_053",
+    "question": "Identify the structure indicated by arrow AA in this medial elbow dissection:",
+    "options": [
+      "A. Ulnar nerve",
+      "B. Median nerve",
+      "C. Medial cutaneous nerve of forearm",
+      "D. Ulnar collateral ligament"
+    ],
+    "correct": "A",
+    "explanation": "Arrow AA indicates ulnar nerve posterior to medial epicondyle in cubital tunnel, vulnerable to compression and injury.",
+    "difficulty": 3,
+    "image": "medial_elbow_ulnar_nerve.png",
+    "reference": "Grant's Dissector, 16th ed., Plate 40",
+    "hints": [
+      "Posterior to medial epicondyle",
+      "Cubital tunnel location"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_054",
+    "question": "During surgical approach to the volar forearm, which structure must be protected when releasing the flexor pronator mass?",
+    "options": [
+      "A. Median nerve",
+      "B. Ulnar nerve",
+      "C. Anterior interosseous nerve",
+      "D. Radial nerve"
+    ],
+    "correct": "A",
+    "explanation": "Median nerve passes between humeral and ulnar heads of pronator teres. Release of flexor-pronator mass must protect this nerve.",
+    "difficulty": 4,
+    "image": null,
+    "reference": "Orthopedic Surgery Approaches, 2nd ed., p. 145",
+    "hints": [
+      "Between pronator teres heads",
+      "Vulnerable in anterior approach"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_055",
+    "question": "Identify the muscle indicated by arrow BB in this illustration of the dorsal interossei:",
+    "options": [
+      "A. First dorsal interosseous",
+      "B. Second dorsal interosseous",
+      "C. Third dorsal interosseous",
+      "D. Fourth dorsal interosseous"
+    ],
+    "correct": "A",
+    "explanation": "Arrow BB indicates first dorsal interosseous, largest, abducting index finger, palpable between thumb and index metacarpals.",
+    "difficulty": 3,
+    "image": "dorsal_interossei_first.png",
+    "reference": "Gray's Anatomy, 42nd ed., Fig. 50.22",
+    "hints": [
+      "Between thumb and index metacarpals",
+      "Tested in ulnar nerve examination"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_056",
+    "question": "A patient with C8 radiculopathy would most likely have weakness in which muscle?",
+    "options": [
+      "A. Deltoid",
+      "B. Biceps",
+      "C. Triceps",
+      "D. Finger flexors"
+    ],
+    "correct": "D",
+    "explanation": "C8 nerve root contributes to median and ulnar nerves, supplying finger flexors (FDP, FPL). Weakness manifests as reduced grip strength.",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Spine, Vol. 28, p. 2478-2483",
+    "hints": [
+      "Lower trunk contribution",
+      "Affects grip strength"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_057",
+    "question": "Identify the artery indicated by arrow CC in this angiogram of the thoracic outlet:",
+    "options": [
+      "A. Subclavian artery",
+      "B. Axillary artery",
+      "C. Brachial artery",
+      "D. Vertebral artery"
+    ],
+    "correct": "B",
+    "explanation": "Arrow CC indicates axillary artery, beginning at lateral border of first rib, continuing as brachial artery at teres major.",
+    "difficulty": 3,
+    "image": "thoracic_outlet_axillary_artery.png",
+    "reference": "Vascular Anatomy, 2nd ed., Fig. 8-4",
+    "hints": [
+      "Lateral to first rib",
+      "Has three parts relative to pectoralis minor"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_058",
+    "question": "Which muscle is primarily responsible for terminal extension of the interphalangeal joints?",
+    "options": [
+      "A. Extensor digitorum",
+      "B. Lumbricals",
+      "C. Interossei",
+      "D. Extensor indicis"
+    ],
+    "correct": "B",
+    "explanation": "Lumbricals, originating from flexor digitorum profundus tendons, extend IP joints via extensor hood while flexing MCP joints.",
+    "difficulty": 4,
+    "image": null,
+    "reference": "Journal of Hand Surgery, Vol. 10A, p. 100-104",
+    "hints": [
+      "Paradoxical action: flex MCP, extend IP",
+      "From FDP to extensor apparatus"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_059",
+    "question": "Identify the nerve indicated by arrow DD in this view of the spiral groove:",
+    "options": [
+      "A. Radial nerve",
+      "B. Ulnar nerve",
+      "C. Median nerve",
+      "D. Musculocutaneous nerve"
+    ],
+    "correct": "A",
+    "explanation": "Arrow DD indicates radial nerve in spiral groove of humerus, vulnerable in midshaft fractures, giving off branches to triceps and brachioradialis.",
+    "difficulty": 4,
+    "image": "spiral_groove_radial_nerve.png",
+    "reference": "Surgical Exposures in Orthopedics, 6th ed., Plate 7",
+    "hints": [
+      "In contact with humeral shaft",
+      "Wraps posteriorly around humerus"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_060",
+    "question": "A patient with Guyon's canal syndrome would have preserved function of which muscle?",
+    "options": [
+      "A. Adductor pollicis",
+      "B. First dorsal interosseous",
+      "C. Flexor carpi ulnaris",
+      "D. Palmaris brevis"
+    ],
+    "correct": "C",
+    "explanation": "Guyon's canal compression affects ulnar nerve distal to FCU innervation. FCU function remains intact while hand intrinsics are affected.",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Journal of Neurosurgery, Vol. 95, p. 1005-1010",
+    "hints": [
+      "Ulnar nerve at wrist",
+      "Proximal vs distal compression patterns"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_061",
+    "question": "Identify the structure indicated by arrow EE in this arthroscopic view of the glenohumeral joint:",
+    "options": [
+      "A. Biceps anchor",
+      "B. Glenoid labrum",
+      "C. Humeral articular cartilage",
+      "D. Rotator interval"
+    ],
+    "correct": "B",
+    "explanation": "Arrow EE indicates glenoid labrum, fibrocartilaginous rim deepening glenoid fossa, commonly torn in Bankart lesions.",
+    "difficulty": 4,
+    "image": "glenohumeral_labrum_arthroscopic.png",
+    "reference": "Arthroscopy of the Shoulder, p. 89",
+    "hints": [
+      "Deepens glenoid socket",
+      "Attachment for glenohumeral ligaments"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_062",
+    "question": "During harvest of radial forearm flap, which artery must be preserved to maintain hand perfusion?",
+    "options": [
+      "A. Ulnar artery",
+      "B. Radial artery",
+      "C. Anterior interosseous artery",
+      "D. Posterior interosseous artery"
+    ],
+    "correct": "A",
+    "explanation": "Allen's test must confirm adequate ulnar artery flow before radial artery harvest. Ulnar artery is primary hand supply in most individuals.",
+    "difficulty": 4,
+    "image": null,
+    "reference": "Plastic Surgery, 4th ed., p. 567",
+    "hints": [
+      "Preoperative Allen test required",
+      "Dominant hand supply in 90%"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_063",
+    "question": "Identify the muscle indicated by arrow FF in this view of the hypothenar eminence:",
+    "options": [
+      "A. Abductor digiti minimi",
+      "B. Flexor digiti minimi",
+      "C. Opponens digiti minimi",
+      "D. Palmaris brevis"
+    ],
+    "correct": "C",
+    "explanation": "Arrow FF indicates opponens digiti minimi, deepest hypothenar muscle, rotating fifth metacarpal for opposition with thumb.",
+    "difficulty": 3,
+    "image": "hypothenar_opponens_digiti_minimi.png",
+    "reference": "Grant's Atlas, 15th ed., Plate 439",
+    "hints": [
+      "Deepest hypothenar muscle",
+      "Rotates fifth metacarpal"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_064",
+    "question": "Which ligament is the primary restraint against valgus stress at 30° of elbow flexion?",
+    "options": [
+      "A. Anterior band of medial collateral ligament",
+      "B. Posterior band of medial collateral ligament",
+      "C. Transverse band of medial collateral ligament",
+      "D. Lateral collateral ligament"
+    ],
+    "correct": "A",
+    "explanation": "Anterior band of MCL is taut throughout flexion, primary valgus restraint at 30-90° flexion. Posterior band tightens in extension.",
+    "difficulty": 5,
+    "image": null,
+    "reference": "American Journal of Sports Medicine, Vol. 31, p. 378-383",
+    "hints": [
+      "Most important elbow stabilizer",
+      "Tommy John surgery repairs this"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_065",
+    "question": "Identify the artery indicated by arrow GG in this view of the dorsal scapular region:",
+    "options": [
+      "A. Dorsal scapular artery",
+      "B. Suprascapular artery",
+      "C. Transverse cervical artery",
+      "D. Thoracodorsal artery"
+    ],
+    "correct": "A",
+    "explanation": "Arrow GG indicates dorsal scapular artery, branching from subclavian, supplying rhomboids and levator scapulae, accompanying dorsal scapular nerve.",
+    "difficulty": 4,
+    "image": "dorsal_scapular_artery.png",
+    "reference": "Gray's Anatomy, 42nd ed., Fig. 47.18",
+    "hints": [
+      "With dorsal scapular nerve",
+      "Supplies medial scapular muscles"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_066",
+    "question": "A patient with Parsonage-Turner syndrome typically presents with acute onset of which deficit?",
+    "options": [
+      "A. Wrist drop",
+      "B. Shoulder weakness and pain",
+      "C. Hand intrinsic wasting",
+      "D. Elbow flexion weakness"
+    ],
+    "correct": "B",
+    "explanation": "Parsonage-Turner syndrome (neuralgic amyotrophy) presents with acute severe shoulder pain followed by weakness, typically affecting suprascapular or axillary nerves.",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Neurology, Vol. 72, p. 1865-1871",
+    "hints": [
+      "Idiopathic brachial neuritis",
+      "Pain preceding weakness"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_067",
+    "question": "Identify the nerve indicated by arrow HH in this dissection of the suprascapular notch:",
+    "options": [
+      "A. Suprascapular nerve",
+      "B. Axillary nerve",
+      "C. Dorsal scapular nerve",
+      "D. Upper subscapular nerve"
+    ],
+    "correct": "A",
+    "explanation": "Arrow HH indicates suprascapular nerve passing through suprascapular notch under superior transverse scapular ligament, supplying supraspinatus and infraspinatus.",
+    "difficulty": 4,
+    "image": "suprascapular_notch_nerve.png",
+    "reference": "Surgical Anatomy of the Shoulder, p. 78",
+    "hints": [
+      "Through suprascapular notch",
+      "Supplies two rotator cuff muscles"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_068",
+    "question": "Which muscle acts as a shunt stabilizer of the glenohumeral joint by compressing the humeral head into the glenoid?",
+    "options": [
+      "A. Deltoid",
+      "B. Rotator cuff muscles",
+      "C. Pectoralis major",
+      "D. Latissimus dorsi"
+    ],
+    "correct": "B",
+    "explanation": "Rotator cuff muscles (supraspinatus, infraspinatus, teres minor, subscapularis) provide dynamic stabilization by compressing humeral head into glenoid (concavity compression).",
+    "difficulty": 4,
+    "image": null,
+    "reference": "Journal of Bone and Joint Surgery, Vol. 75A, p. 1825-1832",
+    "hints": [
+      "Four muscles around shoulder",
+      "Compression stabilizers"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_069",
+    "question": "Identify the structure indicated by arrow II in this cross-section through the mid-forearm:",
+    "options": [
+      "A. Median nerve",
+      "B. Ulnar nerve",
+      "C. Radial nerve (superficial branch)",
+      "D. Posterior interosseous nerve"
+    ],
+    "correct": "D",
+    "explanation": "Arrow II indicates posterior interosseous nerve between superficial and deep extensor layers, supplying most extensors except ECRL.",
+    "difficulty": 4,
+    "image": "forearm_cross_section_pin.png",
+    "reference": "Cross-Sectional Anatomy, CT and MRI, p. 167",
+    "reference": "Gray's Anatomy, 42nd ed., p. 768",
+    "hints": [
+      "Between extensor muscle layers",
+      "Deep branch of radial nerve"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_070",
+    "question": "A patient with Klumpke's palsy from birth trauma would have preserved function of which muscle?",
+    "options": [
+      "A. First dorsal interosseous",
+      "B. Flexor pollicis longus",
+      "C. Deltoid",
+      "D. Biceps brachii"
+    ],
+    "correct": "C",
+    "explanation": "Klumpke's palsy (C8-T1) affects hand intrinsics and finger flexors. Deltoid (C5-C6 via axillary nerve) remains intact.",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Journal of Pediatric Orthopedics, Vol. 18, p. 719-723",
+    "hints": [
+      "Lower trunk injury",
+      "Upper trunk muscles preserved"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_071",
+    "question": "Identify the artery indicated by arrow JJ in this view of the scapular anastomosis:",
+    "options": [
+      "A. Suprascapular artery",
+      "B. Dorsal scapular artery",
+      "C. Circumflex scapular artery",
+      "D. Thoracodorsal artery"
+    ],
+    "correct": "C",
+    "explanation": "Arrow JJ indicates circumflex scapular artery, branch of subscapular artery, passing through triangular space to participate in scapular anastomosis.",
+    "difficulty": 4,
+    "image": "scapular_anastomosis_circumflex.png",
+    "reference": "Gray's Anatomy, 42nd ed., Fig. 47.20",
+    "hints": [
+      "Through triangular space",
+      "Connects subclavian and axillary systems"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_072",
+    "question": "During repair of distal biceps tendon rupture, which nerve is at risk with anterior approach?",
+    "options": [
+      "A. Median nerve",
+      "B. Radial nerve (posterior interosseous)",
+      "C. Ulnar nerve",
+      "D. Musculocutaneous nerve"
+    ],
+    "correct": "B",
+    "explanation": "Posterior interosseous nerve winds around radial neck. Anterior approach to biceps insertion risks this nerve if dissection extends too far laterally.",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Journal of Shoulder and Elbow Surgery, Vol. 16, p. S122-S127",
+    "hints": [
+      "Vulnerable at radial tuberosity",
+      "Deep to supinator"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_073",
+    "question": "Identify the muscle indicated by arrow KK in this view of the anterior shoulder (deep layer):",
+    "options": [
+      "A. Coracobrachialis",
+      "B. Short head of biceps",
+      "C. Pectoralis minor",
+      "D. Subclavius"
+    ],
+    "correct": "A",
+    "explanation": "Arrow KK indicates coracobrachialis, originating from coracoid process with short head of biceps, inserting on medial humerus, flexing and adducting arm.",
+    "difficulty": 3,
+    "image": "anterior_shoulder_coracobrachialis.png",
+    "reference": "Grant's Atlas, 15th ed., Plate 408",
+    "hints": [
+      "From coracoid process",
+      "Pierced by musculocutaneous nerve"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_074",
+    "question": "Which test evaluates for triangular fibrocartilage complex (TFCC) injury?",
+    "options": [
+      "A. Finkelstein test",
+      "B. Piano key test",
+      "C. TFCC load test",
+      "D. Tinel's test"
+    ],
+    "correct": "C",
+    "explanation": "TFCC load test: axial load with ulnar deviation reproduces pain. Piano key test assesses DRUJ instability, not specifically TFCC.",
+    "difficulty": 4,
+    "image": null,
+    "reference": "Journal of Hand Therapy, Vol. 18, p. 415-424",
+    "hints": [
+      "Ulnar-sided wrist pain",
+      "Axial loading maneuver"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_075",
+    "question": "Identify the nerve indicated by arrow LL in this dissection of the lateral arm:",
+    "options": [
+      "A. Radial nerve",
+      "B. Axillary nerve",
+      "C. Musculocutaneous nerve",
+      "D. Medial cutaneous nerve of arm"
+    ],
+    "correct": "A",
+    "explanation": "Arrow LL indicates radial nerve in lateral arm, giving off posterior cutaneous nerve of arm before entering spiral groove.",
+    "difficulty": 4,
+    "image": "lateral_arm_radial_nerve.png",
+    "reference": "Sobotta Atlas, Vol. 1, Plate 49",
+    "hints": [
+      "Posterior compartment nerve",
+      "Courses posterior to humerus"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_076",
+    "question": "A patient with suprascapular nerve entrapment at spinoglenoid notch would have isolated weakness of which muscle?",
+    "options": [
+      "A. Supraspinatus",
+      "B. Infraspinatus",
+      "C. Both supraspinatus and infraspinatus",
+      "D. Teres minor"
+    ],
+    "correct": "B",
+    "explanation": "Suprascapular nerve gives branch to supraspinatus before passing through notch. Entrapment at spinoglenoid notch selectively affects infraspinatus.",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Clinical Orthopedics and Related Research, Vol. 368, p. 92-96",
+    "hints": [
+      "Distal to supraspinatus branch",
+      "Isolated external rotation weakness"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_077",
+    "question": "Identify the artery indicated by arrow MM in this view of the antecubital fossa:",
+    "options": [
+      "A. Brachial artery",
+      "B. Radial artery",
+      "C. Ulnar artery",
+      "D. Common interosseous artery"
+    ],
+    "correct": "A",
+    "explanation": "Arrow MM indicates brachial artery, medial to biceps tendon in antecubital fossa, bifurcating into radial and ulnar arteries distal to fossa.",
+    "difficulty": 3,
+    "image": "antecubital_brachial_artery.png",
+    "reference": "Gray's Anatomy, 42nd ed., Fig. 48.17",
+    "hints": [
+      "Medial to biceps tendon",
+      "Bifurcates at elbow level"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_078",
+    "question": "Which muscle is primarily responsible for stabilizing the clavicle during shoulder movement?",
+    "options": [
+      "A. Trapezius",
+      "B. Subclavius",
+      "C. Sternocleidomastoid",
+      "D. Pectoralis minor"
+    ],
+    "correct": "B",
+    "explanation": "Subclavius, originating from first rib and inserting on clavicle, stabilizes and depresses clavicle during shoulder movements.",
+    "difficulty": 4,
+    "image": null,
+    "reference": "Journal of Anatomy, Vol. 198, p. 425-430",
+    "hints": [
+      "Between first rib and clavicle",
+      "Protects subclavian vessels"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_079",
+    "question": "Identify the structure indicated by arrow NN in this MRI of the carpal tunnel:",
+    "options": [
+      "A. Median nerve",
+      "B. Flexor retinaculum",
+      "C. Flexor digitorum superficialis tendons",
+      "D. Ulnar artery"
+    ],
+    "correct": "A",
+    "explanation": "Arrow NN indicates median nerve in carpal tunnel, lying superficial to flexor tendons, commonly compressed in carpal tunnel syndrome.",
+    "difficulty": 4,
+    "image": "carpal_tunnel_mri_median_nerve.png",
+    "reference": "MRI of the Wrist, 2nd ed., Fig. 7-14",
+    "hints": [
+      "Most superficial structure in tunnel",
+      "Palmar cutaneous branch proximal"
+    ]
+  },
+  {
+    "id": "anatomy_upperlimb_080",
+    "question": "A patient with combined median and ulnar nerve palsy would be unable to perform which movement?",
+    "options": [
+      "A. Wrist flexion",
+      "B. Finger extension",
+      "C. Thumb opposition",
+      "D. Elbow flexion"
+    ],
+    "correct": "C",
+    "explanation": "Thumb opposition requires median-innervated thenar muscles. Combined palsy causes complete intrinsic hand paralysis (median and ulnar distribution).",
+    "difficulty": 5,
+    "image": null,
+    "reference": "Journal of Hand Surgery, Vol. 30B, p. 374-380",
+    "hints": [
+      "Thenar eminence function",
+      "Complete intrinsic paralysis"
+    ]
+  }
+]

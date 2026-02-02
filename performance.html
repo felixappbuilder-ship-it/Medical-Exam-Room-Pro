@@ -1,0 +1,1759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Performance Analytics - Medical Exam Room Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/performance.css">
+    <link rel="icon" href="images/logo.png" type="image/png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('service-worker.js');
+            });
+        }
+    </script>
+</head>
+<body>
+    <header class="header">
+        <div class="header-container">
+            <div class="logo">
+                <img src="images/logo.png" alt="Logo" class="logo-image">
+                <h1 class="logo-text">Performance Analytics</h1>
+            </div>
+            
+            <div class="header-actions">
+                <button class="theme-toggle" id="themeToggle">
+                    <span class="theme-icon">🌙</span>
+                    <span class="theme-text">Dark Mode</span>
+                </button>
+                
+                <button class="btn-back" id="backBtn">
+                    <span class="back-icon">←</span>
+                    <span class="back-text">Back to Subjects</span>
+                </button>
+                
+                <button class="btn-profile" id="profileBtn">
+                    <span class="profile-icon">👤</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="analytics-container">
+            <!-- Analytics Header -->
+            <div class="analytics-header">
+                <div class="header-content">
+                    <h2>Your Learning Analytics</h2>
+                    <p class="analytics-subtitle">Track your progress, identify patterns, and optimize your study strategy</p>
+                </div>
+                
+                <div class="header-controls">
+                    <div class="date-range">
+                        <label for="dateRange">Time Period:</label>
+                        <select id="dateRange">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="365">Last year</option>
+                            <option value="all">All time</option>
+                        </select>
+                    </div>
+                    
+                    <button class="btn-secondary" id="refreshBtn">
+                        <span class="btn-icon">🔄</span>
+                        <span class="btn-text">Refresh</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Key Metrics Dashboard -->
+            <div class="metrics-dashboard">
+                <h3>Key Performance Metrics</h3>
+                
+                <div class="metrics-grid">
+                    <div class="metric-card primary">
+                        <div class="metric-header">
+                            <div class="metric-icon">📊</div>
+                            <div class="metric-info">
+                                <div class="metric-value" id="avgScore">0%</div>
+                                <div class="metric-label">Average Score</div>
+                            </div>
+                        </div>
+                        <div class="metric-trend" id="scoreTrend">
+                            <span class="trend-icon">→</span>
+                            <span class="trend-text">Loading trend...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <div class="metric-icon">⏱️</div>
+                            <div class="metric-info">
+                                <div class="metric-value" id="avgTime">0s</div>
+                                <div class="metric-label">Avg Time/Question</div>
+                            </div>
+                        </div>
+                        <div class="metric-details" id="timeDetails">Across all exams</div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <div class="metric-icon">📝</div>
+                            <div class="metric-info">
+                                <div class="metric-value" id="totalExams">0</div>
+                                <div class="metric-label">Exams Taken</div>
+                            </div>
+                        </div>
+                        <div class="metric-details" id="examDetails">Total questions: 0</div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <div class="metric-icon">🎯</div>
+                            <div class="metric-info">
+                                <div class="metric-value" id="weakAreasCount">0</div>
+                                <div class="metric-label">Weak Areas</div>
+                            </div>
+                        </div>
+                        <div class="metric-details" id="weakAreasDetails">Needing improvement</div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <div class="metric-icon">📈</div>
+                            <div class="metric-info">
+                                <div class="metric-value" id="improvementRate">0%</div>
+                                <div class="metric-label">Improvement Rate</div>
+                            </div>
+                        </div>
+                        <div class="metric-trend" id="improvementTrend">
+                            <span class="trend-icon">→</span>
+                            <span class="trend-text">Loading...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <div class="metric-icon">🏆</div>
+                            <div class="metric-info">
+                                <div class="metric-value" id="consistencyScore">0%</div>
+                                <div class="metric-label">Consistency</div>
+                            </div>
+                        </div>
+                        <div class="metric-details">Score stability</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Performance Charts -->
+            <div class="charts-section">
+                <h3>Performance Visualizations</h3>
+                
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h4>Score Trend Over Time</h4>
+                        <div class="chart-container">
+                            <canvas id="scoreChart"></canvas>
+                        </div>
+                        <div class="chart-legend" id="scoreLegend"></div>
+                    </div>
+                    
+                    <div class="chart-card">
+                        <h4>Subject Performance</h4>
+                        <div class="chart-container">
+                            <canvas id="subjectChart"></canvas>
+                        </div>
+                        <div class="chart-legend" id="subjectLegend"></div>
+                    </div>
+                    
+                    <div class="chart-card">
+                        <h4>Study Time Distribution</h4>
+                        <div class="chart-container">
+                            <canvas id="timeChart"></canvas>
+                        </div>
+                        <div class="chart-legend" id="timeLegend"></div>
+                    </div>
+                    
+                    <div class="chart-card">
+                        <h4>Difficulty Mastery</h4>
+                        <div class="chart-container">
+                            <canvas id="difficultyChart"></canvas>
+                        </div>
+                        <div class="chart-legend" id="difficultyLegend"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Subject Analysis -->
+            <div class="subject-analysis">
+                <h3>Detailed Subject Analysis</h3>
+                
+                <div class="analysis-controls">
+                    <div class="control-group">
+                        <label for="subjectSelect">Focus Subject:</label>
+                        <select id="subjectSelect">
+                            <option value="all">All Subjects</option>
+                            <option value="anatomy">Anatomy</option>
+                            <option value="physiology">Physiology</option>
+                            <option value="biochemistry">Biochemistry</option>
+                            <option value="histology">Histology</option>
+                            <option value="embryology">Embryology</option>
+                            <option value="pathology">Pathology</option>
+                            <option value="pharmacology">Pharmacology</option>
+                            <option value="microbiology">Microbiology</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="metricSelect">Primary Metric:</label>
+                        <select id="metricSelect">
+                            <option value="score">Score</option>
+                            <option value="time">Time Efficiency</option>
+                            <option value="accuracy">Accuracy</option>
+                            <option value="consistency">Consistency</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="subject-details" id="subjectDetails">
+                    <!-- Subject details will be loaded here -->
+                </div>
+                
+                <div class="topic-breakdown" id="topicBreakdown">
+                    <!-- Topic breakdown will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Weak Areas & Recommendations -->
+            <div class="recommendations-section">
+                <h3>Personalized Recommendations</h3>
+                
+                <div class="recommendations-grid">
+                    <div class="recommendation-card urgent">
+                        <div class="rec-header">
+                            <div class="rec-icon">🚨</div>
+                            <h4>Priority Focus Areas</h4>
+                        </div>
+                        <div class="rec-content" id="priorityAreas">
+                            <!-- Priority areas will be loaded here -->
+                        </div>
+                    </div>
+                    
+                    <div class="recommendation-card">
+                        <div class="rec-header">
+                            <div class="rec-icon">📅</div>
+                            <h4>Study Schedule</h4>
+                        </div>
+                        <div class="rec-content" id="studySchedule">
+                            <!-- Study schedule will be loaded here -->
+                        </div>
+                    </div>
+                    
+                    <div class="recommendation-card">
+                        <div class="rec-header">
+                            <div class="rec-icon">⚡</div>
+                            <h4>Efficiency Tips</h4>
+                        </div>
+                        <div class="rec-content" id="efficiencyTips">
+                            <!-- Efficiency tips will be loaded here -->
+                        </div>
+                    </div>
+                    
+                    <div class="recommendation-card">
+                        <div class="rec-header">
+                            <div class="rec-icon">🎯</div>
+                            <h4>Goal Setting</h4>
+                        </div>
+                        <div class="rec-content" id="goalSetting">
+                            <!-- Goals will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Comparative Analytics -->
+            <div class="comparative-analytics">
+                <h3>Comparative Analysis</h3>
+                
+                <div class="comparative-grid">
+                    <div class="comparative-card">
+                        <h4>Your Progress vs Goals</h4>
+                        <div class="progress-comparison" id="progressVsGoals">
+                            <!-- Progress vs goals will be loaded here -->
+                        </div>
+                    </div>
+                    
+                    <div class="comparative-card">
+                        <h4>Peer Comparison</h4>
+                        <div class="peer-comparison" id="peerComparison">
+                            <!-- Peer comparison will be loaded here -->
+                        </div>
+                    </div>
+                    
+                    <div class="comparative-card">
+                        <h4>Performance Predictions</h4>
+                        <div class="predictions" id="performancePredictions">
+                            <!-- Predictions will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Data Export & Reports -->
+            <div class="export-section">
+                <h3>Data Export & Reports</h3>
+                
+                <div class="export-options">
+                    <button class="btn-secondary" id="exportCSVBtn">
+                        <span class="btn-icon">📊</span>
+                        <span class="btn-text">Export as CSV</span>
+                    </button>
+                    
+                    <button class="btn-secondary" id="exportPDFBtn">
+                        <span class="btn-icon">📄</span>
+                        <span class="btn-text">Generate PDF Report</span>
+                    </button>
+                    
+                    <button class="btn-secondary" id="exportJSONBtn">
+                        <span class="btn-icon">🔧</span>
+                        <span class="btn-text">Export Raw Data (JSON)</span>
+                    </button>
+                    
+                    <button class="btn-primary" id="shareDashboardBtn">
+                        <span class="btn-icon">📤</span>
+                        <span class="btn-text">Share Dashboard</span>
+                    </button>
+                </div>
+                
+                <div class="report-schedule">
+                    <h4>Automated Reports</h4>
+                    <div class="schedule-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="weeklyReport">
+                            <span class="checkbox-custom"></span>
+                            <span class="checkbox-text">Send weekly progress report via email</span>
+                        </label>
+                        
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="monthlyReport">
+                            <span class="checkbox-custom"></span>
+                            <span class="checkbox-text">Send monthly comprehensive report</span>
+                        </label>
+                        
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="weakAreaAlerts">
+                            <span class="checkbox-custom"></span>
+                            <span class="checkbox-text">Alert me about declining performance</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Insights & Takeaways -->
+            <div class="insights-section">
+                <h3>Key Insights</h3>
+                
+                <div class="insights-grid" id="keyInsights">
+                    <!-- Insights will be loaded here -->
+                </div>
+                
+                <div class="action-steps">
+                    <h4>Recommended Actions</h4>
+                    <div class="steps-list" id="actionSteps">
+                        <!-- Action steps will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer-minimal">
+        <p>Analytics are updated in real-time. Data is stored locally and can be synced to your account.</p>
+        <p>Use these insights to optimize your study strategy and improve performance.</p>
+    </footer>
+
+    <script src="scripts/app.js"></script>
+    <script src="scripts/analytics.js"></script>
+    <script src="scripts/db.js"></script>
+    <script src="scripts/sync.js"></script>
+    <script src="scripts/ui.js"></script>
+    <script src="scripts/utils.js"></script>
+    <script src="scripts/router.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Theme toggle
+            const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = themeToggle.querySelector('.theme-icon');
+            const themeText = themeToggle.querySelector('.theme-text');
+            
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.classList.toggle('dark-theme', savedTheme === 'dark');
+            
+            if (savedTheme === 'dark') {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = 'Light Mode';
+            }
+            
+            themeToggle.addEventListener('click', function() {
+                const isDark = document.body.classList.toggle('dark-theme');
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                
+                if (isDark) {
+                    themeIcon.textContent = '☀️';
+                    themeText.textContent = 'Light Mode';
+                } else {
+                    themeIcon.textContent = '🌙';
+                    themeText.textContent = 'Dark Mode';
+                }
+            });
+            
+            // Navigation
+            const backBtn = document.getElementById('backBtn');
+            const profileBtn = document.getElementById('profileBtn');
+            
+            backBtn.addEventListener('click', function() {
+                window.location.href = 'subjects.html';
+            });
+            
+            profileBtn.addEventListener('click', function() {
+                window.location.href = 'profile.html';
+            });
+            
+            // Analytics data
+            let analyticsData = {
+                exams: [],
+                subjects: {},
+                trends: {},
+                recommendations: {}
+            };
+            
+            // Load analytics data
+            function loadAnalyticsData() {
+                // Load exam history
+                const previousExams = JSON.parse(localStorage.getItem('previousExams') || '[]');
+                const syncedExams = JSON.parse(localStorage.getItem('syncedExams') || '[]');
+                
+                // Combine all exams
+                analyticsData.exams = [...previousExams, ...syncedExams];
+                
+                // If no data, load sample data for demo
+                if (analyticsData.exams.length === 0) {
+                    loadSampleAnalyticsData();
+                }
+                
+                // Process analytics
+                processAnalyticsData();
+                
+                // Update UI
+                updateMetricsDashboard();
+                updateCharts();
+                updateSubjectAnalysis();
+                updateRecommendations();
+                updateComparativeAnalytics();
+                updateInsights();
+            }
+            
+            // Load sample data for demo
+            function loadSampleAnalyticsData() {
+                const subjects = ['Anatomy', 'Physiology', 'Biochemistry', 'Pathology', 'Pharmacology', 'Microbiology'];
+                const topics = {
+                    'Anatomy': ['Upper Limb', 'Lower Limb', 'Thorax', 'Abdomen', 'Head & Neck'],
+                    'Physiology': ['Cardiovascular', 'Respiratory', 'Renal', 'Neurophysiology', 'Endocrine'],
+                    'Biochemistry': ['Metabolism', 'Enzymology', 'Molecular Biology', 'Nutrition'],
+                    'Pathology': ['Inflammation', 'Neoplasia', 'Cardiovascular', 'Respiratory'],
+                    'Pharmacology': ['Antibiotics', 'Cardiovascular Drugs', 'CNS Drugs', 'Autonomic Drugs'],
+                    'Microbiology': ['Bacteria', 'Viruses', 'Fungi', 'Parasites']
+                };
+                
+                // Generate 30 days of sample data
+                const today = new Date();
+                for (let i = 29; i >= 0; i--) {
+                    const date = new Date(today);
+                    date.setDate(date.getDate() - i);
+                    
+                    // 70% chance of having an exam on a given day
+                    if (Math.random() < 0.7) {
+                        const subject = subjects[Math.floor(Math.random() * subjects.length)];
+                        const topic = topics[subject][Math.floor(Math.random() * topics[subject].length)];
+                        
+                        const exam = {
+                            id: 'exam_sample_' + i,
+                            date: date.toISOString(),
+                            subject: subject,
+                            topics: [topic],
+                            score: Math.floor(Math.random() * 30) + 60, // 60-90%
+                            totalQuestions: Math.random() < 0.7 ? 25 : (Math.random() < 0.5 ? 10 : 50),
+                            correctAnswers: 0, // Will be calculated
+                            totalTime: Math.floor(Math.random() * 1200) + 600, // 10-30 minutes
+                            timePerQuestion: {},
+                            flagged: {},
+                            examMode: Math.random() < 0.6 ? 'timed' : (Math.random() < 0.5 ? 'practice' : 'review')
+                        };
+                        
+                        // Calculate correct answers based on score
+                        exam.correctAnswers = Math.round((exam.score / 100) * exam.totalQuestions);
+                        
+                        // Generate time per question data
+                        for (let q = 1; q <= exam.totalQuestions; q++) {
+                            exam.timePerQuestion[q] = Math.floor(Math.random() * 30) + 15; // 15-45 seconds
+                        }
+                        
+                        analyticsData.exams.push(exam);
+                    }
+                }
+            }
+            
+            // Process analytics data
+            function processAnalyticsData() {
+                const subjects = {};
+                const dates = {};
+                const difficulties = {};
+                
+                analyticsData.exams.forEach(exam => {
+                    const date = new Date(exam.date).toLocaleDateString();
+                    
+                    // Aggregate by date
+                    if (!dates[date]) {
+                        dates[date] = { scores: [], times: [], count: 0 };
+                    }
+                    dates[date].scores.push(exam.score);
+                    dates[date].times.push(exam.totalTime);
+                    dates[date].count++;
+                    
+                    // Aggregate by subject
+                    if (!subjects[exam.subject]) {
+                        subjects[exam.subject] = {
+                            scores: [],
+                            times: [],
+                            totalQuestions: 0,
+                            correctAnswers: 0,
+                            count: 0
+                        };
+                    }
+                    subjects[exam.subject].scores.push(exam.score);
+                    subjects[exam.subject].times.push(exam.totalTime);
+                    subjects[exam.subject].totalQuestions += exam.totalQuestions;
+                    subjects[exam.subject].correctAnswers += exam.correctAnswers;
+                    subjects[exam.subject].count++;
+                    
+                    // Process topics if available
+                    if (exam.topics) {
+                        exam.topics.forEach(topic => {
+                            if (!subjects[exam.subject].topics) {
+                                subjects[exam.subject].topics = {};
+                            }
+                            if (!subjects[exam.subject].topics[topic]) {
+                                subjects[exam.subject].topics[topic] = {
+                                    scores: [],
+                                    times: [],
+                                    count: 0
+                                };
+                            }
+                            subjects[exam.subject].topics[topic].scores.push(exam.score);
+                            subjects[exam.subject].topics[topic].times.push(exam.totalTime);
+                            subjects[exam.subject].topics[topic].count++;
+                        });
+                    }
+                });
+                
+                // Calculate averages
+                analyticsData.subjects = {};
+                Object.keys(subjects).forEach(subject => {
+                    const data = subjects[subject];
+                    analyticsData.subjects[subject] = {
+                        avgScore: Math.round(data.scores.reduce((a, b) => a + b, 0) / data.scores.length),
+                        avgTime: Math.round(data.times.reduce((a, b) => a + b, 0) / data.times.length),
+                        accuracy: Math.round((data.correctAnswers / data.totalQuestions) * 100),
+                        totalExams: data.count,
+                        topics: data.topics || {}
+                    };
+                });
+                
+                // Calculate trends
+                analyticsData.trends = {
+                    dates: Object.keys(dates).sort(),
+                    scores: Object.keys(dates).sort().map(date => 
+                        Math.round(dates[date].scores.reduce((a, b) => a + b, 0) / dates[date].scores.length)
+                    ),
+                    examCounts: Object.keys(dates).sort().map(date => dates[date].count)
+                };
+                
+                // Calculate overall metrics
+                const allScores = analyticsData.exams.map(e => e.score);
+                const allTimes = analyticsData.exams.map(e => e.totalTime);
+                const allQuestions = analyticsData.exams.reduce((sum, e) => sum + e.totalQuestions, 0);
+                const allCorrect = analyticsData.exams.reduce((sum, e) => sum + e.correctAnswers, 0);
+                
+                analyticsData.metrics = {
+                    avgScore: Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length),
+                    avgTimePerQuestion: Math.round(
+                        allTimes.reduce((a, b) => a + b, 0) / allQuestions
+                    ),
+                    totalExams: analyticsData.exams.length,
+                    totalQuestions: allQuestions,
+                    totalCorrect: allCorrect,
+                    overallAccuracy: Math.round((allCorrect / allQuestions) * 100)
+                };
+                
+                // Calculate improvement rate
+                if (analyticsData.trends.scores.length >= 2) {
+                    const firstHalf = analyticsData.trends.scores.slice(0, Math.floor(analyticsData.trends.scores.length / 2));
+                    const secondHalf = analyticsData.trends.scores.slice(Math.floor(analyticsData.trends.scores.length / 2));
+                    
+                    const avgFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+                    const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+                    
+                    analyticsData.metrics.improvementRate = Math.round(((avgSecond - avgFirst) / avgFirst) * 100);
+                } else {
+                    analyticsData.metrics.improvementRate = 0;
+                }
+                
+                // Calculate consistency
+                const scoreStdDev = calculateStandardDeviation(allScores);
+                analyticsData.metrics.consistencyScore = Math.max(0, 100 - Math.round(scoreStdDev));
+                
+                // Identify weak areas
+                analyticsData.weakAreas = [];
+                Object.keys(analyticsData.subjects).forEach(subject => {
+                    if (analyticsData.subjects[subject].avgScore < 70) {
+                        analyticsData.weakAreas.push({
+                            subject: subject,
+                            score: analyticsData.subjects[subject].avgScore,
+                            topics: Object.keys(analyticsData.subjects[subject].topics || {})
+                                .map(topic => ({
+                                    name: topic,
+                                    score: Math.round(
+                                        analyticsData.subjects[subject].topics[topic].scores
+                                            .reduce((a, b) => a + b, 0) /
+                                        analyticsData.subjects[subject].topics[topic].scores.length
+                                    )
+                                }))
+                                .sort((a, b) => a.score - b.score)
+                                .slice(0, 3)
+                        });
+                    }
+                });
+                
+                analyticsData.weakAreas.sort((a, b) => a.score - b.score);
+            }
+            
+            // Calculate standard deviation
+            function calculateStandardDeviation(numbers) {
+                const mean = numbers.reduce((a, b) => a + b, 0) / numbers.length;
+                const squareDiffs = numbers.map(value => {
+                    const diff = value - mean;
+                    return diff * diff;
+                });
+                const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / squareDiffs.length;
+                return Math.sqrt(avgSquareDiff);
+            }
+            
+            // Update metrics dashboard
+            function updateMetricsDashboard() {
+                const metrics = analyticsData.metrics;
+                
+                document.getElementById('avgScore').textContent = `${metrics.avgScore}%`;
+                document.getElementById('avgTime').textContent = `${metrics.avgTimePerQuestion}s`;
+                document.getElementById('totalExams').textContent = metrics.totalExams;
+                document.getElementById('examDetails').textContent = `Total questions: ${metrics.totalQuestions}`;
+                document.getElementById('weakAreasCount').textContent = analyticsData.weakAreas.length;
+                document.getElementById('weakAreasDetails').textContent = analyticsData.weakAreas.length > 0 ? 
+                    `Needing improvement` : `All areas strong`;
+                document.getElementById('improvementRate').textContent = `${metrics.improvementRate >= 0 ? '+' : ''}${metrics.improvementRate}%`;
+                document.getElementById('consistencyScore').textContent = `${metrics.consistencyScore}%`;
+                
+                // Update trends
+                const scoreTrend = document.getElementById('scoreTrend');
+                if (metrics.improvementRate > 5) {
+                    scoreTrend.innerHTML = '<span class="trend-icon">📈</span><span class="trend-text positive">Improving</span>';
+                } else if (metrics.improvementRate < -5) {
+                    scoreTrend.innerHTML = '<span class="trend-icon">📉</span><span class="trend-text negative">Declining</span>';
+                } else {
+                    scoreTrend.innerHTML = '<span class="trend-icon">→</span><span class="trend-text">Stable</span>';
+                }
+                
+                const improvementTrend = document.getElementById('improvementTrend');
+                if (metrics.improvementRate > 0) {
+                    improvementTrend.innerHTML = '<span class="trend-icon">👍</span><span class="trend-text positive">Positive trend</span>';
+                } else if (metrics.improvementRate < 0) {
+                    improvementTrend.innerHTML = '<span class="trend-icon">👎</span><span class="trend-text negative">Needs attention</span>';
+                } else {
+                    improvementTrend.innerHTML = '<span class="trend-icon">🤔</span><span class="trend-text">No change</span>';
+                }
+            }
+            
+            // Update charts
+            function updateCharts() {
+                updateScoreChart();
+                updateSubjectChart();
+                updateTimeChart();
+                updateDifficultyChart();
+            }
+            
+            // Update score chart
+            function updateScoreChart() {
+                const ctx = document.getElementById('scoreChart').getContext('2d');
+                
+                // Destroy existing chart if it exists
+                if (window.scoreChart) {
+                    window.scoreChart.destroy();
+                }
+                
+                window.scoreChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: analyticsData.trends.dates,
+                        datasets: [{
+                            label: 'Average Score',
+                            data: analyticsData.trends.scores,
+                            borderColor: '#2196F3',
+                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                min: 50,
+                                max: 100,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Update subject chart
+            function updateSubjectChart() {
+                const ctx = document.getElementById('subjectChart').getContext('2d');
+                const subjects = Object.keys(analyticsData.subjects);
+                const scores = subjects.map(subject => analyticsData.subjects[subject].avgScore);
+                const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#FF6384', '#36A2EB'];
+                
+                // Destroy existing chart if it exists
+                if (window.subjectChart) {
+                    window.subjectChart.destroy();
+                }
+                
+                window.subjectChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: subjects,
+                        datasets: [{
+                            label: 'Average Score',
+                            data: scores,
+                            backgroundColor: colors.slice(0, subjects.length),
+                            borderColor: colors.slice(0, subjects.length).map(c => c.replace('0.6', '1')),
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Update time chart
+            function updateTimeChart() {
+                const ctx = document.getElementById('timeChart').getContext('2d');
+                
+                // Calculate time distribution by hour of day
+                const hours = Array.from({ length: 24 }, (_, i) => i);
+                const timeData = hours.map(hour => {
+                    const examsAtHour = analyticsData.exams.filter(exam => {
+                        const examHour = new Date(exam.date).getHours();
+                        return examHour === hour;
+                    });
+                    return examsAtHour.length;
+                });
+                
+                // Destroy existing chart if it exists
+                if (window.timeChart) {
+                    window.timeChart.destroy();
+                }
+                
+                window.timeChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: hours.map(h => `${h}:00`),
+                        datasets: [{
+                            label: 'Exams Taken',
+                            data: timeData,
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Number of Exams'
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Hour of Day'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Update difficulty chart
+            function updateDifficultyChart() {
+                const ctx = document.getElementById('difficultyChart').getContext('2d');
+                
+                // Simulate difficulty data (in real app, this would come from exam data)
+                const difficulties = ['Easy', 'Medium', 'Hard', 'Expert'];
+                const correctRates = [85, 72, 58, 42]; // Simulated data
+                
+                // Destroy existing chart if it exists
+                if (window.difficultyChart) {
+                    window.difficultyChart.destroy();
+                }
+                
+                window.difficultyChart = new Chart(ctx, {
+                    type: 'radar',
+                    data: {
+                        labels: difficulties,
+                        datasets: [{
+                            label: 'Correct Rate',
+                            data: correctRates,
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 2,
+                            pointBackgroundColor: 'rgba(255, 99, 132, 1)'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            r: {
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Update subject analysis
+            function updateSubjectAnalysis() {
+                const selectedSubject = document.getElementById('subjectSelect').value;
+                const selectedMetric = document.getElementById('metricSelect').value;
+                
+                if (selectedSubject === 'all') {
+                    // Show all subjects comparison
+                    displayAllSubjectsAnalysis(selectedMetric);
+                } else {
+                    // Show specific subject analysis
+                    displaySubjectAnalysis(selectedSubject, selectedMetric);
+                }
+            }
+            
+            // Display all subjects analysis
+            function displayAllSubjectsAnalysis(metric) {
+                const subjectDetails = document.getElementById('subjectDetails');
+                const topicBreakdown = document.getElementById('topicBreakdown');
+                
+                let content = '';
+                let metricLabel = '';
+                let metricKey = '';
+                
+                switch(metric) {
+                    case 'score':
+                        metricLabel = 'Average Score';
+                        metricKey = 'avgScore';
+                        break;
+                    case 'time':
+                        metricLabel = 'Average Time (minutes)';
+                        metricKey = 'avgTime';
+                        break;
+                    case 'accuracy':
+                        metricLabel = 'Accuracy';
+                        metricKey = 'accuracy';
+                        break;
+                    case 'consistency':
+                        metricLabel = 'Consistency';
+                        // Calculate consistency for each subject
+                        break;
+                }
+                
+                const subjects = Object.keys(analyticsData.subjects)
+                    .map(subject => ({
+                        name: subject,
+                        value: analyticsData.subjects[subject][metricKey],
+                        color: getSubjectColor(subject)
+                    }))
+                    .sort((a, b) => b.value - a.value);
+                
+                content = `
+                    <div class="subjects-comparison">
+                        <h4>${metricLabel} by Subject</h4>
+                        <div class="comparison-list">
+                            ${subjects.map(subject => `
+                                <div class="comparison-item">
+                                    <div class="subject-info">
+                                        <div class="subject-color" style="background-color: ${subject.color}"></div>
+                                        <div class="subject-name">${subject.name}</div>
+                                    </div>
+                                    <div class="subject-metric">
+                                        <div class="metric-value">${subject.value}${metric === 'score' || metric === 'accuracy' ? '%' : metric === 'time' ? 's' : ''}</div>
+                                        <div class="metric-bar">
+                                            <div class="bar-fill" style="width: ${(subject.value / 100) * 100}%; background-color: ${subject.color}"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                
+                subjectDetails.innerHTML = content;
+                
+                // Show strongest and weakest subjects
+                const strongest = subjects[0];
+                const weakest = subjects[subjects.length - 1];
+                
+                topicBreakdown.innerHTML = `
+                    <div class="strength-analysis">
+                        <div class="strength-card strong">
+                            <div class="strength-icon">💪</div>
+                            <div class="strength-content">
+                                <h5>Strongest Subject</h5>
+                                <div class="strength-details">
+                                    <div class="subject">${strongest.name}</div>
+                                    <div class="score">${strongest.value}${metric === 'score' || metric === 'accuracy' ? '%' : ''}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="strength-card weak">
+                            <div class="strength-icon">🎯</div>
+                            <div class="strength-content">
+                                <h5>Focus Area</h5>
+                                <div class="strength-details">
+                                    <div class="subject">${weakest.name}</div>
+                                    <div class="score">${weakest.value}${metric === 'score' || metric === 'accuracy' ? '%' : ''}</div>
+                                </div>
+                                <button class="btn-improve" data-subject="${weakest.name}">
+                                    <span class="btn-icon">📚</span>
+                                    <span class="btn-text">Improve This Area</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Add improve button listener
+                document.querySelector('.btn-improve')?.addEventListener('click', function() {
+                    const subject = this.dataset.subject;
+                    alert(`Starting improvement plan for ${subject}. This would load focused practice questions.`);
+                });
+            }
+            
+            // Display specific subject analysis
+            function displaySubjectAnalysis(subject, metric) {
+                const subjectData = analyticsData.subjects[subject];
+                if (!subjectData) return;
+                
+                const subjectDetails = document.getElementById('subjectDetails');
+                const topicBreakdown = document.getElementById('topicBreakdown');
+                
+                // Calculate trend
+                const subjectExams = analyticsData.exams.filter(e => e.subject === subject);
+                const trend = subjectExams.length >= 2 ? 
+                    subjectExams[subjectExams.length - 1].score - subjectExams[0].score : 0;
+                
+                subjectDetails.innerHTML = `
+                    <div class="subject-detail-card">
+                        <div class="subject-header">
+                            <div class="subject-icon">📚</div>
+                            <div class="subject-info">
+                                <h4>${subject}</h4>
+                                <div class="subject-stats">
+                                    <span class="stat">${subjectData.totalExams} exams</span>
+                                    <span class="stat">${subjectData.accuracy}% accuracy</span>
+                                    <span class="stat ${trend >= 0 ? 'positive' : 'negative'}">
+                                        ${trend >= 0 ? '↗' : '↘'} ${Math.abs(trend)}%
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="subject-metrics">
+                            <div class="metric">
+                                <div class="metric-label">Average Score</div>
+                                <div class="metric-value">${subjectData.avgScore}%</div>
+                                <div class="metric-bar">
+                                    <div class="bar-fill" style="width: ${subjectData.avgScore}%"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="metric">
+                                <div class="metric-label">Time Efficiency</div>
+                                <div class="metric-value">${subjectData.avgTime}s</div>
+                                <div class="metric-bar">
+                                    <div class="bar-fill" style="width: ${Math.min(100, (60 - subjectData.avgTime) / 60 * 100)}%"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="metric">
+                                <div class="metric-label">Consistency</div>
+                                <div class="metric-value">${calculateSubjectConsistency(subject)}%</div>
+                                <div class="metric-bar">
+                                    <div class="bar-fill" style="width: ${calculateSubjectConsistency(subject)}%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Display topic breakdown if available
+                if (subjectData.topics && Object.keys(subjectData.topics).length > 0) {
+                    const topics = Object.keys(subjectData.topics)
+                        .map(topic => ({
+                            name: topic,
+                            score: Math.round(
+                                subjectData.topics[topic].scores.reduce((a, b) => a + b, 0) /
+                                subjectData.topics[topic].scores.length
+                            ),
+                            count: subjectData.topics[topic].count
+                        }))
+                        .sort((a, b) => a.score - b.score);
+                    
+                    topicBreakdown.innerHTML = `
+                        <div class="topic-analysis">
+                            <h4>Topic Performance in ${subject}</h4>
+                            <div class="topics-list">
+                                ${topics.map(topic => `
+                                    <div class="topic-item ${topic.score < 70 ? 'weak' : ''}">
+                                        <div class="topic-info">
+                                            <div class="topic-name">${topic.name}</div>
+                                            <div class="topic-count">${topic.count} attempts</div>
+                                        </div>
+                                        <div class="topic-performance">
+                                            <div class="topic-score">${topic.score}%</div>
+                                            <div class="topic-bar">
+                                                <div class="bar-fill" style="width: ${topic.score}%"></div>
+                                            </div>
+                                        </div>
+                                        ${topic.score < 70 ? `
+                                            <button class="btn-practice-topic" data-subject="${subject}" data-topic="${topic.name}">
+                                                <span class="btn-icon">🎯</span>
+                                                <span class="btn-text">Practice</span>
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Add practice button listeners
+                    document.querySelectorAll('.btn-practice-topic').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const subject = this.dataset.subject;
+                            const topic = this.dataset.topic;
+                            alert(`Starting practice session for ${topic} in ${subject}.`);
+                        });
+                    });
+                } else {
+                    topicBreakdown.innerHTML = `
+                        <div class="no-topic-data">
+                            <p>No detailed topic data available for ${subject}.</p>
+                            <p>Take more exams on specific topics to see detailed breakdown.</p>
+                        </div>
+                    `;
+                }
+            }
+            
+            // Calculate subject consistency
+            function calculateSubjectConsistency(subject) {
+                const subjectExams = analyticsData.exams.filter(e => e.subject === subject);
+                if (subjectExams.length < 2) return 100;
+                
+                const scores = subjectExams.map(e => e.score);
+                const stdDev = calculateStandardDeviation(scores);
+                return Math.max(0, 100 - Math.round(stdDev));
+            }
+            
+            // Get subject color
+            function getSubjectColor(subject) {
+                const colors = {
+                    'Anatomy': '#FF6384',
+                    'Physiology': '#36A2EB',
+                    'Biochemistry': '#FFCE56',
+                    'Histology': '#4BC0C0',
+                    'Embryology': '#9966FF',
+                    'Pathology': '#FF9F40',
+                    'Pharmacology': '#FF6384',
+                    'Microbiology': '#36A2EB'
+                };
+                return colors[subject] || '#CCCCCC';
+            }
+            
+            // Update recommendations
+            function updateRecommendations() {
+                updatePriorityAreas();
+                updateStudySchedule();
+                updateEfficiencyTips();
+                updateGoalSetting();
+            }
+            
+            // Update priority areas
+            function updatePriorityAreas() {
+                const priorityAreas = document.getElementById('priorityAreas');
+                
+                if (analyticsData.weakAreas.length > 0) {
+                    priorityAreas.innerHTML = `
+                        <div class="priority-list">
+                            ${analyticsData.weakAreas.slice(0, 3).map(area => `
+                                <div class="priority-item">
+                                    <div class="priority-subject">${area.subject}</div>
+                                    <div class="priority-score">${area.score}%</div>
+                                    <div class="priority-topics">
+                                        ${area.topics.slice(0, 2).map(topic => `
+                                            <span class="topic-tag">${topic.name} (${topic.score}%)</span>
+                                        `).join('')}
+                                    </div>
+                                    <div class="priority-action">
+                                        <button class="btn-priority" data-subject="${area.subject}">
+                                            <span class="btn-icon">🎯</span>
+                                            <span class="btn-text">Focus Here</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                    
+                    // Add focus button listeners
+                    document.querySelectorAll('.btn-priority').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const subject = this.dataset.subject;
+                            alert(`Creating focused study plan for ${subject}.`);
+                        });
+                    });
+                } else {
+                    priorityAreas.innerHTML = `
+                        <div class="no-priority">
+                            <span class="success-icon">🎉</span>
+                            <div class="success-message">
+                                <h5>Excellent Performance!</h5>
+                                <p>No urgent weak areas identified. Focus on maintaining your strengths.</p>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            
+            // Update study schedule
+            function updateStudySchedule() {
+                const studySchedule = document.getElementById('studySchedule');
+                
+                // Generate recommended schedule based on weak areas
+                const schedule = [];
+                
+                if (analyticsData.weakAreas.length > 0) {
+                    analyticsData.weakAreas.slice(0, 3).forEach((area, index) => {
+                        const days = ['Monday', 'Wednesday', 'Friday'];
+                        schedule.push({
+                            day: days[index] || 'Daily',
+                            subject: area.subject,
+                            duration: '30 minutes',
+                            focus: area.topics[0]?.name || 'General review'
+                        });
+                    });
+                } else {
+                    // Maintenance schedule
+                    schedule.push(
+                        { day: 'Monday', subject: 'Mixed', duration: '45 minutes', focus: 'Full exam' },
+                        { day: 'Wednesday', subject: 'Random', duration: '30 minutes', focus: 'Practice questions' },
+                        { day: 'Friday', subject: 'Review', duration: '30 minutes', focus: 'Weak topic refresh' }
+                    );
+                }
+                
+                studySchedule.innerHTML = `
+                    <div class="schedule-list">
+                        ${schedule.map(item => `
+                            <div class="schedule-item">
+                                <div class="schedule-day">${item.day}</div>
+                                <div class="schedule-details">
+                                    <div class="schedule-subject">${item.subject}</div>
+                                    <div class="schedule-focus">${item.focus}</div>
+                                </div>
+                                <div class="schedule-duration">${item.duration}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="schedule-note">
+                        <p>Based on your performance patterns and available study time.</p>
+                    </div>
+                `;
+            }
+            
+            // Update efficiency tips
+            function updateEfficiencyTips() {
+                const efficiencyTips = document.getElementById('efficiencyTips');
+                
+                const avgTime = analyticsData.metrics.avgTimePerQuestion;
+                const tips = [];
+                
+                if (avgTime > 40) {
+                    tips.push({
+                        icon: '⚡',
+                        title: 'Improve Speed',
+                        description: 'Your average time per question is high. Practice with timed exams to improve speed.'
+                    });
+                } else if (avgTime < 20) {
+                    tips.push({
+                        icon: '🎯',
+                        title: 'Focus on Accuracy',
+                        description: 'You answer quickly but may sacrifice accuracy. Slow down and read questions carefully.'
+                    });
+                }
+                
+                if (analyticsData.metrics.consistencyScore < 80) {
+                    tips.push({
+                        icon: '📊',
+                        title: 'Increase Consistency',
+                        description: 'Your scores vary significantly. Focus on consistent study habits.'
+                    });
+                }
+                
+                if (analyticsData.weakAreas.length > 0) {
+                    tips.push({
+                        icon: '🎯',
+                        title: 'Targeted Practice',
+                        description: `Focus on ${analyticsData.weakAreas[0].subject} to maximize improvement.`
+                    });
+                }
+                
+                // Add general tips if we don't have enough
+                const generalTips = [
+                    { icon: '⏰', title: 'Study in Intervals', description: 'Use Pomodoro technique: 25 min study, 5 min break.' },
+                    { icon: '📝', title: 'Review Mistakes', description: 'Spend equal time reviewing incorrect answers as taking new exams.' },
+                    { icon: '🔄', title: 'Mix Subjects', description: 'Study different subjects each day to improve retention.' },
+                    { icon: '🎯', title: 'Set Specific Goals', description: 'Aim for specific score improvements rather than just "studying more".' }
+                ];
+                
+                while (tips.length < 4) {
+                    const tip = generalTips[tips.length % generalTips.length];
+                    if (!tips.some(t => t.title === tip.title)) {
+                        tips.push(tip);
+                    }
+                }
+                
+                efficiencyTips.innerHTML = `
+                    <div class="tips-list">
+                        ${tips.slice(0, 4).map(tip => `
+                            <div class="tip-item">
+                                <div class="tip-icon">${tip.icon}</div>
+                                <div class="tip-content">
+                                    <h5>${tip.title}</h5>
+                                    <p>${tip.description}</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            // Update goal setting
+            function updateGoalSetting() {
+                const goalSetting = document.getElementById('goalSetting');
+                
+                const currentScore = analyticsData.metrics.avgScore;
+                const targetScore = Math.min(95, currentScore + 10);
+                const weeksToGoal = Math.ceil((targetScore - currentScore) / 5);
+                
+                goalSetting.innerHTML = `
+                    <div class="goal-card">
+                        <div class="goal-header">
+                            <div class="goal-icon">🎯</div>
+                            <div class="goal-info">
+                                <h5>Current Average: ${currentScore}%</h5>
+                                <div class="goal-target">Target: ${targetScore}%</div>
+                            </div>
+                        </div>
+                        
+                        <div class="goal-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${(currentScore / targetScore) * 100}%"></div>
+                            </div>
+                            <div class="progress-text">${currentScore}% of ${targetScore}% goal</div>
+                        </div>
+                        
+                        <div class="goal-details">
+                            <div class="detail">
+                                <span class="label">Weekly Target:</span>
+                                <span class="value">+${((targetScore - currentScore) / weeksToGoal).toFixed(1)}%</span>
+                            </div>
+                            <div class="detail">
+                                <span class="label">Estimated Time:</span>
+                                <span class="value">${weeksToGoal} week${weeksToGoal !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div class="detail">
+                                <span class="label">Required Effort:</span>
+                                <span class="value">${weeksToGoal * 3} hours/week</span>
+                            </div>
+                        </div>
+                        
+                        <div class="goal-actions">
+                            <button class="btn-goal" id="adjustGoalBtn">
+                                <span class="btn-icon">⚙️</span>
+                                <span class="btn-text">Adjust Goal</span>
+                            </button>
+                            <button class="btn-goal primary" id="setReminderBtn">
+                                <span class="btn-icon">⏰</span>
+                                <span class="btn-text">Set Reminder</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                // Add goal button listeners
+                document.getElementById('adjustGoalBtn').addEventListener('click', function() {
+                    const newTarget = prompt('Enter new target score (%):', targetScore);
+                    if (newTarget && !isNaN(newTarget)) {
+                        localStorage.setItem('targetScore', newTarget);
+                        updateGoalSetting();
+                    }
+                });
+                
+                document.getElementById('setReminderBtn').addEventListener('click', function() {
+                    alert('Study reminders would be set up here. In a full app, this would use browser notifications.');
+                });
+            }
+            
+            // Update comparative analytics
+            function updateComparativeAnalytics() {
+                updateProgressVsGoals();
+                updatePeerComparison();
+                updatePerformancePredictions();
+            }
+            
+            // Update progress vs goals
+            function updateProgressVsGoals() {
+                const progressVsGoals = document.getElementById('progressVsGoals');
+                const targetScore = parseInt(localStorage.getItem('targetScore')) || 85;
+                const currentScore = analyticsData.metrics.avgScore;
+                const progress = (currentScore / targetScore) * 100;
+                
+                progressVsGoals.innerHTML = `
+                    <div class="progress-comparison-card">
+                        <div class="comparison-header">
+                            <div class="current">${currentScore}%</div>
+                            <div class="vs">vs</div>
+                            <div class="target">${targetScore}%</div>
+                        </div>
+                        
+                        <div class="comparison-visual">
+                            <div class="current-bar" style="width: ${progress}%"></div>
+                            <div class="target-line" style="left: ${(targetScore / 100) * 100}%"></div>
+                        </div>
+                        
+                        <div class="comparison-details">
+                            <div class="detail">
+                                <span class="label">Progress:</span>
+                                <span class="value ${progress >= 100 ? 'positive' : progress >= 80 ? 'warning' : 'negative'}">
+                                    ${Math.min(progress, 100).toFixed(1)}%
+                                </span>
+                            </div>
+                            <div class="detail">
+                                <span class="label">Remaining:</span>
+                                <span class="value">${Math.max(0, targetScore - currentScore).toFixed(1)}%</span>
+                            </div>
+                            <div class="detail">
+                                <span class="label">On Track:</span>
+                                <span class="value ${progress >= 100 ? 'positive' : progress >= (weeksPassed / 12 * 100) ? 'positive' : 'negative'}">
+                                    ${progress >= 100 ? 'Yes' : progress >= (weeksPassed / 12 * 100) ? 'Yes' : 'No'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Update peer comparison
+            function updatePeerComparison() {
+                const peerComparison = document.getElementById('peerComparison');
+                
+                // Simulated peer data
+                const peerData = {
+                    you: analyticsData.metrics.avgScore,
+                    average: 65,
+                    top25: 78,
+                    top10: 85,
+                    top5: 92
+                };
+                
+                peerComparison.innerHTML = `
+                    <div class="peer-comparison-card">
+                        <div class="peer-header">
+                            <h5>Score Distribution</h5>
+                            <div class="peer-percentile">You're in the top ${Math.round(100 - (analyticsData.metrics.avgScore / 100) * 100)}%</div>
+                        </div>
+                        
+                        <div class="peer-distribution">
+                            <div class="distribution-bar">
+                                <div class="segment bottom" style="width: 50%">
+                                    <span class="label">Bottom 50%</span>
+                                    <span class="score">&lt; 65%</span>
+                                </div>
+                                <div class="segment middle" style="width: 25%">
+                                    <span class="label">50-75%</span>
+                                    <span class="score">65-78%</span>
+                                </div>
+                                <div class="segment top" style="width: 15%">
+                                    <span class="label">75-90%</span>
+                                    <span class="score">78-85%</span>
+                                </div>
+                                <div class="segment elite" style="width: 10%">
+                                    <span class="label">Top 10%</span>
+                                    <span class="score">&gt; 85%</span>
+                                </div>
+                            </div>
+                            
+                            <div class="your-position" style="left: ${peerData.you}%">
+                                <div class="position-marker"></div>
+                                <div class="position-label">You (${peerData.you}%)</div>
+                            </div>
+                        </div>
+                        
+                        <div class="peer-stats">
+                            <div class="stat">
+                                <span class="label">vs Average:</span>
+                                <span class="value ${peerData.you >= peerData.average ? 'positive' : 'negative'}">
+                                    ${peerData.you >= peerData.average ? '+' : ''}${(peerData.you - peerData.average).toFixed(1)}%
+                                </span>
+                            </div>
+                            <div class="stat">
+                                <span class="label">vs Top 25%:</span>
+                                <span class="value ${peerData.you >= peerData.top25 ? 'positive' : 'negative'}">
+                                    ${peerData.you >= peerData.top25 ? '+' : ''}${(peerData.you - peerData.top25).toFixed(1)}%
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Update performance predictions
+            function updatePerformancePredictions() {
+                const performancePredictions = document.getElementById('performancePredictions');
+                
+                const predictions = [
+                    { time: '1 week', score: Math.min(95, analyticsData.metrics.avgScore + 2), confidence: 'Medium' },
+                    { time: '1 month', score: Math.min(95, analyticsData.metrics.avgScore + 5), confidence: 'High' },
+                    { time: '3 months', score: Math.min(95, analyticsData.metrics.avgScore + 10), confidence: 'Medium' }
+                ];
+                
+                performancePredictions.innerHTML = `
+                    <div class="predictions-card">
+                        <div class="predictions-header">
+                            <h5>Predicted Performance</h5>
+                            <div class="predictions-note">Based on current study patterns</div>
+                        </div>
+                        
+                        <div class="predictions-list">
+                            ${predictions.map(pred => `
+                                <div class="prediction-item">
+                                    <div class="prediction-time">${pred.time}</div>
+                                    <div class="prediction-score">${pred.score}%</div>
+                                    <div class="prediction-confidence ${pred.confidence.toLowerCase()}">
+                                        ${pred.confidence} confidence
+                                    </div>
+                                    <div class="prediction-bar">
+                                        <div class="bar-fill" style="width: ${pred.score}%"></div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        
+                        <div class="predictions-note">
+                            <p>These predictions assume consistent study habits of ${Math.round(analyticsData.exams.length / 4)} hours per week.</p>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Update insights
+            function updateInsights() {
+                const keyInsights = document.getElementById('keyInsights');
+                const actionSteps = document.getElementById('actionSteps');
+                
+                const insights = [];
+                const actions = [];
+                
+                // Generate insights based on data
+                if (analyticsData.metrics.improvementRate > 5) {
+                    insights.push({
+                        icon: '📈',
+                        title: 'Steady Improvement',
+                        description: 'Your scores are consistently improving. Keep up the good work!'
+                    });
+                    actions.push('Maintain current study pace and focus on consistency.');
+                } else if (analyticsData.metrics.improvementRate < -5) {
+                    insights.push({
+                        icon: '⚠️',
+                        title: 'Performance Decline',
+                        description: 'Recent scores show a downward trend. Review study methods.'
+                    });
+                    actions.push('Analyze recent exams to identify specific problem areas.');
+                }
+                
+                if (analyticsData.metrics.avgTimePerQuestion > 40) {
+                    insights.push({
+                        icon: '⏰',
+                        title: 'Time Management',
+                        description: 'You take longer than average per question. Practice timed exams.'
+                    });
+                    actions.push('Include more timed practice sessions in your study routine.');
+                }
+                
+                if (analyticsData.weakAreas.length > 0) {
+                    insights.push({
+                        icon: '🎯',
+                        title: 'Clear Focus Areas',
+                        description: `${analyticsData.weakAreas.length} subjects need improvement.`
+                    });
+                    actions.push(`Focus on ${analyticsData.weakAreas.map(a => a.subject).join(', ')} this week.`);
+                }
+                
+                if (analyticsData.metrics.consistencyScore < 80) {
+                    insights.push({
+                        icon: '📊',
+                        title: 'Inconsistent Performance',
+                        description: 'Score variance indicates inconsistent preparation.'
+                    });
+                    actions.push('Establish a regular study schedule for more consistent results.');
+                }
+                
+                // Fill with general insights if needed
+                const generalInsights = [
+                    { icon: '🌙', title: 'Study Timing', description: 'You study most effectively in the evenings.' },
+                    { icon: '📚', title: 'Subject Balance', description: 'Good distribution across different subjects.' },
+                    { icon: '⚡', title: 'Efficiency', description: 'Good balance between speed and accuracy.' }
+                ];
+                
+                while (insights.length < 3) {
+                    insights.push(generalInsights[insights.length % generalInsights.length]);
+                }
+                
+                // Fill with general actions if needed
+                const generalActions = [
+                    'Review 10 questions from your weakest subject daily.',
+                    'Take one full-length exam per week to build stamina.',
+                    'Use spaced repetition for better long-term retention.',
+                    'Set specific, measurable goals for each study session.'
+                ];
+                
+                while (actions.length < 4) {
+                    const action = generalActions[actions.length % generalActions.length];
+                    if (!actions.includes(action)) {
+                        actions.push(action);
+                    }
+                }
+                
+                keyInsights.innerHTML = insights.map(insight => `
+                    <div class="insight-card">
+                        <div class="insight-icon">${insight.icon}</div>
+                        <div class="insight-content">
+                            <h5>${insight.title}</h5>
+                            <p>${insight.description}</p>
+                        </div>
+                    </div>
+                `).join('');
+                
+                actionSteps.innerHTML = actions.map((action, index) => `
+                    <div class="step-item">
+                        <div class="step-number">${index + 1}</div>
+                        <div class="step-content">${action}</div>
+                    </div>
+                `).join('');
+            }
+            
+            // Event Listeners
+            
+            // Date range filter
+            document.getElementById('dateRange').addEventListener('change', function() {
+                // In full implementation, this would filter data by date range
+                loadAnalyticsData();
+            });
+            
+            // Refresh button
+            document.getElementById('refreshBtn').addEventListener('click', function() {
+                const btn = this;
+                const originalText = btn.querySelector('.btn-text').textContent;
+                const originalIcon = btn.querySelector('.btn-icon').textContent;
+                
+                btn.disabled = true;
+                btn.querySelector('.btn-text').textContent = 'Refreshing...';
+                btn.querySelector('.btn-icon').textContent = '⏳';
+                
+                setTimeout(() => {
+                    loadAnalyticsData();
+                    btn.disabled = false;
+                    btn.querySelector('.btn-text').textContent = originalText;
+                    btn.querySelector('.btn-icon').textContent = originalIcon;
+                }, 1000);
+            });
+            
+            // Subject and metric selection
+            document.getElementById('subjectSelect').addEventListener('change', updateSubjectAnalysis);
+            document.getElementById('metricSelect').addEventListener('change', updateSubjectAnalysis);
+            
+            // Export buttons
+            document.getElementById('exportCSVBtn').addEventListener('click', function() {
+                exportData('csv');
+            });
+            
+            document.getElementById('exportPDFBtn').addEventListener('click', function() {
+                exportData('pdf');
+            });
+            
+            document.getElementById('exportJSONBtn').addEventListener('click', function() {
+                exportData('json');
+            });
+            
+            document.getElementById('shareDashboardBtn').addEventListener('click', function() {
+                if (navigator.share) {
+                    navigator.share({
+                        title: 'My Learning Analytics',
+                        text: `Check out my performance analytics on Medical Exam Room Pro!`,
+                        url: window.location.href
+                    });
+                } else {
+                    alert('Share functionality is not available in this browser. Copy the URL to share.');
+                }
+            });
+            
+            // Export data function
+            function exportData(format) {
+                let dataStr, filename, mimeType;
+                
+                switch(format) {
+                    case 'csv':
+                        // Convert to CSV
+                        const headers = ['Date', 'Subject', 'Score', 'Questions', 'Time'];
+                        const rows = analyticsData.exams.map(exam => [
+                            new Date(exam.date).toLocaleDateString(),
+                            exam.subject,
+                            exam.score + '%',
+                            exam.totalQuestions,
+                            Math.floor(exam.totalTime / 60) + 'm ' + (exam.totalTime % 60) + 's'
+                        ]);
+                        
+                        dataStr = [headers, ...rows].map(row => 
+                            row.map(cell => `"${cell}"`).join(',')
+                        ).join('\n');
+                        
+                        filename = `analytics_${new Date().toISOString().split('T')[0]}.csv`;
+                        mimeType = 'text/csv';
+                        break;
+                        
+                    case 'pdf':
+                        alert('PDF export would be generated here. In a full app, this would use a PDF library.');
+                        return;
+                        
+                    case 'json':
+                        dataStr = JSON.stringify(analyticsData, null, 2);
+                        filename = `analytics_${new Date().toISOString().split('T')[0]}.json`;
+                        mimeType = 'application/json';
+                        break;
+                }
+                
+                const blob = new Blob([dataStr], { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
+            
+            // Report schedule checkboxes
+            document.getElementById('weeklyReport').addEventListener('change', function() {
+                localStorage.setItem('weeklyReport', this.checked);
+            });
+            
+            document.getElementById('monthlyReport').addEventListener('change', function() {
+                localStorage.setItem('monthlyReport', this.checked);
+            });
+            
+            document.getElementById('weakAreaAlerts').addEventListener('change', function() {
+                localStorage.setItem('weakAreaAlerts', this.checked);
+            });
+            
+            // Load saved preferences
+            document.getElementById('weeklyReport').checked = localStorage.getItem('weeklyReport') === 'true';
+            document.getElementById('monthlyReport').checked = localStorage.getItem('monthlyReport') === 'true';
+            document.getElementById('weakAreaAlerts').checked = localStorage.getItem('weakAreaAlerts') === 'true';
+            
+            // Initialize
+            loadAnalyticsData();
+            
+            // Initialize app state
+            if (typeof initApp === 'function') {
+                initApp();
+            }
+        });
+    </script>
+</body>
+</html>
