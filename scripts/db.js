@@ -1,70 +1,126 @@
-// scripts/db.js
-
 /**
- * Database Manager for Medical Exam Room Pro
- * IndexedDB implementation for offline functionality
- * 
- * Features implemented:
- * - User profile storage
- * - Exam results caching
- * - Question bank storage
- * - Sync queue management
- * - Device fingerprint storage
- * - Security logs
- * - Cleanup of old data
+ * db.js - IndexedDB Operations
+ * Purpose: Local data storage, offline capability, exam results caching
+ * Features: User profile storage, subscription info, exam results, sync queue
  */
 
-class DatabaseManager {
+// ============================================================================
+// CONFIGURATION & CONSTANTS
+// ============================================================================
+
+const DB_NAME = 'MedicalExamRoomProDB';
+const DB_VERSION = 3; // Increment when schema changes
+
+// Object Store Names
+const STORES = {
+    USERS: 'users',
+    SUBSCRIPTIONS: 'subscriptions',
+    EXAMS: 'exams',
+    QUESTIONS: 'questions',
+    SYNC_QUEUE: 'syncQueue',
+    SETTINGS: 'settings',
+    SECURITY: 'security',
+    ANALYTICS: 'analytics',
+    DEVICE_INFO: 'deviceInfo',
+    PAYMENTS: 'payments'
+};
+
+// Indexes for faster queries
+const INDEXES = {
+    EXAMS: {
+        BY_TIMESTAMP: 'timestamp',
+        BY_SUBJECT: 'subject',
+        BY_SCORE: 'score',
+        BY_SYNC_STATUS: 'synced'
+    },
+    SYNC_QUEUE: {
+        BY_PRIORITY: 'priority',
+        BY_STATUS: 'status',
+        BY_CREATED_AT: 'createdAt'
+    },
+    QUESTIONS: {
+        BY_SUBJECT: 'subject',
+        BY_TOPIC: 'topic',
+        BY_DIFFICULTY: 'difficulty',
+        BY_LAST_SEEN: 'lastSeen'
+    }
+};
+
+// ============================================================================
+// DATABASE CLASS
+// ============================================================================
+
+class MedicalExamDB {
     constructor() {
-        this.dbName = 'MedicalExamRoomPro';
-        this.dbVersion = 3;
         this.db = null;
-        this.isInitialized = false;
+        this.isConnecting = false;
+        this.connectionPromise = null;
+        this.eventListeners = {};
         
-        // Database schemas
-        this.schemas = {
-            users: { keyPath: 'id', autoIncrement: false },
-            subscriptions: { keyPath: 'id', autoIncrement: false },
-            exams: { keyPath: 'examId', autoIncrement: false },
-            questions: { keyPath: 'id', autoIncrement: false },
-            syncQueue: { keyPath: 'syncId', autoIncrement: true },
-            settings: { keyPath: 'key', autoIncrement: false },
-            security: { keyPath: 'id', autoIncrement: true },
-            analytics: { keyPath: 'id', autoIncrement: true }
-        };
-        
-        // Initialize database
+        // Auto-initialize when loaded
         this.init();
     }
     
+    // ============================================================================
+    // DATABASE INITIALIZATION & CONNECTION
+    // ============================================================================
+    
     /**
-     * Initialize the database
+     * Initialize database connection
      */
     async init() {
+        if (this.db) return this.db;
+        if (this.isConnecting) return this.connectionPromise;
+        
+        this.isConnecting = true;
+        this.connectionPromise = this.connect();
+        
+        return this.connectionPromise;
+    }
+    
+    /**
+     * Establish connection to IndexedDB
+     */
+    async connect() {
         return new Promise((resolve, reject) => {
-            if (this.isInitialized) {
-                resolve(this.db);
-                return;
-            }
-            
-            const request = indexedDB.open(this.dbName, this.dbVersion);
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
             
             request.onerror = (event) => {
-                console.error('Database initialization failed:', event.target.error);
+                console.error('IndexedDB connection failed:', event.target.error);
+                this.isConnecting = false;
                 reject(event.target.error);
             };
             
             request.onsuccess = (event) => {
                 this.db = event.target.result;
-                this.isInitialized = true;
-                console.log('Database initialized successfully');
+                this.isConnecting = false;
+                console.log('IndexedDB connection established');
+                
+                // Set up database event handlers
+                this.setupEventHandlers();
+                
+                // Check and upgrade if needed
+                this.checkHealth().then(health => {
+                    if (!health.healthy) {
+                        console.warn('Database health check failed:', health.issues);
+                    }
+                });
+                
+                // Dispatch connection event
+                this.dispatchEvent('connected', { db: this.db });
                 resolve(this.db);
             };
             
             request.onupgradeneeded = (event) => {
-                this.db = event.target.result;
-                this.createStores(event.target.result);
-                console.log('Database upgrade completed');
+                const db = event.target.result;
+                this.createObjectStores(db);
+                this.createIndexes(db);
+                console.log(`Database upgraded to version ${DB_VERSION}`);
+            };
+            
+            request.onblocked = (event) => {
+                console.warn('Database upgrade blocked by other connections');
+                // Could notify user to close other tabs
             };
         });
     }
@@ -72,157 +128,289 @@ class DatabaseManager {
     /**
      * Create all object stores
      */
-    createStores(db) {
-        // Create or upgrade object stores
-        Object.entries(this.schemas).forEach(([storeName, options]) => {
-            if (!db.objectStoreNames.contains(storeName)) {
-                db.createObjectStore(storeName, options);
-                console.log(`Created store: ${storeName}`);
-            }
-        });
+    createObjectStores(db) {
+        // Users store
+        if (!db.objectStoreNames.contains(STORES.USERS)) {
+            const userStore = db.createObjectStore(STORES.USERS, { keyPath: 'id' });
+            userStore.createIndex('email', 'email', { unique: true });
+            userStore.createIndex('phone', 'phone', { unique: true });
+            userStore.createIndex('lastLogin', 'lastLogin');
+        }
         
-        // Create indexes for better querying
-        this.createIndexes(db);
+        // Subscriptions store
+        if (!db.objectStoreNames.contains(STORES.SUBSCRIPTIONS)) {
+            const subStore = db.createObjectStore(STORES.SUBSCRIPTIONS, { keyPath: 'id' });
+            subStore.createIndex('userId', 'userId');
+            subStore.createIndex('expiryDate', 'expiryDate');
+            subStore.createIndex('plan', 'plan');
+            subStore.createIndex('isActive', 'isActive');
+        }
+        
+        // Exams store
+        if (!db.objectStoreNames.contains(STORES.EXAMS)) {
+            const examStore = db.createObjectStore(STORES.EXAMS, { keyPath: 'id' });
+            examStore.createIndex('userId', 'userId');
+            examStore.createIndex('timestamp', 'timestamp');
+            examStore.createIndex('subject', 'subject');
+            examStore.createIndex('score', 'score');
+            examStore.createIndex('synced', 'synced');
+            examStore.createIndex('isCompleted', 'isCompleted');
+        }
+        
+        // Questions store (cached question bank)
+        if (!db.objectStoreNames.contains(STORES.QUESTIONS)) {
+            const questionStore = db.createObjectStore(STORES.QUESTIONS, { keyPath: 'id' });
+            questionStore.createIndex('subject', 'subject');
+            questionStore.createIndex('topic', 'topic');
+            questionStore.createIndex('difficulty', 'difficulty');
+            questionStore.createIndex('lastSeen', 'lastSeen');
+        }
+        
+        // Sync queue store
+        if (!db.objectStoreNames.contains(STORES.SYNC_QUEUE)) {
+            const syncStore = db.createObjectStore(STORES.SYNC_QUEUE, { 
+                keyPath: 'id',
+                autoIncrement: true 
+            });
+            syncStore.createIndex('type', 'type');
+            syncStore.createIndex('status', 'status');
+            syncStore.createIndex('priority', 'priority');
+            syncStore.createIndex('createdAt', 'createdAt');
+            syncStore.createIndex('retryCount', 'retryCount');
+        }
+        
+        // Settings store
+        if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
+            const settingsStore = db.createObjectStore(STORES.SETTINGS, { keyPath: 'key' });
+            settingsStore.createIndex('category', 'category');
+        }
+        
+        // Security store
+        if (!db.objectStoreNames.contains(STORES.SECURITY)) {
+            const securityStore = db.createObjectStore(STORES.SECURITY, { 
+                keyPath: 'id',
+                autoIncrement: true 
+            });
+            securityStore.createIndex('type', 'type');
+            securityStore.createIndex('timestamp', 'timestamp');
+            securityStore.createIndex('severity', 'severity');
+        }
+        
+        // Analytics store
+        if (!db.objectStoreNames.contains(STORES.ANALYTICS)) {
+            const analyticsStore = db.createObjectStore(STORES.ANALYTICS, { keyPath: 'id' });
+            analyticsStore.createIndex('date', 'date');
+            analyticsStore.createIndex('type', 'type');
+            analyticsStore.createIndex('userId', 'userId');
+        }
+        
+        // Device info store
+        if (!db.objectStoreNames.contains(STORES.DEVICE_INFO)) {
+            db.createObjectStore(STORES.DEVICE_INFO, { keyPath: 'deviceId' });
+        }
+        
+        // Payments store
+        if (!db.objectStoreNames.contains(STORES.PAYMENTS)) {
+            const paymentStore = db.createObjectStore(STORES.PAYMENTS, { keyPath: 'id' });
+            paymentStore.createIndex('status', 'status');
+            paymentStore.createIndex('timestamp', 'timestamp');
+            paymentStore.createIndex('userId', 'userId');
+        }
     }
     
     /**
-     * Create indexes for efficient querying
+     * Create performance indexes
      */
     createIndexes(db) {
-        // Exams store indexes
-        const examStore = db.transaction(['exams'], 'readwrite').objectStore('exams');
-        if (!examStore.indexNames.contains('userId')) {
-            examStore.createIndex('userId', 'userId', { unique: false });
-        }
-        if (!examStore.indexNames.contains('completedAt')) {
-            examStore.createIndex('completedAt', 'completedAt', { unique: false });
-        }
-        if (!examStore.indexNames.contains('subject')) {
-            examStore.createIndex('subject', 'subject', { unique: false });
-        }
+        // Additional indexes can be added here if needed
+        // Most indexes are created during object store creation
+    }
+    
+    /**
+     * Setup database event handlers
+     */
+    setupEventHandlers() {
+        if (!this.db) return;
         
-        // Questions store indexes
-        const questionStore = db.transaction(['questions'], 'readwrite').objectStore('questions');
-        if (!questionStore.indexNames.contains('subject')) {
-            questionStore.createIndex('subject', 'subject', { unique: false });
-        }
-        if (!questionStore.indexNames.contains('topic')) {
-            questionStore.createIndex('topic', 'topic', { unique: false });
-        }
-        if (!questionStore.indexNames.contains('difficulty')) {
-            questionStore.createIndex('difficulty', 'difficulty', { unique: false });
-        }
+        this.db.onerror = (event) => {
+            console.error('Database error:', event.target.error);
+            this.dispatchEvent('error', { error: event.target.error });
+        };
         
-        // Sync queue indexes
-        const syncStore = db.transaction(['syncQueue'], 'readwrite').objectStore('syncQueue');
-        if (!syncStore.indexNames.contains('status')) {
-            syncStore.createIndex('status', 'status', { unique: false });
-        }
-        if (!syncStore.indexNames.contains('type')) {
-            syncStore.createIndex('type', 'type', { unique: false });
-        }
-        if (!syncStore.indexNames.contains('createdAt')) {
-            syncStore.createIndex('createdAt', 'createdAt', { unique: false });
-        }
+        this.db.onabort = (event) => {
+            console.warn('Database transaction aborted');
+            this.dispatchEvent('abort', { event });
+        };
         
-        // Users store indexes
-        const userStore = db.transaction(['users'], 'readwrite').objectStore('users');
-        if (!userStore.indexNames.contains('email')) {
-            userStore.createIndex('email', 'email', { unique: true });
+        this.db.onversionchange = (event) => {
+            console.log('Database version change detected');
+            this.db.close();
+            this.db = null;
+            this.dispatchEvent('versionchange', { event });
+        };
+    }
+    
+    /**
+     * Get active database connection
+     */
+    async getConnection() {
+        if (!this.db) {
+            await this.init();
         }
-        if (!userStore.indexNames.contains('phone')) {
-            userStore.createIndex('phone', 'phone', { unique: true });
-        }
-        
-        // Security store indexes
-        const securityStore = db.transaction(['security'], 'readwrite').objectStore('security');
-        if (!securityStore.indexNames.contains('userId')) {
-            securityStore.createIndex('userId', 'userId', { unique: false });
-        }
-        if (!securityStore.indexNames.contains('eventType')) {
-            securityStore.createIndex('eventType', 'eventType', { unique: false });
-        }
-        if (!securityStore.indexNames.contains('timestamp')) {
-            securityStore.createIndex('timestamp', 'timestamp', { unique: false });
+        return this.db;
+    }
+    
+    /**
+     * Gracefully disconnect from database
+     */
+    async disconnect() {
+        if (this.db) {
+            this.db.close();
+            this.db = null;
+            console.log('Database disconnected');
+            this.dispatchEvent('disconnected');
         }
     }
     
     /**
-     * Generic database operation
+     * Check database health
      */
-    async operation(storeName, mode, operation) {
-        await this.init();
-        
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], mode);
-            const store = transaction.objectStore(storeName);
+    async checkHealth() {
+        try {
+            const db = await this.getConnection();
             
-            transaction.onerror = (event) => {
-                console.error(`Transaction error for ${storeName}:`, event.target.error);
-                reject(event.target.error);
+            const health = {
+                healthy: true,
+                stores: [],
+                issues: []
             };
             
-            const request = operation(store);
+            // Check if all stores exist
+            const requiredStores = Object.values(STORES);
+            for (const storeName of requiredStores) {
+                if (db.objectStoreNames.contains(storeName)) {
+                    health.stores.push({ name: storeName, exists: true });
+                } else {
+                    health.stores.push({ name: storeName, exists: false });
+                    health.issues.push(`Missing store: ${storeName}`);
+                    health.healthy = false;
+                }
+            }
             
-            request.onsuccess = (event) => {
-                resolve(event.target.result);
-            };
+            // Check if we can perform a simple read operation
+            try {
+                const transaction = db.transaction([STORES.SETTINGS], 'readonly');
+                const store = transaction.objectStore(STORES.SETTINGS);
+                const request = store.get('app_version');
+                
+                await new Promise((resolve, reject) => {
+                    request.onsuccess = resolve;
+                    request.onerror = reject;
+                });
+            } catch (error) {
+                health.issues.push(`Read test failed: ${error.message}`);
+                health.healthy = false;
+            }
             
-            request.onerror = (event) => {
-                console.error(`Operation error for ${storeName}:`, event.target.error);
-                reject(event.target.error);
+            return health;
+        } catch (error) {
+            return {
+                healthy: false,
+                issues: [`Connection failed: ${error.message}`]
             };
-        });
+        }
     }
     
-    // ==================== USER OPERATIONS ====================
+    // ============================================================================
+    // USER OPERATIONS
+    // ============================================================================
     
     /**
      * Save user profile
      */
     async saveUser(user) {
-        if (!user.id) {
-            user.id = 'user_' + Date.now();
-        }
+        const db = await this.getConnection();
         
-        user.updatedAt = new Date().toISOString();
-        if (!user.createdAt) {
-            user.createdAt = user.updatedAt;
-        }
-        
-        await this.operation('users', 'readwrite', (store) => {
-            return store.put(user);
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.USERS], 'readwrite');
+            const store = transaction.objectStore(STORES.USERS);
+            
+            // Add timestamps
+            const now = Date.now();
+            if (!user.createdAt) user.createdAt = now;
+            user.updatedAt = now;
+            
+            const request = store.put(user);
+            
+            request.onsuccess = () => {
+                console.log('User saved:', user.id);
+                this.dispatchEvent('userSaved', { user });
+                resolve(user);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        
-        return user;
     }
     
     /**
      * Get user by ID
      */
     async getUser(userId) {
-        return await this.operation('users', 'readonly', (store) => {
-            return store.get(userId);
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.USERS], 'readonly');
+            const store = transaction.objectStore(STORES.USERS);
+            const request = store.get(userId);
+            
+            request.onsuccess = () => {
+                resolve(request.result || null);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
     /**
-     * Get user by email
+     * Get user by email or phone
      */
-    async getUserByEmail(email) {
-        return await this.operation('users', 'readonly', (store) => {
-            const index = store.index('email');
-            return index.get(email);
-        });
-    }
-    
-    /**
-     * Get user by phone
-     */
-    async getUserByPhone(phone) {
-        return await this.operation('users', 'readonly', (store) => {
-            const index = store.index('phone');
-            return index.get(phone);
+    async getUserByEmailOrPhone(email, phone) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.USERS], 'readonly');
+            const store = transaction.objectStore(STORES.USERS);
+            
+            // Try email index
+            const emailIndex = store.index('email');
+            const emailRequest = emailIndex.get(email);
+            
+            emailRequest.onsuccess = () => {
+                if (emailRequest.result) {
+                    resolve(emailRequest.result);
+                    return;
+                }
+                
+                // Try phone index if email not found
+                const phoneIndex = store.index('phone');
+                const phoneRequest = phoneIndex.get(phone);
+                
+                phoneRequest.onsuccess = () => {
+                    resolve(phoneRequest.result || null);
+                };
+                
+                phoneRequest.onerror = (event) => {
+                    reject(event.target.error);
+                };
+            };
+            
+            emailRequest.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
@@ -231,65 +419,95 @@ class DatabaseManager {
      */
     async updateUser(userId, updates) {
         const user = await this.getUser(userId);
-        if (!user) {
-            throw new Error('User not found');
-        }
+        if (!user) throw new Error('User not found');
         
-        Object.assign(user, updates, { updatedAt: new Date().toISOString() });
+        // Merge updates
+        const updatedUser = {
+            ...user,
+            ...updates,
+            updatedAt: Date.now()
+        };
         
-        await this.operation('users', 'readwrite', (store) => {
-            return store.put(user);
-        });
-        
-        return user;
+        return await this.saveUser(updatedUser);
     }
     
     /**
-     * Delete user
+     * Delete user account
      */
     async deleteUser(userId) {
-        await this.operation('users', 'readwrite', (store) => {
-            return store.delete(userId);
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.USERS], 'readwrite');
+            const store = transaction.objectStore(STORES.USERS);
+            const request = store.delete(userId);
+            
+            request.onsuccess = () => {
+                console.log('User deleted:', userId);
+                this.dispatchEvent('userDeleted', { userId });
+                resolve(true);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
-    // ==================== SUBSCRIPTION OPERATIONS ====================
+    // ============================================================================
+    // SUBSCRIPTION OPERATIONS
+    // ============================================================================
     
     /**
-     * Save subscription
+     * Save subscription info
      */
     async saveSubscription(subscription) {
-        if (!subscription.id) {
-            subscription.id = 'sub_' + Date.now();
-        }
+        const db = await this.getConnection();
         
-        subscription.updatedAt = new Date().toISOString();
-        if (!subscription.createdAt) {
-            subscription.createdAt = subscription.updatedAt;
-        }
-        
-        await this.operation('subscriptions', 'readwrite', (store) => {
-            return store.put(subscription);
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SUBSCRIPTIONS], 'readwrite');
+            const store = transaction.objectStore(STORES.SUBSCRIPTIONS);
+            
+            // Ensure required fields
+            if (!subscription.id) subscription.id = `sub_${Date.now()}`;
+            subscription.updatedAt = Date.now();
+            
+            const request = store.put(subscription);
+            
+            request.onsuccess = () => {
+                console.log('Subscription saved:', subscription.id);
+                this.dispatchEvent('subscriptionSaved', { subscription });
+                resolve(subscription);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        
-        return subscription;
     }
     
     /**
-     * Get subscription by ID
+     * Get subscription by user ID
      */
-    async getSubscription(subscriptionId) {
-        return await this.operation('subscriptions', 'readonly', (store) => {
-            return store.get(subscriptionId);
-        });
-    }
-    
-    /**
-     * Get user's active subscription
-     */
-    async getUserSubscription(userId) {
-        return await this.operation('subscriptions', 'readonly', (store) => {
-            return store.get(userId);
+    async getSubscription(userId) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SUBSCRIPTIONS], 'readonly');
+            const store = transaction.objectStore(STORES.SUBSCRIPTIONS);
+            const index = store.index('userId');
+            const request = index.getAll(userId);
+            
+            request.onsuccess = () => {
+                // Return the most recent active subscription
+                const subscriptions = request.result || [];
+                const activeSub = subscriptions.find(sub => sub.isActive);
+                resolve(activeSub || subscriptions[0] || null);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
@@ -297,26 +515,46 @@ class DatabaseManager {
      * Update subscription
      */
     async updateSubscription(subscriptionId, updates) {
-        const subscription = await this.getSubscription(subscriptionId);
-        if (!subscription) {
-            throw new Error('Subscription not found');
-        }
+        const db = await this.getConnection();
         
-        Object.assign(subscription, updates, { updatedAt: new Date().toISOString() });
-        
-        await this.operation('subscriptions', 'readwrite', (store) => {
-            return store.put(subscription);
-        });
-        
-        return subscription;
-    }
-    
-    /**
-     * Delete subscription
-     */
-    async deleteSubscription(subscriptionId) {
-        await this.operation('subscriptions', 'readwrite', (store) => {
-            return store.delete(subscriptionId);
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SUBSCRIPTIONS], 'readwrite');
+            const store = transaction.objectStore(STORES.SUBSCRIPTIONS);
+            
+            // Get current subscription
+            const getRequest = store.get(subscriptionId);
+            
+            getRequest.onsuccess = () => {
+                const current = getRequest.result;
+                if (!current) {
+                    reject(new Error('Subscription not found'));
+                    return;
+                }
+                
+                // Merge updates
+                const updated = {
+                    ...current,
+                    ...updates,
+                    updatedAt: Date.now()
+                };
+                
+                // Save updated subscription
+                const putRequest = store.put(updated);
+                
+                putRequest.onsuccess = () => {
+                    console.log('Subscription updated:', subscriptionId);
+                    this.dispatchEvent('subscriptionUpdated', { subscription: updated });
+                    resolve(updated);
+                };
+                
+                putRequest.onerror = (event) => {
+                    reject(event.target.error);
+                };
+            };
+            
+            getRequest.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
@@ -324,114 +562,211 @@ class DatabaseManager {
      * Check if user has active subscription
      */
     async hasActiveSubscription(userId) {
-        const subscription = await this.getUserSubscription(userId);
+        const subscription = await this.getSubscription(userId);
         if (!subscription) return false;
         
-        const now = new Date();
-        const expiry = new Date(subscription.expiryDate);
+        // Check if subscription is active and not expired
+        const now = Date.now();
+        const expiry = new Date(subscription.expiryDate).getTime();
         
         return subscription.isActive && expiry > now;
     }
     
-    // ==================== EXAM OPERATIONS ====================
+    /**
+     * Get subscription expiry time
+     */
+    async getSubscriptionExpiry(userId) {
+        const subscription = await this.getSubscription(userId);
+        if (!subscription) return null;
+        
+        return {
+            expiryDate: subscription.expiryDate,
+            timeRemaining: new Date(subscription.expiryDate).getTime() - Date.now(),
+            isExpired: new Date(subscription.expiryDate).getTime() <= Date.now()
+        };
+    }
+    
+    // ============================================================================
+    // EXAM OPERATIONS
+    // ============================================================================
     
     /**
-     * Save exam results
+     * Save exam result (BLUEPRINT: Called from questions.js after exam)
      */
-    async saveExamResults(examData) {
-        if (!examData.examId) {
-            examData.examId = 'exam_' + Date.now();
-        }
+    async saveExamResult(examData) {
+        const db = await this.getConnection();
         
-        examData.completedAt = examData.completedAt || new Date().toISOString();
-        examData.savedAt = new Date().toISOString();
-        examData.isSynced = examData.isSynced || false;
-        
-        // Calculate score if not provided
-        if (typeof examData.score === 'undefined') {
-            const correctAnswers = examData.questions?.filter(q => q.isCorrect).length || 0;
-            const totalQuestions = examData.questions?.length || examData.totalQuestions || 1;
-            examData.score = Math.round((correctAnswers / totalQuestions) * 100);
-            examData.correctAnswers = correctAnswers;
-            examData.totalQuestions = totalQuestions;
-        }
-        
-        await this.operation('exams', 'readwrite', (store) => {
-            return store.put(examData);
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.EXAMS], 'readwrite');
+            const store = transaction.objectStore(STORES.EXAMS);
+            
+            // Ensure required fields
+            if (!examData.id) examData.id = `exam_${Date.now()}`;
+            if (!examData.timestamp) examData.timestamp = Date.now();
+            if (!examData.synced) examData.synced = false;
+            if (!examData.isCompleted) examData.isCompleted = true;
+            
+            const request = store.put(examData);
+            
+            request.onsuccess = () => {
+                console.log('Exam result saved:', examData.id);
+                this.dispatchEvent('examSaved', { exam: examData });
+                
+                // Add to sync queue for backend sync
+                this.addToSyncQueue({
+                    type: 'exam_result',
+                    data: examData,
+                    priority: 2 // Medium priority
+                });
+                
+                resolve(examData);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        
-        // Add to sync queue if not synced
-        if (!examData.isSynced) {
-            await this.addToSyncQueue({
-                type: 'exam_results',
-                data: examData,
-                examId: examData.examId,
-                userId: examData.userId
-            });
-        }
-        
-        return examData;
     }
     
     /**
-     * Get exam results by ID
+     * Get exam by ID
      */
-    async getExamResults(examId) {
-        return await this.operation('exams', 'readonly', (store) => {
-            return store.get(examId);
+    async getExam(examId) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.EXAMS], 'readonly');
+            const store = transaction.objectStore(STORES.EXAMS);
+            const request = store.get(examId);
+            
+            request.onsuccess = () => {
+                resolve(request.result || null);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
     /**
-     * Get all exams for a user
+     * Get all exams for user
      */
-    async getUserExams(userId, limit = 50, offset = 0) {
-        return await this.operation('exams', 'readonly', (store) => {
+    async getUserExams(userId, options = {}) {
+        const db = await this.getConnection();
+        const { limit = 50, offset = 0, subject = null, sortBy = 'timestamp', sortOrder = 'desc' } = options;
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.EXAMS], 'readonly');
+            const store = transaction.objectStore(STORES.EXAMS);
+            
+            let request;
+            
+            if (subject) {
+                // Filter by subject
+                const index = store.index('subject');
+                const keyRange = IDBKeyRange.only(subject);
+                request = index.openCursor(keyRange);
+            } else {
+                // Get all exams
+                const index = store.index('userId');
+                const keyRange = IDBKeyRange.only(userId);
+                request = index.openCursor(keyRange);
+            }
+            
+            const exams = [];
+            let count = 0;
+            let skipped = 0;
+            
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                
+                if (cursor) {
+                    // Apply offset
+                    if (skipped < offset) {
+                        skipped++;
+                        cursor.continue();
+                        return;
+                    }
+                    
+                    // Apply limit
+                    if (count < limit) {
+                        exams.push(cursor.value);
+                        count++;
+                        cursor.continue();
+                    } else {
+                        // Sort results
+                        exams.sort((a, b) => {
+                            if (sortOrder === 'desc') {
+                                return b[sortBy] - a[sortBy];
+                            } else {
+                                return a[sortBy] - b[sortBy];
+                            }
+                        });
+                        
+                        resolve({
+                            exams,
+                            total: exams.length,
+                            hasMore: !!cursor
+                        });
+                    }
+                } else {
+                    // No more results
+                    exams.sort((a, b) => {
+                        if (sortOrder === 'desc') {
+                            return b[sortBy] - a[sortBy];
+                        } else {
+                            return a[sortBy] - b[sortBy];
+                        }
+                    });
+                    
+                    resolve({
+                        exams,
+                        total: exams.length,
+                        hasMore: false
+                    });
+                }
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    /**
+     * Get unsynced exams
+     */
+    async getUnsyncedExams(userId) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.EXAMS], 'readonly');
+            const store = transaction.objectStore(STORES.EXAMS);
+            
+            // Get exams for user that are not synced
             const index = store.index('userId');
-            const range = IDBKeyRange.only(userId);
-            const request = index.getAll(range);
+            const keyRange = IDBKeyRange.only(userId);
+            const request = index.openCursor(keyRange);
             
-            return request;
-        }).then(exams => {
-            // Sort by completion date (newest first)
-            exams.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
-            // Apply pagination
-            return exams.slice(offset, offset + limit);
-        });
-    }
-    
-    /**
-     * Get exams by subject
-     */
-    async getExamsBySubject(userId, subject, limit = 20) {
-        return await this.operation('exams', 'readonly', (store) => {
-            const subjectIndex = store.index('subject');
-            const subjectRange = IDBKeyRange.only(subject);
-            const subjectRequest = subjectIndex.getAll(subjectRange);
+            const unsyncedExams = [];
             
-            return subjectRequest;
-        }).then(exams => {
-            // Filter by user and sort
-            return exams
-                .filter(exam => exam.userId === userId)
-                .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
-                .slice(0, limit);
-        });
-    }
-    
-    /**
-     * Get recent exams
-     */
-    async getRecentExams(userId, limit = 10) {
-        return await this.getUserExams(userId, limit, 0);
-    }
-    
-    /**
-     * Delete exam
-     */
-    async deleteExam(examId) {
-        await this.operation('exams', 'readwrite', (store) => {
-            return store.delete(examId);
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                
+                if (cursor) {
+                    if (!cursor.value.synced) {
+                        unsyncedExams.push(cursor.value);
+                    }
+                    cursor.continue();
+                } else {
+                    resolve(unsyncedExams);
+                }
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
@@ -439,535 +774,1185 @@ class DatabaseManager {
      * Mark exam as synced
      */
     async markExamAsSynced(examId) {
-        const exam = await this.getExamResults(examId);
-        if (exam) {
-            exam.isSynced = true;
-            exam.syncedAt = new Date().toISOString();
-            await this.saveExamResults(exam);
-        }
+        return this.updateExam(examId, { synced: true });
     }
     
-    // ==================== QUESTION BANK OPERATIONS ====================
-    
     /**
-     * Save question to local bank
+     * Update exam data
      */
-    async saveQuestion(question) {
-        if (!question.id) {
-            throw new Error('Question must have an id');
-        }
+    async updateExam(examId, updates) {
+        const db = await this.getConnection();
         
-        question.cachedAt = new Date().toISOString();
-        
-        await this.operation('questions', 'readwrite', (store) => {
-            return store.put(question);
-        });
-        
-        return question;
-    }
-    
-    /**
-     * Save multiple questions
-     */
-    async saveQuestions(questions) {
-        const promises = questions.map(question => this.saveQuestion(question));
-        return Promise.all(promises);
-    }
-    
-    /**
-     * Get question by ID
-     */
-    async getQuestion(questionId) {
-        return await this.operation('questions', 'readonly', (store) => {
-            return store.get(questionId);
-        });
-    }
-    
-    /**
-     * Get questions by subject
-     */
-    async getQuestionsBySubject(subject, limit = 100) {
-        return await this.operation('questions', 'readonly', (store) => {
-            const index = store.index('subject');
-            const range = IDBKeyRange.only(subject);
-            return index.getAll(range, limit);
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.EXAMS], 'readwrite');
+            const store = transaction.objectStore(STORES.EXAMS);
+            
+            const getRequest = store.get(examId);
+            
+            getRequest.onsuccess = () => {
+                const exam = getRequest.result;
+                if (!exam) {
+                    reject(new Error('Exam not found'));
+                    return;
+                }
+                
+                const updatedExam = {
+                    ...exam,
+                    ...updates,
+                    updatedAt: Date.now()
+                };
+                
+                const putRequest = store.put(updatedExam);
+                
+                putRequest.onsuccess = () => {
+                    console.log('Exam updated:', examId);
+                    resolve(updatedExam);
+                };
+                
+                putRequest.onerror = (event) => {
+                    reject(event.target.error);
+                };
+            };
+            
+            getRequest.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
     /**
-     * Get questions by topic
+     * Delete exam
      */
-    async getQuestionsByTopic(subject, topic, limit = 50) {
-        const allQuestions = await this.getQuestionsBySubject(subject, 500);
-        return allQuestions
-            .filter(q => q.topic === topic)
-            .slice(0, limit);
-    }
-    
-    /**
-     * Get questions by difficulty
-     */
-    async getQuestionsByDifficulty(difficulty, limit = 50) {
-        return await this.operation('questions', 'readonly', (store) => {
-            const index = store.index('difficulty');
-            const range = IDBKeyRange.only(difficulty);
-            return index.getAll(range, limit);
+    async deleteExam(examId) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.EXAMS], 'readwrite');
+            const store = transaction.objectStore(STORES.EXAMS);
+            const request = store.delete(examId);
+            
+            request.onsuccess = () => {
+                console.log('Exam deleted:', examId);
+                resolve(true);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
     /**
-     * Get random questions
+     * Get exam statistics for user
      */
-    async getRandomQuestions(count = 10, subject = null, topic = null, difficulty = null) {
-        let questions = [];
+    async getExamStatistics(userId) {
+        const exams = await this.getUserExams(userId, { limit: 1000 });
         
-        if (subject) {
-            questions = await this.getQuestionsBySubject(subject, 500);
-            if (topic) {
-                questions = questions.filter(q => q.topic === topic);
+        const stats = {
+            totalExams: exams.exams.length,
+            totalQuestions: 0,
+            correctAnswers: 0,
+            averageScore: 0,
+            totalTimeSpent: 0,
+            bySubject: {},
+            byDate: {},
+            recentScores: []
+        };
+        
+        exams.exams.forEach(exam => {
+            // Basic stats
+            stats.totalQuestions += exam.totalQuestions || 0;
+            stats.correctAnswers += exam.correctAnswers || 0;
+            stats.totalTimeSpent += exam.timeSpent || 0;
+            
+            // Subject stats
+            const subject = exam.subject || 'Mixed';
+            if (!stats.bySubject[subject]) {
+                stats.bySubject[subject] = {
+                    count: 0,
+                    totalScore: 0,
+                    totalQuestions: 0
+                };
             }
-            if (difficulty) {
-                questions = questions.filter(q => q.difficulty === difficulty);
+            stats.bySubject[subject].count++;
+            stats.bySubject[subject].totalScore += exam.score || 0;
+            stats.bySubject[subject].totalQuestions += exam.totalQuestions || 0;
+            
+            // Date stats (YYYY-MM-DD format)
+            const date = new Date(exam.timestamp).toISOString().split('T')[0];
+            if (!stats.byDate[date]) {
+                stats.byDate[date] = 0;
             }
-        } else {
-            // Get all questions (limited to prevent memory issues)
-            questions = await this.operation('questions', 'readonly', (store) => {
-                return store.getAll(null, 1000);
+            stats.byDate[date]++;
+            
+            // Recent scores (last 10 exams)
+            if (stats.recentScores.length < 10) {
+                stats.recentScores.push({
+                    date: new Date(exam.timestamp).toLocaleDateString(),
+                    score: exam.score || 0,
+                    subject: exam.subject || 'Mixed'
+                });
+            }
+        });
+        
+        // Calculate averages
+        if (stats.totalExams > 0) {
+            stats.averageScore = stats.correctAnswers / stats.totalQuestions * 100;
+            stats.averageTimePerExam = stats.totalTimeSpent / stats.totalExams;
+            stats.averageTimePerQuestion = stats.totalTimeSpent / stats.totalQuestions;
+            
+            // Calculate subject averages
+            Object.keys(stats.bySubject).forEach(subject => {
+                const subjStats = stats.bySubject[subject];
+                subjStats.averageScore = subjStats.totalScore / subjStats.count;
+                subjStats.averageQuestions = subjStats.totalQuestions / subjStats.count;
             });
         }
         
-        // Shuffle and take requested count
-        const shuffled = questions.sort(() => 0.5 - Math.random());
-        return shuffled.slice(0, Math.min(count, shuffled.length));
+        return stats;
     }
     
-    /**
-     * Get question count by subject
-     */
-    async getQuestionCountBySubject(subject) {
-        const questions = await this.getQuestionsBySubject(subject);
-        return questions.length;
-    }
+    // ============================================================================
+    // QUESTION CACHE OPERATIONS
+    // ============================================================================
     
     /**
-     * Clear question cache
+     * Cache questions for offline use (BLUEPRINT: Called from questions.js)
      */
-    async clearQuestionCache() {
-        await this.operation('questions', 'readwrite', (store) => {
-            return store.clear();
+    async cacheQuestions(subject, topic, questions) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.QUESTIONS], 'readwrite');
+            const store = transaction.objectStore(STORES.QUESTIONS);
+            
+            // Prepare questions for caching
+            const cachePromises = questions.map(question => {
+                const cacheEntry = {
+                    ...question,
+                    cachedAt: Date.now(),
+                    lastSeen: question.lastSeen || Date.now()
+                };
+                
+                return new Promise((resolveStore, rejectStore) => {
+                    const request = store.put(cacheEntry);
+                    
+                    request.onsuccess = () => resolveStore();
+                    request.onerror = (event) => rejectStore(event.target.error);
+                });
+            });
+            
+            Promise.all(cachePromises)
+                .then(() => {
+                    console.log(`Cached ${questions.length} questions for ${subject}/${topic}`);
+                    this.dispatchEvent('questionsCached', { 
+                        subject, 
+                        topic, 
+                        count: questions.length 
+                    });
+                    resolve(questions.length);
+                })
+                .catch(reject);
         });
     }
     
     /**
-     * Check if question bank is cached
+     * Get cached questions by subject and topic
      */
-    async isQuestionBankCached() {
-        const count = await this.operation('questions', 'readonly', (store) => {
-            return store.count();
+    async getCachedQuestions(subject, topic) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.QUESTIONS], 'readonly');
+            const store = transaction.objectStore(STORES.QUESTIONS);
+            
+            // Use subject and topic indexes
+            const subjectIndex = store.index('subject');
+            const subjectKeyRange = IDBKeyRange.only(subject);
+            const request = subjectIndex.openCursor(subjectKeyRange);
+            
+            const questions = [];
+            
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                
+                if (cursor) {
+                    if (cursor.value.topic === topic) {
+                        questions.push(cursor.value);
+                    }
+                    cursor.continue();
+                } else {
+                    resolve(questions);
+                }
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        return count > 1000; // Assuming at least 1000 questions means bank is cached
     }
     
-    // ==================== SYNC QUEUE OPERATIONS ====================
+    /**
+     * Get question by ID from cache
+     */
+    async getCachedQuestion(questionId) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.QUESTIONS], 'readonly');
+            const store = transaction.objectStore(STORES.QUESTIONS);
+            const request = store.get(questionId);
+            
+            request.onsuccess = () => {
+                resolve(request.result || null);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    /**
+     * Update question cache entry (e.g., update lastSeen)
+     */
+    async updateCachedQuestion(questionId, updates) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.QUESTIONS], 'readwrite');
+            const store = transaction.objectStore(STORES.QUESTIONS);
+            
+            const getRequest = store.get(questionId);
+            
+            getRequest.onsuccess = () => {
+                const question = getRequest.result;
+                if (!question) {
+                    reject(new Error('Question not found in cache'));
+                    return;
+                }
+                
+                const updatedQuestion = {
+                    ...question,
+                    ...updates
+                };
+                
+                const putRequest = store.put(updatedQuestion);
+                
+                putRequest.onsuccess = () => {
+                    resolve(updatedQuestion);
+                };
+                
+                putRequest.onerror = (event) => {
+                    reject(event.target.error);
+                };
+            };
+            
+            getRequest.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    /**
+     * Get cached question count by subject
+     */
+    async getCachedQuestionCount(subject = null) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.QUESTIONS], 'readonly');
+            const store = transaction.objectStore(STORES.QUESTIONS);
+            
+            let request;
+            
+            if (subject) {
+                const index = store.index('subject');
+                const keyRange = IDBKeyRange.only(subject);
+                request = index.count(keyRange);
+            } else {
+                request = store.count();
+            }
+            
+            request.onsuccess = () => {
+                resolve(request.result);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    /**
+     * Clear question cache (for cleanup or updates)
+     */
+    async clearQuestionCache(subject = null, topic = null) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.QUESTIONS], 'readwrite');
+            const store = transaction.objectStore(STORES.QUESTIONS);
+            
+            let request;
+            
+            if (subject && topic) {
+                // Clear specific subject/topic
+                const index = store.index('subject');
+                const keyRange = IDBKeyRange.only(subject);
+                request = index.openCursor(keyRange);
+                
+                const deletePromises = [];
+                
+                request.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    
+                    if (cursor) {
+                        if (cursor.value.topic === topic) {
+                            deletePromises.push(
+                                new Promise((resolveDel, rejectDel) => {
+                                    const deleteRequest = cursor.delete();
+                                    deleteRequest.onsuccess = resolveDel;
+                                    deleteRequest.onerror = rejectDel;
+                                })
+                            );
+                        }
+                        cursor.continue();
+                    } else {
+                        Promise.all(deletePromises)
+                            .then(() => resolve(deletePromises.length))
+                            .catch(reject);
+                    }
+                };
+            } else if (subject) {
+                // Clear all questions for subject
+                const index = store.index('subject');
+                const keyRange = IDBKeyRange.only(subject);
+                request = index.openKeyCursor(keyRange);
+                
+                const deletePromises = [];
+                
+                request.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    
+                    if (cursor) {
+                        deletePromises.push(
+                            new Promise((resolveDel, rejectDel) => {
+                                const deleteRequest = cursor.delete();
+                                deleteRequest.onsuccess = resolveDel;
+                                deleteRequest.onerror = rejectDel;
+                            })
+                        );
+                        cursor.continue();
+                    } else {
+                        Promise.all(deletePromises)
+                            .then(() => resolve(deletePromises.length))
+                            .catch(reject);
+                    }
+                };
+            } else {
+                // Clear all questions
+                request = store.clear();
+                
+                request.onsuccess = () => {
+                    console.log('Question cache cleared');
+                    resolve(true);
+                };
+            }
+            
+            if (request.onerror) {
+                request.onerror = (event) => {
+                    reject(event.target.error);
+                };
+            }
+        });
+    }
+    
+    // ============================================================================
+    // SYNC QUEUE OPERATIONS
+    // ============================================================================
     
     /**
      * Add item to sync queue
      */
-    async addToSyncQueue(syncItem) {
-        if (!syncItem.type) {
-            throw new Error('Sync item must have a type');
-        }
+    async addToSyncQueue(item) {
+        const db = await this.getConnection();
         
-        syncItem.status = 'pending';
-        syncItem.createdAt = new Date().toISOString();
-        syncItem.attempts = 0;
-        syncItem.lastAttempt = null;
-        syncItem.error = null;
-        
-        await this.operation('syncQueue', 'readwrite', (store) => {
-            return store.add(syncItem);
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SYNC_QUEUE], 'readwrite');
+            const store = transaction.objectStore(STORES.SYNC_QUEUE);
+            
+            // Ensure required fields
+            const syncItem = {
+                ...item,
+                id: item.id || `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                status: 'pending',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                retryCount: 0,
+                lastAttempt: null,
+                error: null
+            };
+            
+            const request = store.add(syncItem);
+            
+            request.onsuccess = () => {
+                console.log('Added to sync queue:', syncItem.type);
+                this.dispatchEvent('syncItemAdded', { item: syncItem });
+                resolve(syncItem);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        
-        return syncItem;
     }
     
     /**
      * Get pending sync items
      */
     async getPendingSyncItems(limit = 20) {
-        return await this.operation('syncQueue', 'readonly', (store) => {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SYNC_QUEUE], 'readonly');
+            const store = transaction.objectStore(STORES.SYNC_QUEUE);
             const index = store.index('status');
-            const range = IDBKeyRange.only('pending');
-            return index.getAll(range, limit);
-        });
-    }
-    
-    /**
-     * Get sync items by type
-     */
-    async getSyncItemsByType(type, status = null, limit = 50) {
-        return await this.operation('syncQueue', 'readonly', (store) => {
-            const index = store.index('type');
-            const range = IDBKeyRange.only(type);
-            const request = index.getAll(range, limit);
+            const keyRange = IDBKeyRange.only('pending');
             
-            return request;
-        }).then(items => {
-            if (status) {
-                return items.filter(item => item.status === status);
-            }
-            return items;
+            const request = index.openCursor(keyRange);
+            const items = [];
+            let count = 0;
+            
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                
+                if (cursor && count < limit) {
+                    items.push(cursor.value);
+                    count++;
+                    cursor.continue();
+                } else {
+                    // Sort by priority (higher priority first)
+                    items.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+                    resolve(items);
+                }
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
     /**
      * Update sync item status
      */
-    async updateSyncItemStatus(syncId, status, error = null) {
-        const syncItem = await this.operation('syncQueue', 'readonly', (store) => {
-            return store.get(syncId);
+    async updateSyncItem(itemId, updates) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SYNC_QUEUE], 'readwrite');
+            const store = transaction.objectStore(STORES.SYNC_QUEUE);
+            
+            const getRequest = store.get(itemId);
+            
+            getRequest.onsuccess = () => {
+                const item = getRequest.result;
+                if (!item) {
+                    reject(new Error('Sync item not found'));
+                    return;
+                }
+                
+                const updatedItem = {
+                    ...item,
+                    ...updates,
+                    updatedAt: Date.now()
+                };
+                
+                // Increment retry count if status is still pending and we're updating due to error
+                if (updates.status === 'pending' && updates.error) {
+                    updatedItem.retryCount = (item.retryCount || 0) + 1;
+                    updatedItem.lastAttempt = Date.now();
+                }
+                
+                const putRequest = store.put(updatedItem);
+                
+                putRequest.onsuccess = () => {
+                    console.log('Sync item updated:', itemId, updates.status);
+                    resolve(updatedItem);
+                };
+                
+                putRequest.onerror = (event) => {
+                    reject(event.target.error);
+                };
+            };
+            
+            getRequest.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        
-        if (!syncItem) {
-            throw new Error('Sync item not found');
-        }
-        
-        syncItem.status = status;
-        syncItem.lastAttempt = new Date().toISOString();
-        syncItem.attempts = (syncItem.attempts || 0) + 1;
-        
-        if (error) {
-            syncItem.error = error.message || String(error);
-        }
-        
-        if (status === 'completed') {
-            syncItem.completedAt = new Date().toISOString();
-        }
-        
-        await this.operation('syncQueue', 'readwrite', (store) => {
-            return store.put(syncItem);
-        });
-        
-        return syncItem;
     }
     
     /**
-     * Remove completed sync items
+     * Delete sync item
      */
-    async removeCompletedSyncItems(daysOld = 7) {
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+    async deleteSyncItem(itemId) {
+        const db = await this.getConnection();
         
-        const allItems = await this.operation('syncQueue', 'readonly', (store) => {
-            return store.getAll();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SYNC_QUEUE], 'readwrite');
+            const store = transaction.objectStore(STORES.SYNC_QUEUE);
+            const request = store.delete(itemId);
+            
+            request.onsuccess = () => {
+                console.log('Sync item deleted:', itemId);
+                resolve(true);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        
-        const itemsToDelete = allItems.filter(item => {
-            return item.status === 'completed' && 
-                   new Date(item.completedAt) < cutoffDate;
-        });
-        
-        const deletePromises = itemsToDelete.map(item => {
-            return this.operation('syncQueue', 'readwrite', (store) => {
-                return store.delete(item.syncId);
-            });
-        });
-        
-        await Promise.all(deletePromises);
-        return itemsToDelete.length;
     }
     
     /**
-     * Clear sync queue
+     * Clear completed sync items (cleanup)
      */
-    async clearSyncQueue() {
-        await this.operation('syncQueue', 'readwrite', (store) => {
-            return store.clear();
+    async clearCompletedSyncItems(olderThan = 7 * 24 * 60 * 60 * 1000) { // 7 days
+        const db = await this.getConnection();
+        const cutoffTime = Date.now() - olderThan;
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SYNC_QUEUE], 'readwrite');
+            const store = transaction.objectStore(STORES.SYNC_QUEUE);
+            const index = store.index('status');
+            const keyRange = IDBKeyRange.only('completed');
+            
+            const request = index.openCursor(keyRange);
+            const deletePromises = [];
+            
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                
+                if (cursor) {
+                    // Delete if older than cutoff
+                    if (cursor.value.updatedAt < cutoffTime) {
+                        deletePromises.push(
+                            new Promise((resolveDel, rejectDel) => {
+                                const deleteRequest = cursor.delete();
+                                deleteRequest.onsuccess = resolveDel;
+                                deleteRequest.onerror = rejectDel;
+                            })
+                        );
+                    }
+                    cursor.continue();
+                } else {
+                    Promise.all(deletePromises)
+                        .then(() => {
+                            console.log(`Cleared ${deletePromises.length} completed sync items`);
+                            resolve(deletePromises.length);
+                        })
+                        .catch(reject);
+                }
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
-    // ==================== SETTINGS OPERATIONS ====================
+    // ============================================================================
+    // SETTINGS OPERATIONS
+    // ============================================================================
     
     /**
      * Save setting
      */
-    async saveSetting(key, value) {
-        const setting = {
-            key: key,
-            value: value,
-            updatedAt: new Date().toISOString()
-        };
+    async saveSetting(key, value, category = 'general') {
+        const db = await this.getConnection();
         
-        await this.operation('settings', 'readwrite', (store) => {
-            return store.put(setting);
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SETTINGS], 'readwrite');
+            const store = transaction.objectStore(STORES.SETTINGS);
+            
+            const setting = {
+                key,
+                value,
+                category,
+                updatedAt: Date.now()
+            };
+            
+            const request = store.put(setting);
+            
+            request.onsuccess = () => {
+                resolve(setting);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        
-        return setting;
     }
     
     /**
      * Get setting
      */
     async getSetting(key) {
-        const setting = await this.operation('settings', 'readonly', (store) => {
-            return store.get(key);
-        });
+        const db = await this.getConnection();
         
-        return setting ? setting.value : null;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SETTINGS], 'readonly');
+            const store = transaction.objectStore(STORES.SETTINGS);
+            const request = store.get(key);
+            
+            request.onsuccess = () => {
+                resolve(request.result ? request.result.value : null);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    /**
+     * Get all settings by category
+     */
+    async getSettingsByCategory(category) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SETTINGS], 'readonly');
+            const store = transaction.objectStore(STORES.SETTINGS);
+            const index = store.index('category');
+            const keyRange = IDBKeyRange.only(category);
+            const request = index.getAll(keyRange);
+            
+            request.onsuccess = () => {
+                const settings = {};
+                request.result.forEach(setting => {
+                    settings[setting.key] = setting.value;
+                });
+                resolve(settings);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
     }
     
     /**
      * Delete setting
      */
     async deleteSetting(key) {
-        await this.operation('settings', 'readwrite', (store) => {
-            return store.delete(key);
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SETTINGS], 'readwrite');
+            const store = transaction.objectStore(STORES.SETTINGS);
+            const request = store.delete(key);
+            
+            request.onsuccess = () => {
+                resolve(true);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
-    /**
-     * Get all settings
-     */
-    async getAllSettings() {
-        const settings = await this.operation('settings', 'readonly', (store) => {
-            return store.getAll();
-        });
-        
-        const result = {};
-        settings.forEach(setting => {
-            result[setting.key] = setting.value;
-        });
-        
-        return result;
-    }
-    
-    // ==================== SECURITY OPERATIONS ====================
+    // ============================================================================
+    // SECURITY OPERATIONS
+    // ============================================================================
     
     /**
      * Log security event
      */
-    async logSecurityEvent(event) {
-        if (!event.type) {
-            throw new Error('Security event must have a type');
-        }
+    async logSecurityEvent(type, details, severity = 'medium') {
+        const db = await this.getConnection();
         
-        event.timestamp = new Date().toISOString();
-        event.id = 'sec_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        
-        // Clean up old events if we have too many
-        const eventCount = await this.operation('security', 'readonly', (store) => {
-            return store.count();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SECURITY], 'readwrite');
+            const store = transaction.objectStore(STORES.SECURITY);
+            
+            const event = {
+                type,
+                details,
+                severity,
+                timestamp: Date.now(),
+                deviceInfo: await this.getDeviceInfo(),
+                resolved: false
+            };
+            
+            const request = store.add(event);
+            
+            request.onsuccess = () => {
+                console.log('Security event logged:', type, severity);
+                this.dispatchEvent('securityEvent', { event });
+                resolve(event);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        
-        if (eventCount > 1000) {
-            await this.cleanupOldSecurityEvents(500);
-        }
-        
-        await this.operation('security', 'readwrite', (store) => {
-            return store.add(event);
-        });
-        
-        return event;
     }
     
     /**
      * Get security events
      */
-    async getSecurityEvents(limit = 100, offset = 0, userId = null, eventType = null) {
-        return await this.operation('security', 'readonly', (store) => {
-            return store.getAll();
-        }).then(events => {
-            // Apply filters
-            let filtered = events;
+    async getSecurityEvents(limit = 100, severity = null) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.SECURITY], 'readonly');
+            const store = transaction.objectStore(STORES.SECURITY);
             
-            if (userId) {
-                filtered = filtered.filter(event => event.userId === userId);
+            let request;
+            
+            if (severity) {
+                const index = store.index('severity');
+                const keyRange = IDBKeyRange.only(severity);
+                request = index.openCursor(keyRange);
+            } else {
+                const index = store.index('timestamp');
+                request = index.openCursor(null, 'prev'); // Newest first
             }
             
-            if (eventType) {
-                filtered = filtered.filter(event => event.type === eventType);
+            const events = [];
+            let count = 0;
+            
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                
+                if (cursor && count < limit) {
+                    events.push(cursor.value);
+                    count++;
+                    cursor.continue();
+                } else {
+                    resolve(events);
+                }
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    // ============================================================================
+    // DEVICE INFO OPERATIONS
+    // ============================================================================
+    
+    /**
+     * Save device information
+     */
+    async saveDeviceInfo(deviceInfo) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.DEVICE_INFO], 'readwrite');
+            const store = transaction.objectStore(STORES.DEVICE_INFO);
+            
+            // Add timestamp
+            deviceInfo.updatedAt = Date.now();
+            
+            const request = store.put(deviceInfo);
+            
+            request.onsuccess = () => {
+                console.log('Device info saved:', deviceInfo.deviceId);
+                resolve(deviceInfo);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    /**
+     * Get device information
+     */
+    async getDeviceInfo(deviceId = null) {
+        const db = await this.getConnection();
+        
+        if (!deviceId) {
+            // Generate a device ID based on browser fingerprint
+            deviceId = await this.generateDeviceId();
+        }
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.DEVICE_INFO], 'readonly');
+            const store = transaction.objectStore(STORES.DEVICE_INFO);
+            const request = store.get(deviceId);
+            
+            request.onsuccess = () => {
+                resolve(request.result || { deviceId, firstSeen: Date.now() });
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    /**
+     * Generate device ID
+     */
+    async generateDeviceId() {
+        // Try to get existing device ID from localStorage
+        let deviceId = localStorage.getItem('device_id');
+        
+        if (!deviceId) {
+            // Generate a new device ID based on browser fingerprint
+            const components = [
+                navigator.userAgent,
+                navigator.language,
+                navigator.platform,
+                screen.width + 'x' + screen.height,
+                new Date().getTimezoneOffset()
+            ].join('|');
+            
+            // Simple hash function
+            let hash = 0;
+            for (let i = 0; i < components.length; i++) {
+                const char = components.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32-bit integer
             }
             
-            // Sort by timestamp (newest first)
-            filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            deviceId = 'device_' + Math.abs(hash).toString(36);
+            localStorage.setItem('device_id', deviceId);
+        }
+        
+        return deviceId;
+    }
+    
+    // ============================================================================
+    // PAYMENT OPERATIONS
+    // ============================================================================
+    
+    /**
+     * Save payment record
+     */
+    async savePayment(payment) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.PAYMENTS], 'readwrite');
+            const store = transaction.objectStore(STORES.PAYMENTS);
             
-            // Apply pagination
-            return filtered.slice(offset, offset + limit);
+            // Ensure required fields
+            if (!payment.id) payment.id = `pay_${Date.now()}`;
+            if (!payment.timestamp) payment.timestamp = Date.now();
+            
+            const request = store.put(payment);
+            
+            request.onsuccess = () => {
+                console.log('Payment saved:', payment.id);
+                
+                // Add to sync queue (high priority)
+                this.addToSyncQueue({
+                    type: 'payment',
+                    data: payment,
+                    priority: 1 // High priority
+                });
+                
+                resolve(payment);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
     /**
-     * Clean up old security events
+     * Get payment by ID
      */
-    async cleanupOldSecurityEvents(keepCount = 500) {
-        const allEvents = await this.getSecurityEvents(1000);
+    async getPayment(paymentId) {
+        const db = await this.getConnection();
         
-        if (allEvents.length <= keepCount) {
-            return 0;
-        }
-        
-        const eventsToDelete = allEvents.slice(keepCount);
-        const deletePromises = eventsToDelete.map(event => {
-            return this.operation('security', 'readwrite', (store) => {
-                return store.delete(event.id);
-            });
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.PAYMENTS], 'readonly');
+            const store = transaction.objectStore(STORES.PAYMENTS);
+            const request = store.get(paymentId);
+            
+            request.onsuccess = () => {
+                resolve(request.result || null);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
-        
-        await Promise.all(deletePromises);
-        return eventsToDelete.length;
-    }
-    
-    // ==================== ANALYTICS OPERATIONS ====================
-    
-    /**
-     * Save analytics data
-     */
-    async saveAnalytics(data) {
-        if (!data.type) {
-            throw new Error('Analytics data must have a type');
-        }
-        
-        data.timestamp = new Date().toISOString();
-        data.id = 'ana_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        
-        await this.operation('analytics', 'readwrite', (store) => {
-            return store.add(data);
-        });
-        
-        return data;
     }
     
     /**
-     * Get analytics data
+     * Get payments for user
      */
-    async getAnalytics(type = null, startDate = null, endDate = null, limit = 100) {
-        return await this.operation('analytics', 'readonly', (store) => {
-            return store.getAll();
-        }).then(data => {
-            // Apply filters
-            let filtered = data;
+    async getUserPayments(userId) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.PAYMENTS], 'readonly');
+            const store = transaction.objectStore(STORES.PAYMENTS);
+            const index = store.index('userId');
+            const keyRange = IDBKeyRange.only(userId);
+            const request = index.getAll(keyRange);
+            
+            request.onsuccess = () => {
+                resolve(request.result || []);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    // ============================================================================
+    // ANALYTICS OPERATIONS
+    // ============================================================================
+    
+    /**
+     * Save analytics event
+     */
+    async saveAnalyticsEvent(type, data) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.ANALYTICS], 'readwrite');
+            const store = transaction.objectStore(STORES.ANALYTICS);
+            
+            const event = {
+                id: `analytics_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                type,
+                data,
+                date: new Date().toISOString().split('T')[0],
+                timestamp: Date.now(),
+                userId: await this.getCurrentUserId()
+            };
+            
+            const request = store.put(event);
+            
+            request.onsuccess = () => {
+                // Add to sync queue (low priority)
+                this.addToSyncQueue({
+                    type: 'analytics',
+                    data: event,
+                    priority: 4 // Low priority
+                });
+                
+                resolve(event);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    /**
+     * Get analytics events by type and date range
+     */
+    async getAnalyticsEvents(type = null, startDate = null, endDate = null) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.ANALYTICS], 'readonly');
+            const store = transaction.objectStore(STORES.ANALYTICS);
+            
+            let request;
             
             if (type) {
-                filtered = filtered.filter(item => item.type === type);
+                const index = store.index('type');
+                const keyRange = IDBKeyRange.only(type);
+                request = index.openCursor(keyRange);
+            } else {
+                request = store.openCursor();
             }
             
-            if (startDate) {
-                const start = new Date(startDate);
-                filtered = filtered.filter(item => new Date(item.timestamp) >= start);
-            }
+            const events = [];
             
-            if (endDate) {
-                const end = new Date(endDate);
-                filtered = filtered.filter(item => new Date(item.timestamp) <= end);
-            }
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                
+                if (cursor) {
+                    // Filter by date range if provided
+                    const eventDate = cursor.value.date;
+                    if ((!startDate || eventDate >= startDate) && 
+                        (!endDate || eventDate <= endDate)) {
+                        events.push(cursor.value);
+                    }
+                    cursor.continue();
+                } else {
+                    resolve(events);
+                }
+            };
             
-            // Sort by timestamp (newest first)
-            filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            
-            // Apply limit
-            return filtered.slice(0, limit);
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
         });
     }
     
-    // ==================== UTILITY METHODS ====================
+    // ============================================================================
+    // UTILITY FUNCTIONS
+    // ============================================================================
     
     /**
-     * Get database statistics
+     * Get current user ID from localStorage
      */
-    async getStats() {
-        const stats = {};
-        
-        for (const storeName of Object.keys(this.schemas)) {
-            const count = await this.operation(storeName, 'readonly', (store) => {
-                return store.count();
-            });
-            stats[storeName] = count;
+    async getCurrentUserId() {
+        // This would typically come from auth state
+        // For now, check localStorage
+        const userData = localStorage.getItem('current_user');
+        if (userData) {
+            try {
+                const user = JSON.parse(userData);
+                return user.id;
+            } catch (e) {
+                return null;
+            }
         }
-        
-        return stats;
+        return null;
     }
     
     /**
-     * Clear all data (for testing/reset)
+     * Clear all data (for testing or account deletion)
      */
-    async clearAll() {
-        for (const storeName of Object.keys(this.schemas)) {
-            await this.operation(storeName, 'readwrite', (store) => {
-                return store.clear();
-            });
-        }
+    async clearAllData() {
+        const db = await this.getConnection();
         
-        console.log('All database stores cleared');
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([
+                STORES.USERS,
+                STORES.SUBSCRIPTIONS,
+                STORES.EXAMS,
+                STORES.QUESTIONS,
+                STORES.SYNC_QUEUE,
+                STORES.SETTINGS,
+                STORES.SECURITY,
+                STORES.ANALYTICS,
+                STORES.DEVICE_INFO,
+                STORES.PAYMENTS
+            ], 'readwrite');
+            
+            const clearPromises = [];
+            
+            // Clear each store
+            Object.values(STORES).forEach(storeName => {
+                clearPromises.push(
+                    new Promise((resolveStore, rejectStore) => {
+                        const store = transaction.objectStore(storeName);
+                        const request = store.clear();
+                        
+                        request.onsuccess = () => resolveStore(storeName);
+                        request.onerror = (event) => rejectStore(event.target.error);
+                    })
+                );
+            });
+            
+            transaction.oncomplete = () => {
+                console.log('All data cleared');
+                resolve(true);
+            };
+            
+            transaction.onerror = (event) => {
+                reject(event.target.error);
+            };
+            
+            Promise.all(clearPromises).catch(reject);
+        });
     }
     
     /**
-     * Export all data as JSON
+     * Export all data (for backup or GDPR compliance)
      */
-    async exportData() {
+    async exportAllData() {
+        const db = await this.getConnection();
         const exportData = {};
         
-        for (const storeName of Object.keys(this.schemas)) {
-            const data = await this.operation(storeName, 'readonly', (store) => {
-                return store.getAll();
-            });
-            exportData[storeName] = data;
+        // Export each store
+        for (const [storeKey, storeName] of Object.entries(STORES)) {
+            exportData[storeKey] = await this.exportStore(storeName);
         }
         
         return exportData;
     }
     
     /**
-     * Import data from JSON
+     * Export a single store
      */
-    async importData(data) {
-        for (const [storeName, items] of Object.entries(data)) {
-            if (this.schemas[storeName]) {
-                for (const item of items) {
-                    await this.operation(storeName, 'readwrite', (store) => {
-                        return store.put(item);
+    async exportStore(storeName) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([storeName], 'readonly');
+            const store = transaction.objectStore(storeName);
+            const request = store.getAll();
+            
+            request.onsuccess = () => {
+                resolve(request.result || []);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    /**
+     * Import data (for restore)
+     */
+    async importData(importData) {
+        const db = await this.getConnection();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(Object.values(STORES), 'readwrite');
+            
+            const importPromises = [];
+            
+            for (const [storeKey, data] of Object.entries(importData)) {
+                const storeName = STORES[storeKey];
+                if (storeName && Array.isArray(data)) {
+                    const store = transaction.objectStore(storeName);
+                    
+                    data.forEach(item => {
+                        importPromises.push(
+                            new Promise((resolveItem, rejectItem) => {
+                                const request = store.put(item);
+                                request.onsuccess = () => resolveItem();
+                                request.onerror = (event) => rejectItem(event.target.error);
+                            })
+                        );
                     });
                 }
             }
-        }
-        
-        console.log('Data imported successfully');
+            
+            transaction.oncomplete = () => {
+                console.log('Data import completed');
+                resolve(true);
+            };
+            
+            transaction.onerror = (event) => {
+                reject(event.target.error);
+            };
+            
+            Promise.all(importPromises).catch(reject);
+        });
     }
     
     /**
-     * Backup database
+     * Get database size estimate
      */
-    async backup() {
-        const data = await this.exportData();
-        const backup = {
-            timestamp: new Date().toISOString(),
-            dbName: this.dbName,
-            dbVersion: this.dbVersion,
-            data: data
-        };
-        
-        return backup;
-    }
-    
-    /**
-     * Restore from backup
-     */
-    async restore(backup) {
-        if (backup.dbName !== this.dbName) {
-            throw new Error('Backup is for a different database');
-        }
-        
-        await this.clearAll();
-        await this.importData(backup.data);
-        
-        console.log('Database restored from backup');
-    }
-    
-    /**
-     * Get storage usage estimate
-     */
-    async getStorageUsage() {
+    async getDatabaseSize() {
         if (!navigator.storage || !navigator.storage.estimate) {
-            return null;
+            return { estimate: 'Storage API not available' };
         }
         
         try {
@@ -975,68 +1960,126 @@ class DatabaseManager {
             return {
                 usage: estimate.usage,
                 quota: estimate.quota,
-                percentage: estimate.quota ? (estimate.usage / estimate.quota) * 100 : 0
+                percentage: estimate.usage && estimate.quota ? 
+                    (estimate.usage / estimate.quota * 100).toFixed(2) + '%' : 'N/A'
             };
         } catch (error) {
-            console.error('Error estimating storage:', error);
-            return null;
+            return { error: error.message };
         }
     }
     
     /**
-     * Clean up old data
+     * Cleanup old data
      */
-    async cleanupOldData() {
-        const cleanupResults = {
-            exams: 0,
-            syncQueue: 0,
-            security: 0,
-            analytics: 0
-        };
+    async cleanupOldData(daysToKeep = 90) {
+        const cutoffTime = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
+        let deletedCount = 0;
         
-        // Clean up old exams (keep last 100)
-        const allExams = await this.operation('exams', 'readonly', (store) => {
-            return store.getAll();
-        });
+        // Clean old exams
+        const db = await this.getConnection();
         
-        if (allExams.length > 100) {
-            const examsToDelete = allExams
-                .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
-                .slice(100);
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORES.EXAMS], 'readwrite');
+            const store = transaction.objectStore(STORES.EXAMS);
+            const index = store.index('timestamp');
+            const keyRange = IDBKeyRange.upperBound(cutoffTime);
             
-            for (const exam of examsToDelete) {
-                await this.deleteExam(exam.examId);
-                cleanupResults.exams++;
-            }
+            const request = index.openCursor(keyRange);
+            
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                
+                if (cursor) {
+                    cursor.delete();
+                    deletedCount++;
+                    cursor.continue();
+                } else {
+                    console.log(`Cleaned up ${deletedCount} old exams`);
+                    resolve(deletedCount);
+                }
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    // ============================================================================
+    // EVENT HANDLING
+    // ============================================================================
+    
+    /**
+     * Add event listener
+     */
+    addEventListener(event, callback) {
+        if (!this.eventListeners[event]) {
+            this.eventListeners[event] = [];
         }
+        this.eventListeners[event].push(callback);
+    }
+    
+    /**
+     * Remove event listener
+     */
+    removeEventListener(event, callback) {
+        if (!this.eventListeners[event]) return;
         
-        // Clean up old sync queue items (completed more than 30 days ago)
-        cleanupResults.syncQueue = await this.removeCompletedSyncItems(30);
-        
-        // Clean up old security events (keep 500)
-        cleanupResults.security = await this.cleanupOldSecurityEvents(500);
-        
-        // Clean up old analytics (keep 1000)
-        const allAnalytics = await this.getAnalytics(null, null, null, 2000);
-        if (allAnalytics.length > 1000) {
-            const analyticsToDelete = allAnalytics.slice(1000);
-            for (const analytic of analyticsToDelete) {
-                await this.operation('analytics', 'readwrite', (store) => {
-                    return store.delete(analytic.id);
-                });
-                cleanupResults.analytics++;
-            }
+        const index = this.eventListeners[event].indexOf(callback);
+        if (index > -1) {
+            this.eventListeners[event].splice(index, 1);
         }
+    }
+    
+    /**
+     * Dispatch event to listeners
+     */
+    dispatchEvent(event, data = {}) {
+        if (!this.eventListeners[event]) return;
         
-        console.log('Cleanup completed:', cleanupResults);
-        return cleanupResults;
+        this.eventListeners[event].forEach(callback => {
+            try {
+                callback(data);
+            } catch (error) {
+                console.error(`Error in event listener for ${event}:`, error);
+            }
+        });
     }
 }
 
-// Create global instance
-const db = new DatabaseManager();
+// ============================================================================
+// GLOBAL INSTANCE & EXPORTS
+// ============================================================================
 
-// Export for use in other files
+// Create global instance
+const MedicalExamDBInstance = new MedicalExamDB();
+
+// Make it available globally
+window.MedicalExamDB = MedicalExamDBInstance;
+
+// Export for module systems
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = db;
+    module.exports = MedicalExamDBInstance;
 }
+
+// Auto-initialize and expose common functions
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('MedicalExamDB module loaded');
+    
+    // Initialize database
+    await MedicalExamDBInstance.init();
+    
+    // Expose commonly used functions to window for easy access
+    window.saveExamResult = (examData) => MedicalExamDBInstance.saveExamResult(examData);
+    window.getExamStatistics = (userId) => MedicalExamDBInstance.getExamStatistics(userId);
+    window.saveSetting = (key, value) => MedicalExamDBInstance.saveSetting(key, value);
+    window.getSetting = (key) => MedicalExamDBInstance.getSetting(key);
+    
+    // Dispatch ready event
+    const event = new CustomEvent('databaseReady', {
+        detail: { db: MedicalExamDBInstance }
+    });
+    document.dispatchEvent(event);
+});
+
+console.log('db.js loaded successfully - Medical Exam Room Pro Database Manager');

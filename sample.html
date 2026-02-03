@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Question Loading</title>
+</head>
+<body>
+    <h1>Testing Question Loading</h1>
+    <div id="output"></div>
+    
+    <script src="scripts/questions.js"></script>
+    <script>
+        async function testLoading() {
+            const output = document.getElementById('output');
+            
+            try {
+                output.innerHTML = 'Loading question bank...<br>';
+                const questions = window.questions;
+                
+                await questions.loadQuestionBank();
+                
+                output.innerHTML += 'Question bank loaded!<br>';
+                output.innerHTML += `Subjects: ${Object.keys(questions.questionBank).join(', ')}<br>`;
+                
+                // Test getting a question
+                const testQuestions = await questions.getQuestions({subject: 'Anatomy', limit: 5});
+                output.innerHTML += `Found ${testQuestions.length} Anatomy questions<br>`;
+                
+                if (testQuestions.length > 0) {
+                    output.innerHTML += `First question: ${testQuestions[0].question.substring(0, 100)}...<br>`;
+                }
+                
+            } catch (error) {
+                output.innerHTML += `ERROR: ${error.message}<br>`;
+                console.error(error);
+            }
+        }
+        
+        // Run test when page loads
+        document.addEventListener('DOMContentLoaded', testLoading);
+    </script>
+</body>
+</html>

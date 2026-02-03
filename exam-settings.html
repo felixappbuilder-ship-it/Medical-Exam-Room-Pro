@@ -17,964 +17,794 @@
     </script>
 </head>
 <body>
-    <header class="header">
-        <div class="header-container">
-            <div class="logo">
-                <img src="images/logo.png" alt="Logo" class="logo-image">
-                <h1 class="logo-text">Exam Configuration</h1>
-            </div>
-            
-            <div class="header-actions">
-                <button class="theme-toggle" id="themeToggle">
-                    <span class="theme-icon">🌙</span>
-                    <span class="theme-text">Dark Mode</span>
-                </button>
-                
-                <button class="btn-back" id="backBtn">
-                    <span class="back-icon">←</span>
-                    <span class="back-text">Back to Topics</span>
-                </button>
-            </div>
+
+<div class="container">
+    <header>
+        <div class="logo">
+            <img src="images/logo.png" alt="Logo">
+            Exam Configuration
         </div>
+        <button class="btn-outline" id="themeToggle">
+            <span class="theme-icon">🌙</span>
+            <span class="theme-text">Dark Mode</span>
+        </button>
     </header>
 
-    <main class="main-content">
-        <div class="settings-container">
-            <div class="settings-header">
-                <h2>Configure Your Exam</h2>
-                <p class="settings-subtitle">Customize all exam settings in one place</p>
-                
-                <div class="exam-summary" id="examSummary">
-                    <!-- Exam summary will be loaded here -->
-                </div>
-            </div>
-            
-            <div class="settings-grid">
-                <!-- SECTION 1: Exam Mode Selection -->
-                <div class="settings-section">
-                    <h3>1. Exam Mode</h3>
-                    <div class="mode-options">
-                        <div class="mode-option" data-mode="timed">
-                            <div class="mode-icon">⏱️</div>
-                            <div class="mode-info">
-                                <h4>Timed Exam</h4>
-                                <p>Simulates real exam conditions with adaptive timing</p>
-                                <div class="mode-details">
-                                    <span class="detail">Adaptive timing (21-54s)</span>
-                                    <span class="detail">Score calculation</span>
-                                    <span class="detail">Real exam simulation</span>
-                                </div>
-                            </div>
-                            <div class="mode-check"></div>
-                        </div>
-                        
-                        <div class="mode-option" data-mode="practice">
-                            <div class="mode-icon">📚</div>
-                            <div class="mode-info">
-                                <h4>Practice Mode</h4>
-                                <p>Untimed practice with immediate feedback</p>
-                                <div class="mode-details">
-                                    <span class="detail">No time pressure</span>
-                                    <span class="detail">Instant explanations</span>
-                                    <span class="detail">Learn as you go</span>
-                                </div>
-                            </div>
-                            <div class="mode-check"></div>
-                        </div>
-                        
-                        <div class="mode-option" data-mode="review">
-                            <div class="mode-icon">🔍</div>
-                            <div class="mode-info">
-                                <h4>Review Mode</h4>
-                                <p>Review weak areas and previously answered questions</p>
-                                <div class="mode-details">
-                                    <span class="detail">Focus on weak areas</span>
-                                    <span class="detail">Review explanations</span>
-                                    <span class="detail">Targeted learning</span>
-                                </div>
-                            </div>
-                            <div class="mode-check"></div>
-                        </div>
+    <div class="top-nav">
+        <a href="#" id="backBtn" style="text-decoration: none; color: var(--accent-color);">← Back to Subjects</a>
+        <div class="advanced-menu">
+            ⋮
+            <div class="dropdown-content">
+                <strong>Advanced Settings</strong>
+                <hr>
+                <div style="font-size: 14px; line-height: 1.6;">
+                    <!-- Display Settings -->
+                    <div style="margin-bottom: 10px;">
+                        <strong>Display:</strong>
+                        <label class="checkbox-label">
+                            Start in fullscreen mode: <input type="checkbox" id="fullscreen" checked>
+                        </label>
+                        <label class="checkbox-label">
+                            Distraction-free mode: <input type="checkbox" id="distractionFree" checked>
+                        </label>
+                        <label class="checkbox-label">
+                            Show progress bar: <input type="checkbox" id="showProgress" checked>
+                        </label>
                     </div>
-                </div>
-                
-                <!-- SECTION 2: Question Configuration -->
-                <div class="settings-section">
-                    <h3>2. Questions & Topics</h3>
-                    <div class="question-config">
-                        <div class="config-group">
-                            <label for="questionCount">Number of Questions</label>
-                            <div class="count-selector">
-                                <button class="count-btn" data-count="10">10 (Quick)</button>
-                                <button class="count-btn" data-count="25">25 (Standard)</button>
-                                <button class="count-btn" data-count="50">50 (Full)</button>
-                                <div class="custom-count">
-                                    <input type="number" id="customCount" min="1" max="200" placeholder="Custom">
-                                    <span class="count-label">questions</span>
-                                </div>
-                            </div>
-                            <div class="count-hint" id="countHint">Available: 0 questions</div>
-                        </div>
-                        
-                        <div class="config-group">
-                            <label for="topicSelection">Topic Selection</label>
-                            <div class="topics-review" id="topicsReview">
-                                <!-- Selected topics will be shown here -->
-                            </div>
-                            <button class="btn-change-topics" id="changeTopicsBtn">
-                                <span class="btn-icon">📚</span>
-                                <span class="btn-text">Change Topics</span>
-                            </button>
-                        </div>
-                        
-                        <div class="config-group">
-                            <label>Question Distribution</label>
-                            <div class="distribution-options">
-                                <label class="radio-label">
-                                    <input type="radio" name="distribution" value="balanced" checked>
-                                    <span class="radio-custom"></span>
-                                    <span class="radio-text">Balanced (Equal from each topic)</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="distribution" value="weighted">
-                                    <span class="radio-custom"></span>
-                                    <span class="radio-text">Weighted (More from weak areas)</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="distribution" value="random">
-                                    <span class="radio-custom"></span>
-                                    <span class="radio-text">Random (Completely random)</span>
-                                </label>
-                            </div>
-                        </div>
+                    
+                    <!-- Security Features -->
+                    <div style="margin-bottom: 10px;">
+                        <strong>Security:</strong>
+                        <label class="checkbox-label">
+                            Prevent copy-paste: <input type="checkbox" id="preventCopy" checked>
+                        </label>
+                        <label class="checkbox-label">
+                            Auto-save (30s): <input type="checkbox" id="autoSave" checked>
+                        </label>
+                        <label class="checkbox-label">
+                            Detect tab switching: <input type="checkbox" id="pauseDetection" checked>
+                        </label>
                     </div>
-                </div>
-                
-                <!-- SECTION 3: Difficulty & Timing -->
-                <div class="settings-section">
-                    <h3>3. Difficulty & Timing</h3>
-                    <div class="difficulty-timing">
-                        <div class="config-group">
-                            <label for="difficultyLevel">Difficulty Level</label>
-                            <div class="difficulty-slider">
-                                <div class="slider-labels">
-                                    <span>Easy</span>
-                                    <span>Medium</span>
-                                    <span>Hard</span>
-                                    <span>Expert</span>
-                                </div>
-                                <input type="range" id="difficultyLevel" min="1" max="4" value="2" step="1">
-                                <div class="slider-value" id="difficultyValue">Mixed Difficulty</div>
-                            </div>
-                            <div class="difficulty-description" id="difficultyDesc">
-                                Mix of easy, medium, and hard questions
-                            </div>
-                        </div>
-                        
-                        <div class="config-group">
-                            <label for="timerMode">Timer Settings</label>
-                            <div class="timer-options">
-                                <label class="radio-label">
-                                    <input type="radio" name="timer" value="adaptive" checked>
-                                    <span class="radio-custom"></span>
-                                    <span class="radio-text">Adaptive Timing (21-54 seconds based on difficulty)</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="timer" value="strict">
-                                    <span class="radio-custom"></span>
-                                    <span class="radio-text">Strict Timing (30 seconds fixed)</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="timer" value="relaxed">
-                                    <span class="radio-custom"></span>
-                                    <span class="radio-text">Relaxed Timing (60 seconds fixed)</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="timer" value="untimed">
-                                    <span class="radio-custom"></span>
-                                    <span class="radio-text">No Timer (Practice only)</span>
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <div class="config-group">
-                            <label>Time Warnings</label>
-                            <div class="warning-options">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="colorWarnings" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Color change warnings (Green → Yellow → Red)</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="soundWarnings">
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Sound warning at 10 seconds</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="flashWarnings" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Flashing red in last 5 seconds</span>
-                                </label>
-                            </div>
-                        </div>
+                    
+                    <!-- Review Options -->
+                    <div style="margin-bottom: 10px;">
+                        <strong>Review:</strong>
+                        <label class="checkbox-label">
+                            Allow flagging: <input type="checkbox" id="flagQuestions" checked>
+                        </label>
+                        <label class="checkbox-label">
+                            Show explanations: <input type="checkbox" id="showExplanations" checked>
+                        </label>
                     </div>
-                </div>
-                
-                <!-- SECTION 4: Exam Environment -->
-                <div class="settings-section">
-                    <h3>4. Exam Environment</h3>
-                    <div class="environment-settings">
-                        <div class="config-group">
-                            <label>Display Settings</label>
-                            <div class="display-options">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="fullscreen" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Start in fullscreen mode</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="distractionFree" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Distraction-free mode (hide navigation)</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="autoAdvance">
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Auto-advance to next question</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="showProgress" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Show progress bar</span>
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <div class="config-group">
-                            <label>Security Features</label>
-                            <div class="security-options">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="preventCopy" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Prevent copy-paste</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="autoSave" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Auto-save every 30 seconds</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="pauseDetection" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Detect tab switching</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="timeValidation" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Validate time integrity</span>
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <div class="config-group">
-                            <label>Review Options</label>
-                            <div class="review-options">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="flagQuestions" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Allow flagging questions for review</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="showExplanations" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Show explanations after each question</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="instantFeedback">
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Instant feedback on answer</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="reviewAll" checked>
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">Review all questions at end</span>
-                                </label>
-                            </div>
-                        </div>
+                    
+                    <!-- Time Warnings -->
+                    <div>
+                        <strong>Warnings:</strong>
+                        <label class="checkbox-label">
+                            Color warnings: <input type="checkbox" id="colorWarnings" checked>
+                        </label>
+                        <label class="checkbox-label">
+                            Flashing red (last 5s): <input type="checkbox" id="flashWarnings" checked>
+                        </label>
                     </div>
-                </div>
-                
-                <!-- SECTION 5: Advanced Settings -->
-                <div class="settings-section advanced">
-                    <h3>5. Advanced Settings</h3>
-                    <div class="advanced-settings">
-                        <div class="config-group">
-                            <label for="questionOrder">Question Order</label>
-                            <select id="questionOrder">
-                                <option value="random">Random Order</option>
-                                <option value="difficulty">By Difficulty (Easy to Hard)</option>
-                                <option value="topic">By Topic Group</option>
-                                <option value="time">By Estimated Time</option>
+                    
+                    <!-- Advanced Options -->
+                    <div style="margin-top: 10px;">
+                        <strong>More Options:</strong>
+                        <div style="font-size: 12px;">
+                            Question Order:
+                            <select id="questionOrder" style="width: 100%; margin: 5px 0; font-size: 12px; padding: 4px;">
+                                <option value="random">Random</option>
+                                <option value="difficulty">By Difficulty</option>
+                                <option value="topic">By Topic</option>
                             </select>
-                        </div>
-                        
-                        <div class="config-group">
-                            <label for="passingScore">Passing Score (%)</label>
-                            <input type="number" id="passingScore" min="0" max="100" value="70">
-                            <div class="input-hint">Set minimum score to pass (0-100)</div>
-                        </div>
-                        
-                        <div class="config-group">
-                            <label for="breakInterval">Break Interval</label>
-                            <select id="breakInterval">
+                            
+                            Break Interval:
+                            <select id="breakInterval" style="width: 100%; margin: 5px 0; font-size: 12px; padding: 4px;">
                                 <option value="0">No breaks</option>
-                                <option value="10">Every 10 questions</option>
                                 <option value="25">Every 25 questions</option>
                                 <option value="50">Every 50 questions</option>
                             </select>
-                            <div class="input-hint">Optional breaks during long exams</div>
+                            
+                            Passing Score: <input type="number" id="passingScore" value="70" min="0" max="100" style="width: 60px; padding: 4px; font-size: 12px;">
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <div class="settings-actions">
-                <div class="preset-section">
-                    <h4>Save as Preset</h4>
-                    <div class="preset-controls">
-                        <input type="text" id="presetName" placeholder="Preset name (e.g., Quick Review)">
-                        <button class="btn-secondary" id="savePresetBtn">
-                            <span class="btn-icon">💾</span>
-                            <span class="btn-text">Save Preset</span>
-                        </button>
-                    </div>
-                    <div class="preset-list" id="presetList">
-                        <!-- Saved presets will be loaded here -->
-                    </div>
-                </div>
-                
-                <div class="action-buttons">
-                    <button class="btn-secondary" id="resetBtn">
-                        <span class="btn-icon">🔄</span>
-                        <span class="btn-text">Reset to Defaults</span>
-                    </button>
-                    
-                    <button class="btn-secondary" id="cancelBtn">
-                        <span class="btn-icon">←</span>
-                        <span class="btn-text">Cancel</span>
-                    </button>
-                    
-                    <button class="btn-primary" id="startExamBtn">
-                        <span class="btn-icon">▶️</span>
-                        <span class="btn-text">Start Exam with These Settings</span>
-                    </button>
-                </div>
-                
-                <div class="estimated-time" id="estimatedTime">
-                    Estimated exam time: Calculating...
-                </div>
-            </div>
-            
-            <div class="quick-tips">
-                <h3>📝 Quick Tips</h3>
-                <ul>
-                    <li><strong>Timed Exam</strong> best simulates real exam conditions</li>
-                    <li><strong>Adaptive timing</strong> gives more time for difficult questions</li>
-                    <li>Use <strong>Practice Mode</strong> for learning without pressure</li>
-                    <li><strong>Review Mode</strong> helps focus on weak areas</li>
-                    <li>Save your favorite settings as <strong>Presets</strong> for quick access</li>
-                </ul>
-            </div>
         </div>
-    </main>
+    </div>
 
-    <footer class="footer-minimal">
-        <p>All settings configured here will be applied to your exam. You can save configurations as presets for future use.</p>
-    </footer>
+    <h2>Configure your exam</h2>
 
-    <script src="scripts/app.js"></script>
-    <script src="scripts/exam-engine.js"></script>
-    <script src="scripts/questions.js"></script>
-    <script src="scripts/subscription.js"></script>
-    <script src="scripts/ui.js"></script>
-    <script src="scripts/utils.js"></script>
-    <script src="scripts/router.js"></script>
-    
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Theme toggle
-            const themeToggle = document.getElementById('themeToggle');
-            const themeIcon = themeToggle.querySelector('.theme-icon');
-            const themeText = themeToggle.querySelector('.theme-text');
-            
-            const savedTheme = localStorage.getItem('theme') || 'light';
-            document.body.classList.toggle('dark-theme', savedTheme === 'dark');
-            
-            if (savedTheme === 'dark') {
-                themeIcon.textContent = '☀️';
-                themeText.textContent = 'Light Mode';
-            }
-            
-            themeToggle.addEventListener('click', function() {
-                const isDark = document.body.classList.toggle('dark-theme');
-                localStorage.setItem('theme', isDark ? 'dark' : 'light');
-                
-                if (isDark) {
-                    themeIcon.textContent = '☀️';
-                    themeText.textContent = 'Light Mode';
+    <div class="info-box" id="examSummary">
+        <!-- Loaded by JavaScript -->
+    </div>
+
+    <div class="form-group">
+        <label>Exam Mode</label>
+        <select id="examMode">
+            <option value="timed">Timed Exam</option>
+            <option value="practice">Practice Mode</option>
+            <option value="review">Review Mode</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>Number of Questions</label>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <select id="questionCountSelect" style="flex: 1;">
+                <option value="10">Quick Exam (10)</option>
+                <option value="25" selected>Standard (25)</option>
+                <option value="50">Full Exam (50)</option>
+                <option value="custom">Custom</option>
+            </select>
+            <input type="number" id="customCount" min="1" max="200" placeholder="Custom" 
+                   style="display: none; width: 100px; padding: 12px;">
+        </div>
+        <div id="countHint" style="font-size: 0.85rem; margin-top: 5px; color: #666;">
+            Available: 0 questions
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Difficulty Level</label>
+        <div class="difficulty-slider">
+            <input type="range" id="difficultyLevel" min="0" max="4" value="2" step="1">
+            <div class="slider-value" id="difficultyValue">Mixed Difficulty</div>
+        </div>
+        <div id="difficultyDesc" style="font-size: 0.85rem; margin-top: 5px; color: #666;">
+            Mix of easy, medium, and hard questions
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Timer Settings</label>
+        <select id="timerMode">
+            <option value="adaptive">Adaptive (21-54s based on difficulty)</option>
+            <option value="strict">Strict (30s fixed)</option>
+            <option value="relaxed">Relaxed (60s fixed)</option>
+            <option value="untimed">No Timer (Practice only)</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>Question Distribution</label>
+        <select id="questionDistribution">
+            <option value="balanced">Balanced (Equal from each topic)</option>
+            <option value="weighted">Weighted (More from weak areas)</option>
+            <option value="random">Random (Completely random)</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <input type="text" id="presetName" placeholder="Preset name" 
+                   style="flex: 1; padding: 12px;">
+            <button class="btn-outline" id="savePresetBtn" style="white-space: nowrap;">
+                Save Preset 💾
+            </button>
+        </div>
+        <div id="presetList" style="margin-top: 10px; max-height: 100px; overflow-y: auto;">
+            <!-- Presets will be loaded here -->
+        </div>
+    </div>
+
+    <div id="estimatedTime" class="estimated-time">
+        Estimated exam time: Calculating...
+    </div>
+
+    <div class="button-group">
+        <button class="btn-secondary" id="resetBtn">Reset to Default</button>
+        <button class="btn-outline" id="cancelBtn" style="color: red;">Cancel</button>
+        <button class="btn-primary" id="startExamBtn">Start Exam —></button>
+    </div>
+
+    <p class="footer-note">All settings configured here will be applied to your exam. You can save configuration as Preset for future use.</p>
+</div>
+
+<!-- JavaScript Files -->
+<script src="scripts/app.js"></script>
+<script src="scripts/router.js"></script>
+<script src="scripts/ui.js"></script>
+<script src="scripts/utils.js"></script>
+<script src="scripts/auth.js"></script>
+<script src="scripts/validation.js"></script>
+<script src="scripts/security.js"></script>
+<script src="scripts/subscription.js"></script>
+<script src="scripts/payment.js"></script>
+<script src="scripts/questions.js"></script>
+<script src="scripts/exam-engine.js"></script>
+<script src="scripts/timer.js"></script>
+<script src="scripts/db.js"></script>
+<script src="scripts/sync.js"></script>
+<script src="scripts/analytics.js"></script>
+<script src="scripts/offline.js"></script>
+
+<script>
+    // Minimal initialization script that delegates to imported modules
+    document.addEventListener('DOMContentLoaded', function() {
+        
+        // Initialize App State (app.js)
+        if (typeof App !== 'undefined') {
+            App.init();
+        }
+        
+        // Check authentication (auth.js)
+        if (typeof Auth !== 'undefined') {
+            if (!Auth.isAuthenticated()) {
+                // Redirect to login if not authenticated
+                if (typeof Router !== 'undefined') {
+                    Router.navigateTo('login.html');
                 } else {
-                    themeIcon.textContent = '🌙';
-                    themeText.textContent = 'Dark Mode';
+                    window.location.href = 'login.html';
                 }
+                return;
+            }
+        }
+        
+        // Setup UI components (ui.js)
+        if (typeof UI !== 'undefined') {
+            // Theme toggle
+            UI.setupThemeToggle('themeToggle');
+            
+            // Setup form controls
+            UI.setupFormControl('examMode', 'change', updateConfig);
+            UI.setupFormControl('questionCountSelect', 'change', handleQuestionCountChange);
+            UI.setupFormControl('difficultyLevel', 'input', updateDifficulty);
+            UI.setupFormControl('timerMode', 'change', updateConfig);
+            UI.setupFormControl('questionDistribution', 'change', updateConfig);
+            
+            // Setup advanced menu controls
+            setupAdvancedControls();
+            
+            // Setup button handlers
+            UI.setupButton('resetBtn', resetToDefaults);
+            UI.setupButton('savePresetBtn', savePreset);
+            UI.setupButton('startExamBtn', startExam);
+        }
+        
+        // Setup navigation (router.js)
+        if (typeof Router !== 'undefined') {
+            Router.setupNavigation('backBtn', 'subjects.html');
+            Router.setupNavigation('cancelBtn', null, function() {
+                return confirm('Are you sure you want to cancel? Your settings will not be saved.');
             });
-            
-            // Navigation
-            const backBtn = document.getElementById('backBtn');
-            const cancelBtn = document.getElementById('cancelBtn');
-            
-            backBtn.addEventListener('click', function() {
+        } else {
+            // Fallback navigation
+            document.getElementById('backBtn').addEventListener('click', function() {
                 window.history.back() || (window.location.href = 'subjects.html');
             });
             
-            cancelBtn.addEventListener('click', function() {
+            document.getElementById('cancelBtn').addEventListener('click', function() {
                 if (confirm('Are you sure you want to cancel? Your settings will not be saved.')) {
                     window.history.back();
                 }
             });
+        }
+        
+        // Load exam configuration (exam-engine.js)
+        if (typeof ExamEngine !== 'undefined') {
+            ExamEngine.loadConfiguration();
+            updateExamSummary();
+            updateEstimatedTime();
+            loadPresets();
+        } else {
+            // Fallback to localStorage
+            loadFromLocalStorage();
+        }
+        
+        // Setup security (security.js)
+        if (typeof Security !== 'undefined') {
+            Security.initializePageProtection();
+        }
+        
+        // Check offline status (offline.js)
+        if (typeof Offline !== 'undefined') {
+            Offline.checkStatus();
+        }
+        
+        // Initialize database (db.js)
+        if (typeof DB !== 'undefined') {
+            DB.init().then(() => {
+                console.log('Database initialized for settings');
+            });
+        }
+    });
+    
+    // Configuration update handlers
+    function updateConfig() {
+        const config = collectConfig();
+        
+        if (typeof ExamEngine !== 'undefined') {
+            ExamEngine.updateConfiguration(config);
+        } else {
+            // Fallback to localStorage
+            localStorage.setItem('examConfiguration', JSON.stringify(config));
+        }
+        
+        updateEstimatedTime();
+        
+        if (typeof UI !== 'undefined') {
+            UI.showToast('Settings updated', 'info');
+        }
+    }
+    
+    function handleQuestionCountChange() {
+        const select = document.getElementById('questionCountSelect');
+        const customInput = document.getElementById('customCount');
+        
+        if (select.value === 'custom') {
+            customInput.style.display = 'block';
+            select.style.flex = '2';
+            customInput.focus();
+        } else {
+            customInput.style.display = 'none';
+            select.style.flex = '1';
+        }
+        
+        updateConfig();
+    }
+    
+    function updateDifficulty() {
+        const slider = document.getElementById('difficultyLevel');
+        const value = parseInt(slider.value);
+        
+        const difficultyLabels = ['Easy Only', 'Mostly Easy', 'Mixed Difficulty', 'Mostly Hard', 'Expert Only'];
+        const difficultyDescriptions = [
+            'All easy questions (21 seconds each)',
+            'Mostly easy questions with some medium',
+            'Mix of easy, medium, and hard questions',
+            'Mostly hard questions with some expert',
+            'All expert questions (54 seconds each)'
+        ];
+        
+        document.getElementById('difficultyValue').textContent = difficultyLabels[value];
+        document.getElementById('difficultyDesc').textContent = difficultyDescriptions[value];
+        
+        updateConfig();
+    }
+    
+    function updateExamSummary() {
+        const selectedSubjects = JSON.parse(localStorage.getItem('selectedSubjects') || '[]');
+        const selectedTopics = JSON.parse(localStorage.getItem('selectedTopics') || '[]');
+        
+        const subjectNames = {
+            'anatomy': 'Anatomy', 'physiology': 'Physiology', 'biochemistry': 'Biochemistry',
+            'histology': 'Histology', 'embryology': 'Embryology', 'pathology': 'Pathology',
+            'pharmacology': 'Pharmacology', 'microbiology': 'Microbiology'
+        };
+        
+        const subjectList = selectedSubjects.map(sub => subjectNames[sub] || sub).join(', ');
+        const displayedTopics = selectedTopics.slice(0, 3);
+        const extraCount = Math.max(0, selectedTopics.length - 3);
+        const topicsDisplay = displayedTopics.length > 0 
+            ? displayedTopics.join(', ') + (extraCount > 0 ? ` +${extraCount} more` : '')
+            : 'No topics selected';
+        
+        // Calculate available questions using questions.js if available
+        let availableQuestions = 0;
+        if (typeof Questions !== 'undefined') {
+            availableQuestions = Questions.countAvailable(selectedSubjects, selectedTopics);
+        } else {
+            availableQuestions = selectedTopics.length * 50; // Fallback estimate
+        }
+        
+        document.getElementById('examSummary').innerHTML = `
+            <strong>Subject:</strong> ${subjectList || 'None selected'} <br>
+            <strong>Topics:</strong> ${topicsDisplay} <br>
+            <strong>Available Questions:</strong> ${availableQuestions.toLocaleString()}
+        `;
+        
+        document.getElementById('countHint').textContent = `Available: ${availableQuestions.toLocaleString()} questions`;
+        
+        // Update custom count max
+        const customCount = document.getElementById('customCount');
+        customCount.max = availableQuestions;
+        if (parseInt(customCount.value) > availableQuestions) {
+            customCount.value = availableQuestions;
+        }
+    }
+    
+    function updateEstimatedTime() {
+        const config = collectConfig();
+        let timeText = 'Calculating...';
+        
+        if (typeof Utils !== 'undefined' && typeof ExamEngine !== 'undefined') {
+            timeText = ExamEngine.calculateEstimatedTime(config);
+        } else {
+            // Fallback calculation
+            const questionCount = getQuestionCount();
+            const difficulty = parseInt(document.getElementById('difficultyLevel').value);
+            const timerMode = document.getElementById('timerMode').value;
             
-            // Load selected subjects and topics
-            const selectedSubjects = JSON.parse(localStorage.getItem('selectedSubjects') || '[]');
-            const selectedTopics = JSON.parse(localStorage.getItem('selectedTopics') || '[]');
-            const examConfig = JSON.parse(localStorage.getItem('examConfig') || '{}');
-            
-            // Update exam summary
-            function updateExamSummary() {
-                const subjectNames = {
-                    'anatomy': 'Anatomy', 'physiology': 'Physiology', 'biochemistry': 'Biochemistry',
-                    'histology': 'Histology', 'embryology': 'Embryology', 'pathology': 'Pathology',
-                    'pharmacology': 'Pharmacology', 'microbiology': 'Microbiology'
-                };
-                
-                const subjectList = selectedSubjects.map(sub => subjectNames[sub] || sub).join(', ');
-                const topicCount = selectedTopics.length;
-                
-                document.getElementById('examSummary').innerHTML = `
-                    <div class="summary-card">
-                        <div class="summary-item">
-                            <span class="summary-label">Subjects:</span>
-                            <span class="summary-value">${subjectList || 'None selected'}</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">Topics Selected:</span>
-                            <span class="summary-value">${topicCount} topic${topicCount !== 1 ? 's' : ''}</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">Available Questions:</span>
-                            <span class="summary-value" id="availableQuestions">Calculating...</span>
-                        </div>
-                    </div>
-                `;
-                
-                // Calculate available questions
-                calculateAvailableQuestions();
+            let avgTimePerQuestion;
+            switch(timerMode) {
+                case 'adaptive':
+                    const times = [21, 27, 36, 45, 54];
+                    avgTimePerQuestion = times[difficulty];
+                    break;
+                case 'strict':
+                    avgTimePerQuestion = 30;
+                    break;
+                case 'relaxed':
+                    avgTimePerQuestion = 60;
+                    break;
+                case 'untimed':
+                    avgTimePerQuestion = 0;
+                    break;
+                default:
+                    avgTimePerQuestion = 30;
             }
             
-            // Calculate available questions based on selected topics
-            function calculateAvailableQuestions() {
-                // This would normally fetch from question bank
-                // For now, estimate based on topic count
-                const estimatedQuestions = selectedTopics.length * 50; // Average 50 per topic
-                document.getElementById('availableQuestions').textContent = estimatedQuestions.toLocaleString();
-                document.getElementById('countHint').textContent = `Available: ${estimatedQuestions.toLocaleString()} questions`;
-                
-                // Update custom count max
-                const customCount = document.getElementById('customCount');
-                customCount.max = estimatedQuestions;
-                if (parseInt(customCount.value) > estimatedQuestions) {
-                    customCount.value = estimatedQuestions;
-                }
+            const totalSeconds = questionCount * avgTimePerQuestion;
+            if (avgTimePerQuestion === 0) {
+                timeText = 'No time limit (Practice mode)';
+            } else {
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = totalSeconds % 60;
+                timeText = `Estimated exam time: ${minutes}m ${seconds}s`;
             }
-            
-            // Update topics review
-            function updateTopicsReview() {
-                const topicsContainer = document.getElementById('topicsReview');
-                
-                if (selectedTopics.length === 0) {
-                    topicsContainer.innerHTML = `
-                        <div class="no-topics">
-                            <span class="warning-icon">⚠️</span>
-                            <span class="warning-text">No topics selected</span>
-                        </div>
-                    `;
-                } else {
-                    const topicList = selectedTopics.slice(0, 5).map(topic => 
-                        `<span class="topic-tag">${topic}</span>`
-                    ).join('');
-                    
-                    const extraCount = Math.max(0, selectedTopics.length - 5);
-                    const extraText = extraCount > 0 ? `<span class="extra-count">+${extraCount} more</span>` : '';
-                    
-                    topicsContainer.innerHTML = `
-                        <div class="topics-list">
-                            ${topicList}
-                            ${extraText}
-                        </div>
-                    `;
-                }
+        }
+        
+        document.getElementById('estimatedTime').textContent = timeText;
+    }
+    
+    function collectConfig() {
+        return {
+            examMode: document.getElementById('examMode').value,
+            questionCount: getQuestionCount(),
+            difficulty: document.getElementById('difficultyLevel').value,
+            timerMode: document.getElementById('timerMode').value,
+            distribution: document.getElementById('questionDistribution').value,
+            questionOrder: document.getElementById('questionOrder').value,
+            passingScore: parseInt(document.getElementById('passingScore').value) || 70,
+            breakInterval: document.getElementById('breakInterval').value,
+            fullscreen: document.getElementById('fullscreen').checked,
+            distractionFree: document.getElementById('distractionFree').checked,
+            showProgress: document.getElementById('showProgress').checked,
+            preventCopy: document.getElementById('preventCopy').checked,
+            autoSave: document.getElementById('autoSave').checked,
+            pauseDetection: document.getElementById('pauseDetection').checked,
+            flagQuestions: document.getElementById('flagQuestions').checked,
+            showExplanations: document.getElementById('showExplanations').checked,
+            colorWarnings: document.getElementById('colorWarnings').checked,
+            flashWarnings: document.getElementById('flashWarnings').checked,
+            subjects: JSON.parse(localStorage.getItem('selectedSubjects') || '[]'),
+            topics: JSON.parse(localStorage.getItem('selectedTopics') || '[]'),
+            configTimestamp: Date.now()
+        };
+    }
+    
+    function getQuestionCount() {
+        const select = document.getElementById('questionCountSelect');
+        if (select.value === 'custom') {
+            return document.getElementById('customCount').value || '25';
+        }
+        return select.value;
+    }
+    
+    function setupAdvancedControls() {
+        const advancedIds = [
+            'fullscreen', 'distractionFree', 'showProgress', 'preventCopy',
+            'autoSave', 'pauseDetection', 'flagQuestions', 'showExplanations',
+            'colorWarnings', 'flashWarnings', 'questionOrder', 'breakInterval', 'passingScore'
+        ];
+        
+        advancedIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('change', updateConfig);
             }
-            
-            // Change topics button
-            document.getElementById('changeTopicsBtn').addEventListener('click', function() {
-                if (selectedSubjects.length === 1) {
-                    window.location.href = `${selectedSubjects[0]}.html`;
-                } else {
-                    window.location.href = 'subjects.html';
-                }
-            });
-            
-            // Question count buttons
-            document.querySelectorAll('.count-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    // Remove active class from all buttons
-                    document.querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
-                    // Add active class to clicked button
-                    this.classList.add('active');
-                    // Clear custom count
-                    document.getElementById('customCount').value = '';
-                });
-            });
-            
-            // Custom count input
-            const customCount = document.getElementById('customCount');
-            customCount.addEventListener('input', function() {
-                // Remove active class from count buttons
-                document.querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
+        });
+    }
+    
+    function resetToDefaults() {
+        if (confirm('Reset all settings to defaults?')) {
+            if (typeof ExamEngine !== 'undefined') {
+                ExamEngine.resetToDefaults();
+                ExamEngine.loadConfiguration();
+            } else {
+                // Fallback reset
+                document.getElementById('examMode').value = 'timed';
+                document.getElementById('questionCountSelect').value = '25';
+                document.getElementById('customCount').style.display = 'none';
+                document.getElementById('questionCountSelect').style.flex = '1';
+                document.getElementById('difficultyLevel').value = 2;
+                updateDifficulty();
+                document.getElementById('timerMode').value = 'adaptive';
+                document.getElementById('questionDistribution').value = 'balanced';
                 
-                // Validate input
-                const max = parseInt(this.max) || 200;
-                let value = parseInt(this.value) || 0;
-                if (value < 1) value = 1;
-                if (value > max) value = max;
-                this.value = value;
-            });
-            
-            // Difficulty slider
-            const difficultySlider = document.getElementById('difficultyLevel');
-            const difficultyValue = document.getElementById('difficultyValue');
-            const difficultyDesc = document.getElementById('difficultyDesc');
-            
-            const difficultyLabels = ['Easy Only', 'Mostly Easy', 'Mixed Difficulty', 'Mostly Hard', 'Expert Only'];
-            const difficultyDescriptions = [
-                'All easy questions (21 seconds each)',
-                'Mostly easy questions with some medium',
-                'Mix of easy, medium, and hard questions',
-                'Mostly hard questions with some expert',
-                'All expert questions (54 seconds each)'
-            ];
-            
-            difficultySlider.addEventListener('input', function() {
-                const value = parseInt(this.value);
-                difficultyValue.textContent = difficultyLabels[value];
-                difficultyDesc.textContent = difficultyDescriptions[value];
-            });
-            
-            // Mode selection
-            document.querySelectorAll('.mode-option').forEach(option => {
-                option.addEventListener('click', function() {
-                    // Remove selected class from all options
-                    document.querySelectorAll('.mode-option').forEach(opt => {
-                        opt.classList.remove('selected');
-                        opt.querySelector('.mode-check').textContent = '';
-                    });
-                    
-                    // Add selected class to clicked option
-                    this.classList.add('selected');
-                    this.querySelector('.mode-check').textContent = '✓';
-                });
-            });
-            
-            // Load saved settings from examConfig
-            function loadSavedSettings() {
-                if (examConfig.examMode) {
-                    const modeOption = document.querySelector(`.mode-option[data-mode="${examConfig.examMode}"]`);
-                    if (modeOption) {
-                        modeOption.click();
-                    }
-                }
+                // Advanced defaults
+                document.getElementById('questionOrder').value = 'random';
+                document.getElementById('passingScore').value = 70;
+                document.getElementById('breakInterval').value = '0';
                 
-                if (examConfig.questionCount) {
-                    const count = parseInt(examConfig.questionCount);
-                    if ([10, 25, 50].includes(count)) {
-                        document.querySelector(`.count-btn[data-count="${count}"]`).click();
-                    } else {
-                        document.getElementById('customCount').value = count;
-                    }
-                }
-                
-                if (examConfig.difficulty) {
-                    const difficultyMap = { 'easy': 1, 'medium': 2, 'hard': 3, 'expert': 4, 'mixed': 2 };
-                    const value = difficultyMap[examConfig.difficulty] || 2;
-                    difficultySlider.value = value;
-                    difficultySlider.dispatchEvent(new Event('input'));
-                }
-                
-                if (examConfig.timerMode) {
-                    const timerRadio = document.querySelector(`input[name="timer"][value="${examConfig.timerMode}"]`);
-                    if (timerRadio) {
-                        timerRadio.checked = true;
-                    }
-                }
-                
-                // Load saved presets
-                loadPresets();
-            }
-            
-            // Save preset functionality
-            const savePresetBtn = document.getElementById('savePresetBtn');
-            const presetNameInput = document.getElementById('presetName');
-            
-            savePresetBtn.addEventListener('click', function() {
-                const presetName = presetNameInput.value.trim();
-                if (!presetName) {
-                    alert('Please enter a name for your preset');
-                    return;
-                }
-                
-                // Get current settings
-                const preset = {
-                    name: presetName,
-                    examMode: document.querySelector('.mode-option.selected')?.dataset.mode || 'timed',
-                    questionCount: getSelectedQuestionCount(),
-                    difficulty: difficultySlider.value,
-                    timerMode: document.querySelector('input[name="timer"]:checked')?.value || 'adaptive',
-                    distribution: document.querySelector('input[name="distribution"]:checked')?.value || 'balanced',
-                    questionOrder: document.getElementById('questionOrder').value,
-                    passingScore: document.getElementById('passingScore').value,
-                    breakInterval: document.getElementById('breakInterval').value,
-                    // Include display settings
-                    fullscreen: document.getElementById('fullscreen').checked,
-                    distractionFree: document.getElementById('distractionFree').checked,
-                    autoAdvance: document.getElementById('autoAdvance').checked,
-                    showProgress: document.getElementById('showProgress').checked,
-                    // Include security settings
-                    preventCopy: document.getElementById('preventCopy').checked,
-                    autoSave: document.getElementById('autoSave').checked,
-                    pauseDetection: document.getElementById('pauseDetection').checked,
-                    timeValidation: document.getElementById('timeValidation').checked,
-                    // Include review settings
-                    flagQuestions: document.getElementById('flagQuestions').checked,
-                    showExplanations: document.getElementById('showExplanations').checked,
-                    instantFeedback: document.getElementById('instantFeedback').checked,
-                    reviewAll: document.getElementById('reviewAll').checked,
-                    // Include warning settings
-                    colorWarnings: document.getElementById('colorWarnings').checked,
-                    soundWarnings: document.getElementById('soundWarnings').checked,
-                    flashWarnings: document.getElementById('flashWarnings').checked,
-                    timestamp: Date.now(),
-                    subjects: selectedSubjects,
-                    topics: selectedTopics
-                };
-                
-                // Save to localStorage
-                const presets = JSON.parse(localStorage.getItem('examPresets') || '[]');
-                presets.push(preset);
-                localStorage.setItem('examPresets', JSON.stringify(presets));
-                
-                alert(`Preset "${presetName}" saved successfully!`);
-                presetNameInput.value = '';
-                loadPresets();
-            });
-            
-            // Load presets
-            function loadPresets() {
-                const presetList = document.getElementById('presetList');
-                const presets = JSON.parse(localStorage.getItem('examPresets') || '[]');
-                
-                if (presets.length === 0) {
-                    presetList.innerHTML = '<div class="no-presets">No saved presets yet</div>';
-                    return;
-                }
-                
-                presetList.innerHTML = presets.map((preset, index) => `
-                    <div class="preset-item">
-                        <div class="preset-info">
-                            <div class="preset-name">${preset.name}</div>
-                            <div class="preset-details">
-                                <span class="detail">${preset.examMode}</span>
-                                <span class="detail">${preset.questionCount} questions</span>
-                                <span class="detail">${preset.difficulty === '1' ? 'Easy' : preset.difficulty === '4' ? 'Expert' : 'Mixed'}</span>
-                            </div>
-                        </div>
-                        <div class="preset-actions">
-                            <button class="btn-preset-load" data-index="${index}">
-                                <span class="btn-icon">↻</span>
-                                <span class="btn-text">Load</span>
-                            </button>
-                            <button class="btn-preset-delete" data-index="${index}">
-                                <span class="btn-icon">🗑️</span>
-                            </button>
-                        </div>
-                    </div>
-                `).join('');
-                
-                // Add event listeners to preset buttons
-                document.querySelectorAll('.btn-preset-load').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const index = parseInt(this.dataset.index);
-                        loadPresetSettings(presets[index]);
-                    });
-                });
-                
-                document.querySelectorAll('.btn-preset-delete').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const index = parseInt(this.dataset.index);
-                        if (confirm('Delete this preset?')) {
-                            presets.splice(index, 1);
-                            localStorage.setItem('examPresets', JSON.stringify(presets));
-                            loadPresets();
-                        }
-                    });
-                });
-            }
-            
-            // Load preset settings
-            function loadPresetSettings(preset) {
-                // Load mode
-                const modeOption = document.querySelector(`.mode-option[data-mode="${preset.examMode}"]`);
-                if (modeOption) modeOption.click();
-                
-                // Load question count
-                const count = preset.questionCount;
-                if ([10, 25, 50].includes(parseInt(count))) {
-                    document.querySelector(`.count-btn[data-count="${count}"]`).click();
-                } else {
-                    document.getElementById('customCount').value = count;
-                }
-                
-                // Load difficulty
-                difficultySlider.value = preset.difficulty;
-                difficultySlider.dispatchEvent(new Event('input'));
-                
-                // Load timer mode
-                const timerRadio = document.querySelector(`input[name="timer"][value="${preset.timerMode}"]`);
-                if (timerRadio) timerRadio.checked = true;
-                
-                // Load distribution
-                const distributionRadio = document.querySelector(`input[name="distribution"][value="${preset.distribution}"]`);
-                if (distributionRadio) distributionRadio.checked = true;
-                
-                // Load other settings
-                document.getElementById('questionOrder').value = preset.questionOrder || 'random';
-                document.getElementById('passingScore').value = preset.passingScore || 70;
-                document.getElementById('breakInterval').value = preset.breakInterval || '0';
-                
-                // Load checkboxes
                 const checkboxes = [
-                    'fullscreen', 'distractionFree', 'autoAdvance', 'showProgress',
-                    'preventCopy', 'autoSave', 'pauseDetection', 'timeValidation',
-                    'flagQuestions', 'showExplanations', 'instantFeedback', 'reviewAll',
-                    'colorWarnings', 'soundWarnings', 'flashWarnings'
+                    'fullscreen', 'distractionFree', 'showProgress', 'preventCopy',
+                    'autoSave', 'pauseDetection', 'flagQuestions', 'showExplanations',
+                    'colorWarnings', 'flashWarnings'
                 ];
                 
                 checkboxes.forEach(id => {
-                    const checkbox = document.getElementById(id);
-                    if (checkbox && preset[id] !== undefined) {
-                        checkbox.checked = preset[id];
-                    }
+                    const element = document.getElementById(id);
+                    if (element) element.checked = true;
                 });
                 
-                alert(`Preset "${preset.name}" loaded successfully!`);
+                localStorage.removeItem('examConfiguration');
             }
             
-            // Get selected question count
-            function getSelectedQuestionCount() {
-                const activeBtn = document.querySelector('.count-btn.active');
-                if (activeBtn) {
-                    return activeBtn.dataset.count;
-                }
-                const customCount = document.getElementById('customCount').value;
-                if (customCount) {
-                    return customCount;
-                }
-                return '25'; // Default
-            }
+            updateEstimatedTime();
             
-            // Calculate estimated time
-            function calculateEstimatedTime() {
-                const questionCount = parseInt(getSelectedQuestionCount()) || 25;
-                const difficulty = parseInt(difficultySlider.value);
-                const timerMode = document.querySelector('input[name="timer"]:checked')?.value || 'adaptive';
-                
-                let avgTimePerQuestion;
-                switch(timerMode) {
-                    case 'adaptive':
-                        // Adaptive timing based on difficulty
-                        const times = [21, 27, 36, 45, 54]; // Easy to Expert
-                        avgTimePerQuestion = times[difficulty];
-                        break;
-                    case 'strict':
-                        avgTimePerQuestion = 30;
-                        break;
-                    case 'relaxed':
-                        avgTimePerQuestion = 60;
-                        break;
-                    case 'untimed':
-                        avgTimePerQuestion = 0;
-                        break;
-                    default:
-                        avgTimePerQuestion = 30;
-                }
-                
-                const totalSeconds = questionCount * avgTimePerQuestion;
-                const minutes = Math.floor(totalSeconds / 60);
-                const seconds = totalSeconds % 60;
-                
-                if (avgTimePerQuestion === 0) {
-                    document.getElementById('estimatedTime').textContent = 'No time limit (Practice mode)';
-                } else if (minutes === 0) {
-                    document.getElementById('estimatedTime').textContent = `Estimated exam time: ${seconds} seconds`;
-                } else {
-                    document.getElementById('estimatedTime').textContent = `Estimated exam time: ${minutes} minute${minutes !== 1 ? 's' : ''}${seconds > 0 ? ` ${seconds} seconds` : ''}`;
-                }
+            if (typeof UI !== 'undefined') {
+                UI.showToast('Settings reset to defaults', 'success');
+            } else {
+                alert('Settings reset to defaults!');
             }
-            
-            // Update estimated time when settings change
-            difficultySlider.addEventListener('input', calculateEstimatedTime);
-            document.querySelectorAll('input[name="timer"]').forEach(radio => {
-                radio.addEventListener('change', calculateEstimatedTime);
+        }
+    }
+    
+    function savePreset() {
+        const presetName = document.getElementById('presetName').value.trim();
+        if (!presetName) {
+            if (typeof UI !== 'undefined') {
+                UI.showToast('Please enter a preset name', 'error');
+            } else {
+                alert('Please enter a name for your preset');
+            }
+            return;
+        }
+        
+        const preset = {
+            name: presetName,
+            ...collectConfig(),
+            timestamp: Date.now()
+        };
+        
+        if (typeof ExamEngine !== 'undefined') {
+            ExamEngine.savePreset(preset);
+        } else {
+            // Fallback to localStorage
+            const presets = JSON.parse(localStorage.getItem('examPresets') || '[]');
+            presets.push(preset);
+            localStorage.setItem('examPresets', JSON.stringify(presets));
+        }
+        
+        document.getElementById('presetName').value = '';
+        loadPresets();
+        
+        if (typeof UI !== 'undefined') {
+            UI.showToast(`Preset "${presetName}" saved`, 'success');
+        } else {
+            alert(`Preset "${presetName}" saved successfully!`);
+        }
+    }
+    
+    function loadPresets() {
+        let presets = [];
+        
+        if (typeof ExamEngine !== 'undefined') {
+            presets = ExamEngine.getPresets();
+        } else {
+            // Fallback to localStorage
+            presets = JSON.parse(localStorage.getItem('examPresets') || '[]');
+        }
+        
+        const presetList = document.getElementById('presetList');
+        
+        if (presets.length === 0) {
+            presetList.innerHTML = '<div style="font-size: 0.85rem; color: #666; padding: 10px; text-align: center;">No saved presets yet</div>';
+            return;
+        }
+        
+        presetList.innerHTML = presets.map((preset, index) => `
+            <div class="preset-item">
+                <div class="preset-info">
+                    <div class="preset-name">${preset.name}</div>
+                    <div class="preset-details">
+                        ${preset.questionCount} questions • ${preset.difficulty === '0' ? 'Easy' : preset.difficulty === '4' ? 'Expert' : 'Mixed'}
+                    </div>
+                </div>
+                <div class="preset-actions">
+                    <button class="btn-preset-load" data-index="${index}">Load</button>
+                    <button class="btn-preset-delete" data-index="${index}">🗑️</button>
+                </div>
+            </div>
+        `).join('');
+        
+        // Add event listeners to preset buttons
+        document.querySelectorAll('.btn-preset-load').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const index = parseInt(this.dataset.index);
+                loadPreset(presets[index]);
             });
-            document.querySelectorAll('.count-btn, #customCount').forEach(element => {
-                element.addEventListener('change', calculateEstimatedTime);
-                element.addEventListener('input', calculateEstimatedTime);
-            });
-            
-            // Reset to defaults
-            document.getElementById('resetBtn').addEventListener('click', function() {
-                if (confirm('Reset all settings to defaults?')) {
-                    // Reset mode
-                    document.querySelector('.mode-option[data-mode="timed"]').click();
-                    
-                    // Reset question count
-                    document.querySelector('.count-btn[data-count="25"]').click();
-                    document.getElementById('customCount').value = '';
-                    
-                    // Reset difficulty
-                    difficultySlider.value = 2;
-                    difficultySlider.dispatchEvent(new Event('input'));
-                    
-                    // Reset timer
-                    document.querySelector('input[name="timer"][value="adaptive"]').checked = true;
-                    
-                    // Reset distribution
-                    document.querySelector('input[name="distribution"][value="balanced"]').checked = true;
-                    
-                    // Reset other settings
-                    document.getElementById('questionOrder').value = 'random';
-                    document.getElementById('passingScore').value = 70;
-                    document.getElementById('breakInterval').value = '0';
-                    
-                    // Reset checkboxes to defaults
-                    document.getElementById('fullscreen').checked = true;
-                    document.getElementById('distractionFree').checked = true;
-                    document.getElementById('autoAdvance').checked = false;
-                    document.getElementById('showProgress').checked = true;
-                    document.getElementById('preventCopy').checked = true;
-                    document.getElementById('autoSave').checked = true;
-                    document.getElementById('pauseDetection').checked = true;
-                    document.getElementById('timeValidation').checked = true;
-                    document.getElementById('flagQuestions').checked = true;
-                    document.getElementById('showExplanations').checked = true;
-                    document.getElementById('instantFeedback').checked = false;
-                    document.getElementById('reviewAll').checked = true;
-                    document.getElementById('colorWarnings').checked = true;
-                    document.getElementById('soundWarnings').checked = false;
-                    document.getElementById('flashWarnings').checked = true;
-                    
-                    calculateEstimatedTime();
-                    alert('Settings reset to defaults!');
+        });
+        
+        document.querySelectorAll('.btn-preset-delete').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const index = parseInt(this.dataset.index);
+                if (confirm('Delete this preset?')) {
+                    if (typeof ExamEngine !== 'undefined') {
+                        ExamEngine.deletePreset(index);
+                    } else {
+                        presets.splice(index, 1);
+                        localStorage.setItem('examPresets', JSON.stringify(presets));
+                    }
+                    loadPresets();
                 }
             });
-            
-            // Start exam
-            document.getElementById('startExamBtn').addEventListener('click', function() {
-                if (selectedTopics.length === 0) {
-                    alert('Please select at least one topic before starting the exam.');
-                    return;
-                }
-                
-                // Check subscription
-                const subscription = JSON.parse(localStorage.getItem('subscription') || '{}');
-                if (!subscription.isActive || !subscription.expiryDate || new Date(subscription.expiryDate) <= new Date()) {
-                    alert('Your subscription has expired. Please subscribe to start exams.');
-                    window.location.href = 'subscription.html';
-                    return;
-                }
-                
-                // Save exam configuration
-                const examConfiguration = {
-                    examMode: document.querySelector('.mode-option.selected')?.dataset.mode || 'timed',
-                    questionCount: getSelectedQuestionCount(),
-                    difficulty: difficultySlider.value,
-                    timerMode: document.querySelector('input[name="timer"]:checked')?.value || 'adaptive',
-                    distribution: document.querySelector('input[name="distribution"]:checked')?.value || 'balanced',
-                    questionOrder: document.getElementById('questionOrder').value,
-                    passingScore: parseInt(document.getElementById('passingScore').value) || 70,
-                    breakInterval: document.getElementById('breakInterval').value,
-                    // Display settings
-                    fullscreen: document.getElementById('fullscreen').checked,
-                    distractionFree: document.getElementById('distractionFree').checked,
-                    autoAdvance: document.getElementById('autoAdvance').checked,
-                    showProgress: document.getElementById('showProgress').checked,
-                    // Security settings
-                    preventCopy: document.getElementById('preventCopy').checked,
-                    autoSave: document.getElementById('autoSave').checked,
-                    pauseDetection: document.getElementById('pauseDetection').checked,
-                    timeValidation: document.getElementById('timeValidation').checked,
-                    // Review settings
-                    flagQuestions: document.getElementById('flagQuestions').checked,
-                    showExplanations: document.getElementById('showExplanations').checked,
-                    instantFeedback: document.getElementById('instantFeedback').checked,
-                    reviewAll: document.getElementById('reviewAll').checked,
-                    // Warning settings
-                    colorWarnings: document.getElementById('colorWarnings').checked,
-                    soundWarnings: document.getElementById('soundWarnings').checked,
-                    flashWarnings: document.getElementById('flashWarnings').checked,
-                    // Subjects and topics
-                    subjects: selectedSubjects,
-                    topics: selectedTopics,
-                    // Metadata
-                    configTimestamp: Date.now(),
-                    examId: 'exam_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
-                };
-                
-                // Save to localStorage
-                localStorage.setItem('examConfiguration', JSON.stringify(examConfiguration));
-                
-                // Navigate to exam room
-                window.location.href = 'exam-room.html';
-            });
-            
-            // Initialize
-            updateExamSummary();
-            updateTopicsReview();
-            loadSavedSettings();
-            calculateEstimatedTime();
-            
-            // Select timed mode by default if none selected
-            if (!document.querySelector('.mode-option.selected')) {
-                document.querySelector('.mode-option[data-mode="timed"]').click();
-            }
-            
-            // Select standard count by default if none selected
-            if (!document.querySelector('.count-btn.active') && !document.getElementById('customCount').value) {
-                document.querySelector('.count-btn[data-count="25"]').click();
-            }
-            
-            // Initialize app state
-            if (typeof initApp === 'function') {
-                initApp();
+        });
+    }
+    
+    function loadPreset(preset) {
+        // Load basic settings
+        document.getElementById('examMode').value = preset.examMode || 'timed';
+        
+        const count = preset.questionCount || 25;
+        if ([10, 25, 50].includes(parseInt(count))) {
+            document.getElementById('questionCountSelect').value = count;
+            document.getElementById('customCount').style.display = 'none';
+            document.getElementById('questionCountSelect').style.flex = '1';
+        } else {
+            document.getElementById('questionCountSelect').value = 'custom';
+            document.getElementById('customCount').value = count;
+            document.getElementById('customCount').style.display = 'block';
+            document.getElementById('questionCountSelect').style.flex = '2';
+        }
+        
+        document.getElementById('difficultyLevel').value = preset.difficulty || 2;
+        updateDifficulty();
+        
+        document.getElementById('timerMode').value = preset.timerMode || 'adaptive';
+        document.getElementById('questionDistribution').value = preset.distribution || 'balanced';
+        
+        // Load advanced settings
+        document.getElementById('questionOrder').value = preset.questionOrder || 'random';
+        document.getElementById('passingScore').value = preset.passingScore || 70;
+        document.getElementById('breakInterval').value = preset.breakInterval || '0';
+        
+        const advancedIds = [
+            'fullscreen', 'distractionFree', 'showProgress', 'preventCopy',
+            'autoSave', 'pauseDetection', 'flagQuestions', 'showExplanations',
+            'colorWarnings', 'flashWarnings'
+        ];
+        
+        advancedIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element && preset[id] !== undefined) {
+                element.checked = preset[id];
             }
         });
-    </script>
+        
+        updateConfig();
+        
+        if (typeof UI !== 'undefined') {
+            UI.showToast(`Preset "${preset.name}" loaded`, 'success');
+        } else {
+            alert(`Preset "${preset.name}" loaded successfully!`);
+        }
+    }
+    
+    function startExam() {
+        // Check subscription (subscription.js)
+        if (typeof Subscription !== 'undefined') {
+            if (!Subscription.checkActive()) {
+                if (typeof Router !== 'undefined') {
+                    Router.navigateTo('subscription.html');
+                } else {
+                    window.location.href = 'subscription.html';
+                }
+                return;
+            }
+        } else {
+            // Fallback subscription check
+            const subscription = JSON.parse(localStorage.getItem('subscription') || '{}');
+            if (!subscription.isActive || !subscription.expiryDate || new Date(subscription.expiryDate) <= new Date()) {
+                alert('Your subscription has expired. Please subscribe to start exams.');
+                window.location.href = 'subscription.html';
+                return;
+            }
+        }
+        
+        // Validate topics selection
+        const selectedTopics = JSON.parse(localStorage.getItem('selectedTopics') || '[]');
+        if (selectedTopics.length === 0) {
+            if (typeof UI !== 'undefined') {
+                UI.showToast('Please select at least one topic', 'error');
+            } else {
+                alert('Please select at least one topic before starting the exam.');
+            }
+            return;
+        }
+        
+        // Save configuration
+        const config = collectConfig();
+        
+        if (typeof ExamEngine !== 'undefined') {
+            ExamEngine.saveConfiguration(config);
+            
+            // Generate exam using exam engine
+            const exam = ExamEngine.generateExam(config);
+            
+            // Save to database if available
+            if (typeof DB !== 'undefined') {
+                DB.saveExam(exam);
+            }
+        } else {
+            // Fallback to localStorage
+            localStorage.setItem('examConfiguration', JSON.stringify(config));
+            
+            // Also save advanced settings separately
+            const advancedSettings = {};
+            const advancedIds = [
+                'fullscreen', 'distractionFree', 'showProgress', 'preventCopy',
+                'autoSave', 'pauseDetection', 'flagQuestions', 'showExplanations',
+                'colorWarnings', 'flashWarnings', 'questionOrder', 'passingScore', 'breakInterval'
+            ];
+            
+            advancedIds.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    advancedSettings[id] = element.type === 'checkbox' ? element.checked : element.value;
+                }
+            });
+            localStorage.setItem('advancedSettings', JSON.stringify(advancedSettings));
+        }
+        
+        // Navigate to exam room
+        if (typeof Router !== 'undefined') {
+            Router.navigateTo('exam-room.html');
+        } else {
+            window.location.href = 'exam-room.html';
+        }
+    }
+    
+    function loadFromLocalStorage() {
+        const examConfig = JSON.parse(localStorage.getItem('examConfig') || '{}');
+        
+        if (examConfig.examMode) {
+            document.getElementById('examMode').value = examConfig.examMode;
+        }
+        
+        if (examConfig.questionCount) {
+            const count = parseInt(examConfig.questionCount);
+            if ([10, 25, 50].includes(count)) {
+                document.getElementById('questionCountSelect').value = count;
+            } else {
+                document.getElementById('questionCountSelect').value = 'custom';
+                document.getElementById('customCount').value = count;
+                document.getElementById('customCount').style.display = 'block';
+                document.getElementById('questionCountSelect').style.flex = '2';
+            }
+        }
+        
+        if (examConfig.difficulty) {
+            const difficultyMap = { 'easy': 0, 'medium': 1, 'hard': 2, 'expert': 3, 'mixed': 2 };
+            const value = difficultyMap[examConfig.difficulty] || 2;
+            document.getElementById('difficultyLevel').value = value;
+            updateDifficulty();
+        }
+        
+        if (examConfig.timerMode) {
+            document.getElementById('timerMode').value = examConfig.timerMode;
+        }
+        
+        if (examConfig.distribution) {
+            document.getElementById('questionDistribution').value = examConfig.distribution;
+        }
+        
+        // Load advanced settings
+        const advancedSettings = JSON.parse(localStorage.getItem('advancedSettings') || '{}');
+        Object.keys(advancedSettings).forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                if (element.type === 'checkbox') {
+                    element.checked = advancedSettings[id];
+                } else {
+                    element.value = advancedSettings[id];
+                }
+            }
+        });
+    }
+</script>
 </body>
 </html>

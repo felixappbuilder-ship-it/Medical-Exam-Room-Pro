@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Security Lock</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            color: white;
+        }
+        .reset-btn {
+            background: #f44336;
+        }
+        .reset-btn:hover {
+            background: #d32f2f;
+        }
+        .back-btn {
+            background: #2196F3;
+        }
+        .back-btn:hover {
+            background: #1976D2;
+        }
+        .log {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔓 Reset Security Lock</h1>
+        <p>This will clear all security lock data and allow you to continue development.</p>
+        
+        <button class="button reset-btn" id="resetBtn">RESET SECURITY LOCK</button>
+        <a href="index.html" class="button back-btn">Back to App</a>
+        
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        const log = document.getElementById('log');
+        
+        function addLog(message, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.innerHTML = `<span style="color: #666">[${time}]</span> ${message}`;
+            entry.style.color = type === 'error' ? '#f44336' : 
+                               type === 'success' ? '#4CAF50' : '#333';
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Resetting...';
+            
+            addLog('Starting security reset...');
+            
+            // List of all security-related keys
+            const securityKeys = [
+                'security_state',
+                'security_events',
+                'time_history',
+                'subscription_checks',
+                'device_sessions',
+                'payment_attempts',
+                'plan_changes',
+                'trial_data',
+                'trialStartTime',
+                'trialEndTime',
+                'subscription',
+                'time_corrections',
+                'last_subscription_sync',
+                'medexam_device_fingerprint',
+                'deviceId',
+                'accessToken',
+                'refreshToken',
+                'userData',
+                'tokenExpiry',
+                'rememberMe',
+                'isOffline',
+                'currentUser',
+                'users',
+                'examConfig',
+                'selectedSubjects',
+                'selectedTopics',
+                'examPresets',
+                'quickPracticeTopic'
+            ];
+            
+            // Clear specific keys
+            let clearedCount = 0;
+            securityKeys.forEach(key => {
+                if (localStorage.getItem(key)) {
+                    localStorage.removeItem(key);
+                    addLog(`Cleared: ${key}`);
+                    clearedCount++;
+                }
+            });
+            
+            // Clear all trialUsed keys
+            Object.keys(localStorage).forEach(key => {
+                if (key.startsWith('trialUsed_')) {
+                    localStorage.removeItem(key);
+                    addLog(`Cleared: ${key}`);
+                    clearedCount++;
+                }
+            });
+            
+            // Clear all security-related data with patterns
+            const patterns = ['security', 'trial', 'device', 'time', 'lock', 'subscription', 'payment'];
+            Object.keys(localStorage).forEach(key => {
+                const lowerKey = key.toLowerCase();
+                if (patterns.some(pattern => lowerKey.includes(pattern))) {
+                    localStorage.removeItem(key);
+                    addLog(`Cleared by pattern: ${key}`);
+                    clearedCount++;
+                }
+            });
+            
+            // Clear session storage
+            sessionStorage.clear();
+            addLog('Cleared session storage');
+            
+            // Clear IndexedDB if exists
+            if ('indexedDB' in window) {
+                const dbs = ['medical_exam_db', 'exam_results_db', 'question_bank_db'];
+                dbs.forEach(dbName => {
+                    indexedDB.deleteDatabase(dbName).onsuccess = () => {
+                        addLog(`Deleted IndexedDB: ${dbName}`);
+                    };
+                });
+            }
+            
+            // Reset device fingerprint
+            const components = [
+                'dev_' + Date.now(),
+                Math.random().toString(36).substr(2, 9)
+            ].join('_');
+            localStorage.setItem('deviceId', components);
+            
+            // Set normal state
+            localStorage.setItem('security_state', 'normal');
+            
+            // Create fresh subscription for testing
+            const testSubscription = {
+                plan: 'trial',
+                isActive: true,
+                expiryDate: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), // 3 hours
+                trial: true,
+                startedAt: new Date().toISOString(),
+                forTesting: true
+            };
+            localStorage.setItem('subscription', JSON.stringify(testSubscription));
+            
+            addLog(`✅ Reset complete! Cleared ${clearedCount} items.`, 'success');
+            addLog('Test subscription created (3-hour trial)', 'success');
+            addLog('You can now refresh or go back to the app.', 'success');
+            
+            btn.textContent = 'RESET COMPLETE';
+            btn.style.background = '#4CAF50';
+            
+            // Auto-redirect after 3 seconds
+            setTimeout(() => {
+                window.location.href = 'index.html';
+            }, 3000);
+        });
+        
+        addLog('Ready to reset security lock.');
+        addLog('Click the button above to clear all security data.');
+    </script>
+</body>
+</html>

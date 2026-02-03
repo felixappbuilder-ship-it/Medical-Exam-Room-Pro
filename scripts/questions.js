@@ -1,1138 +1,1035 @@
-// scripts/questions.js
-
 /**
- * Question Bank Manager for Medical Exam Room Pro
- * Handles loading, caching, and managing the 5,000+ question bank
- * 
- * Features implemented:
- * - Load question bank JSON
- * - Parse questions on-the-fly
- * - Filter by subject/topic/difficulty
- * - Search functionality
- * - Question statistics tracking
- * - Mark questions as reviewed/flagged
- * - Personal notes attachment
- * - Image/diagram lazy loading
+ * questions.js - Question Bank Manager
+ * Purpose: Question storage, retrieval, filtering, and management
+ * Features: Load question bank JSON, filter by subject/topic/difficulty, question statistics
  */
 
-class QuestionBankManager {
-    constructor() {
-        this.questionBank = {
-            Anatomy: [],
-            Physiology: [],
-            Biochemistry: [],
-            Histology: [],
-            Embryology: [],
-            Pathology: [],
-            Pharmacology: [],
-            Microbiology: []
-        };
+// ============================================================================
+// CONFIGURATION & CONSTANTS
+// ============================================================================
+
+const QUESTION_BASE_URL = './data/questions/';
+const QUESTION_STORAGE_KEY = 'medical_exam_question_bank';
+const QUESTION_STATS_KEY = 'medical_exam_question_stats';
+const QUESTION_NOTES_KEY = 'medical_exam_question_notes';
+
+// Subject configuration from blueprint
+const SUBJECTS = {
+    anatomy: {
+        name: "Anatomy",
+        icon: "💀",
+        color: "#FF6B6B",
+        questionCount: 720,
+        topics: [
+            "gross-anatomy", "upper-limb", "lower-limb", "thorax",
+            "abdomen", "pelvis-perineum", "head-neck", "neuroanatomy",
+            "cross-sectional", "radiological-anatomy"
+        ]
+    },
+    physiology: {
+        name: "Physiology",
+        icon: "❤️",
+        color: "#4ECDC4",
+        questionCount: 1150,
+        topics: [
+            "introduction-homeostasis", "cell-physiology", "body-fluids-compartments",
+            "cellular-transport", "signal-transduction", "cardiovascular",
+            "renal", "respiratory", "neurophysiology", "endocrine",
+            "gastrointestinal", "special-senses", "reproductive",
+            "muscle-physiology", "integrative-physiology"
+        ]
+    },
+    biochemistry: {
+        name: "Biochemistry",
+        icon: "🧬",
+        color: "#45B7D1",
+        questionCount: 810,
+        topics: [
+            "biomolecules", "enzymology", "metabolism", "bioenergetics",
+            "molecular-biology", "clinical-biochemistry", "nutrition",
+            "acid-base-balance", "biochemical-techniques", "integration-metabolism"
+        ]
+    },
+    histology: {
+        name: "Histology",
+        icon: "🔬",
+        color: "#96CEB4",
+        questionCount: 450,
+        topics: [
+            "cell-structure", "epithelial-tissue", "connective-tissue",
+            "muscle-tissue", "nervous-tissue", "blood-and-hemopoiesis",
+            "organ-systems", "histotechniques", "microscopic-anatomy"
+        ]
+    },
+    embryology: {
+        name: "Embryology",
+        icon: "👶",
+        color: "#FFEAA7",
+        questionCount: 390,
+        topics: [
+            "gametogenesis", "fertilization", "week-1-development",
+            "week-2-development", "week-3-development", "fetal-period",
+            "placental-development", "congenital-anomalies", "system-organogenesis"
+        ]
+    },
+    pathology: {
+        name: "Pathology",
+        icon: "🦠",
+        color: "#DDA0DD",
+        questionCount: 540,
+        topics: [
+            "cellular-injury", "inflammation", "tissue-repair",
+            "hemodynamic-disorders", "genetic-disorders", "immunopathology",
+            "neoplasia", "infectious-diseases", "environmental-nutritional"
+        ]
+    },
+    pharmacology: {
+        name: "Pharmacology",
+        icon: "💊",
+        color: "#FFD166",
+        questionCount: 460,
+        topics: [
+            "pharmacokinetics", "pharmacodynamics", "autonomic-pharmacology",
+            "cns-pharmacology", "cardiovascular-pharma", "endocrine-pharma",
+            "chemotherapy", "toxicology", "clinical-pharmacology"
+        ]
+    },
+    microbiology: {
+        name: "Microbiology",
+        icon: "🧫",
+        color: "#A8E6CF",
+        questionCount: 430,
+        topics: [
+            "bacteriology", "virology", "mycology", "parasitology",
+            "immunology", "diagnostic-microbiology", "antimicrobial-therapy"
+        ]
+    }
+};
+
+// ============================================================================
+// STATE MANAGEMENT
+// ============================================================================
+
+let questionBank = {
+    loaded: false,
+    subjects: {},
+    totalQuestions: 0,
+    loadedCount: 0,
+    cache: new Map() // For fast lookups by ID
+};
+
+let questionStats = {
+    attempts: {},
+    correct: {},
+    timeSpent: {},
+    flagged: {},
+    lastSeen: {}
+};
+
+let questionNotes = {};
+
+// ============================================================================
+// CORE FUNCTIONS - QUESTION LOADING
+// ============================================================================
+
+/**
+ * Initialize the question bank
+ */
+async function initQuestionBank() {
+    try {
+        console.log("Initializing question bank...");
         
-        this.subjects = [
-            { id: 'anatomy', name: 'Anatomy', icon: '🦴', color: '#2196F3', questions: 720 },
-            { id: 'physiology', name: 'Physiology', icon: '❤️', color: '#F44336', questions: 1150 },
-            { id: 'biochemistry', name: 'Biochemistry', icon: '🧪', color: '#4CAF50', questions: 810 },
-            { id: 'histology', name: 'Histology', icon: '🔬', color: '#FF9800', questions: 450 },
-            { id: 'embryology', name: 'Embryology', icon: '👶', color: '#9C27B0', questions: 390 },
-            { id: 'pathology', name: 'Pathology', icon: '🩺', color: '#3F51B5', questions: 540 },
-            { id: 'pharmacology', name: 'Pharmacology', icon: '💊', color: '#009688', questions: 460 },
-            { id: 'microbiology', name: 'Microbiology', icon: '🦠', color: '#FF5722', questions: 430 }
-        ];
+        // Load from localStorage first for quick startup
+        loadFromLocalStorage();
         
-        this.loaded = false;
-        this.loading = false;
-        this.stats = {};
-        this.userProgress = {};
-        this.questionCache = new Map();
+        // Load statistics and notes
+        loadQuestionStats();
+        loadQuestionNotes();
         
-        // Initialize
-        this.init();
+        // Mark as loaded
+        questionBank.loaded = true;
+        console.log("Question bank initialized successfully");
+        
+        return true;
+    } catch (error) {
+        console.error("Failed to initialize question bank:", error);
+        return false;
+    }
+}
+
+/**
+ * Load questions for a specific subject and topic on demand
+ * @param {string} subject - Subject key (e.g., "anatomy")
+ * @param {string} topic - Topic key (e.g., "upper-limb")
+ * @returns {Promise<Array>} - Array of questions
+ */
+async function loadQuestions(subject, topic) {
+    if (!SUBJECTS[subject]) {
+        throw new Error(`Invalid subject: ${subject}`);
     }
     
-    /**
-     * Initialize question bank manager
-     */
-    async init() {
-        await this.loadUserProgress();
-        await this.calculateStats();
+    if (!SUBJECTS[subject].topics.includes(topic)) {
+        throw new Error(`Invalid topic for ${subject}: ${topic}`);
     }
     
-    /**
-     * Get all subjects
-     */
-    getSubjects() {
-        return this.subjects;
-    }
-    
-    /**
-     * Get subject by ID
-     */
-    getSubject(subjectId) {
-        return this.subjects.find(s => s.id === subjectId);
-    }
-    
-    /**
-     * Load question bank from JSON files
-     */
-    async loadQuestionBank() {
-        if (this.loaded) {
-            return this.questionBank;
+    try {
+        console.log(`Loading questions for ${subject}/${topic}...`);
+        
+        // Check if already loaded
+        const cacheKey = `${subject}_${topic}`;
+        if (questionBank.subjects[cacheKey]) {
+            console.log(`Questions already loaded from cache for ${cacheKey}`);
+            return questionBank.subjects[cacheKey];
         }
         
-        if (this.loading) {
-            // Wait for ongoing load
-            return new Promise(resolve => {
-                const checkInterval = setInterval(() => {
-                    if (this.loaded) {
-                        clearInterval(checkInterval);
-                        resolve(this.questionBank);
-                    }
-                }, 100);
-            });
+        // Load from JSON file
+        const url = `${QUESTION_BASE_URL}${subject}/${topic}.json`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to load ${url}: ${response.status}`);
         }
         
-        this.loading = true;
-        console.log('Loading question bank...');
+        const questions = await response.json();
         
-        try {
-            // Load from IndexedDB cache first
-            const cached = await this.loadFromCache();
-            if (cached && Object.keys(cached).length > 0) {
-                this.questionBank = cached;
-                this.loaded = true;
-                this.loading = false;
-                console.log('Question bank loaded from cache');
-                return this.questionBank;
+        // Validate question format
+        questions.forEach((q, index) => {
+            if (!validateQuestion(q)) {
+                console.warn(`Invalid question format at index ${index} in ${cacheKey}`);
             }
             
-            // Load from JSON files
-            await this.loadFromJSON();
-            
-            // Cache to IndexedDB
-            await this.saveToCache();
-            
-            this.loaded = true;
-            console.log('Question bank loaded successfully');
-            
-        } catch (error) {
-            console.error('Error loading question bank:', error);
-            throw error;
-        } finally {
-            this.loading = false;
-        }
-        
-        return this.questionBank;
-    }
-    
-    /**
-     * Load from IndexedDB cache
-     */
-    async loadFromCache() {
-        try {
-            if (typeof db !== 'undefined' && db.getSetting) {
-                const cachedBank = await db.getSetting('question_bank_cache');
-                if (cachedBank) {
-                    return JSON.parse(cachedBank);
-                }
+            // Generate ID if not present
+            if (!q.id) {
+                q.id = `${subject}_${topic}_${index}`;
             }
-        } catch (error) {
-            console.warn('Could not load from cache:', error);
-        }
-        return null;
-    }
-    
-    /**
-     * Save to IndexedDB cache
-     */
-    async saveToCache() {
-        try {
-            if (typeof db !== 'undefined' && db.saveSetting) {
-                await db.saveSetting('question_bank_cache', JSON.stringify(this.questionBank));
-                console.log('Question bank cached');
-            }
-        } catch (error) {
-            console.warn('Could not save to cache:', error);
-        }
-    }
-    
-    /**
-     * Load from JSON files
-     */
-    async loadFromJSON() {
-        const loadPromises = this.subjects.map(async (subject) => {
-            try {
-                const subjectName = subject.name.toLowerCase();
-                const response = await fetch(`data/questions/${subjectName}/${subjectName}.json`);
-                
-                if (!response.ok) {
-                    throw new Error(`Failed to load ${subject.name} questions: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                this.questionBank[subject.name] = data.questions || data;
-                
-                console.log(`Loaded ${this.questionBank[subject.name].length} ${subject.name} questions`);
-                
-                // Load topics if separate files
-                await this.loadSubjectTopics(subjectName);
-                
-            } catch (error) {
-                console.error(`Error loading ${subject.name}:`, error);
-                // Try alternative loading method
-                await this.loadSubjectFromAlternative(subject.name);
-            }
+            
+            // Ensure all required fields
+            q.subject = subject;
+            q.topic = topic;
+            q.subjectName = SUBJECTS[subject].name;
+            
+            // Add to cache for fast lookup
+            questionBank.cache.set(q.id, q);
         });
         
-        await Promise.all(loadPromises);
-    }
-    
-    /**
-     * Load subject topics from separate JSON files
-     */
-    async loadSubjectTopics(subjectName) {
-        // Define topics for each subject based on blueprint
-        const subjectTopics = {
-            anatomy: [
-                'gross-anatomy', 'upper-limb', 'lower-limb', 'thorax', 'abdomen',
-                'pelvis-perineum', 'head-neck', 'neuroanatomy', 'cross-sectional', 'radiological-anatomy'
-            ],
-            physiology: [
-                'introduction-homeostasis', 'cell-physiology', 'body-fluids-compartments',
-                'cellular-transport', 'signal-transduction', 'cardiovascular', 'renal',
-                'respiratory', 'neurophysiology', 'endocrine', 'gastrointestinal',
-                'special-senses', 'reproductive', 'muscle-physiology', 'integrative-physiology'
-            ],
-            biochemistry: [
-                'biomolecules', 'enzymology', 'metabolism', 'bioenergetics', 'molecular-biology',
-                'clinical-biochemistry', 'nutrition', 'acid-base-balance', 'biochemical-techniques',
-                'integration-metabolism'
-            ],
-            histology: ['general-histology', 'epithelium', 'connective-tissue', 'muscle-tissue', 'nervous-tissue', 'organs'],
-            embryology: ['general-embryology', 'gametogenesis', 'fertilization', 'gastrulation', 'organogenesis', 'fetal-development'],
-            pathology: ['general-pathology', 'inflammation', 'neoplasia', 'hematopathology', 'systemic-pathology', 'clinical-pathology'],
-            pharmacology: ['general-pharmacology', 'autonomic-drugs', 'cns-drugs', 'cardiovascular-drugs', 'chemotherapy', 'toxicology'],
-            microbiology: ['general-microbiology', 'bacteriology', 'virology', 'mycology', 'parasitology', 'immunology']
-        };
+        // Store in memory
+        questionBank.subjects[cacheKey] = questions;
+        questionBank.loadedCount += questions.length;
         
-        const topics = subjectTopics[subjectName] || [];
-        const subject = this.subjects.find(s => s.id === subjectName);
+        console.log(`Loaded ${questions.length} questions for ${subject}/${topic}`);
         
-        if (!subject || topics.length === 0) return;
-        
-        const topicPromises = topics.map(async (topic) => {
-            try {
-                const response = await fetch(`data/questions/${subjectName}/${topic}.json`);
-                if (response.ok) {
-                    const data = await response.json();
-                    const questions = data.questions || data;
-                    
-                    // Add topic information to each question
-                    questions.forEach(q => {
-                        q.subject = subject.name;
-                        q.topic = this.formatTopicName(topic);
-                    });
-                    
-                    // Add to question bank
-                    this.questionBank[subject.name].push(...questions);
-                    
-                    console.log(`Loaded ${questions.length} questions for ${subject.name} - ${topic}`);
-                }
-            } catch (error) {
-                console.warn(`Could not load topic ${topic} for ${subject.name}:`, error);
-            }
-        });
-        
-        await Promise.all(topicPromises);
-    }
-    
-    /**
-     * Format topic name for display
-     */
-    formatTopicName(topic) {
-        return topic
-            .split('-')
-            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ');
-    }
-    
-    /**
-     * Alternative loading method for subjects
-     */
-    async loadSubjectFromAlternative(subjectName) {
-        try {
-            // Try loading from a single combined file
-            const response = await fetch(`data/questions/${subjectName.toLowerCase()}.json`);
-            if (response.ok) {
-                const data = await response.json();
-                this.questionBank[subjectName] = data.questions || data;
-                console.log(`Loaded ${this.questionBank[subjectName].length} ${subjectName} questions from alternative source`);
-            } else {
-                // Generate placeholder questions for development
-                this.generatePlaceholderQuestions(subjectName);
-            }
-        } catch (error) {
-            console.error(`Alternative load failed for ${subjectName}:`, error);
-            this.generatePlaceholderQuestions(subjectName);
-        }
-    }
-    
-    /**
-     * Generate placeholder questions (for development only)
-     */
-    generatePlaceholderQuestions(subjectName) {
-        const subject = this.subjects.find(s => s.name === subjectName);
-        if (!subject) return;
-        
-        const questionCount = subject.questions || 100;
-        const questions = [];
-        
-        const topics = {
-            Anatomy: ['Gross Anatomy', 'Upper Limb', 'Lower Limb', 'Thorax', 'Abdomen'],
-            Physiology: ['Cell Physiology', 'Cardiovascular', 'Respiratory', 'Renal', 'Neurophysiology'],
-            Biochemistry: ['Biomolecules', 'Metabolism', 'Enzymology', 'Molecular Biology', 'Clinical Biochemistry'],
-            Histology: ['Epithelium', 'Connective Tissue', 'Muscle Tissue', 'Nervous Tissue', 'Organs'],
-            Embryology: ['Gametogenesis', 'Fertilization', 'Gastrulation', 'Organogenesis', 'Fetal Development'],
-            Pathology: ['Inflammation', 'Neoplasia', 'Hemostasis', 'Immunopathology', 'Systemic Pathology'],
-            Pharmacology: ['General Pharmacology', 'Autonomic Drugs', 'CNS Drugs', 'Cardiovascular Drugs', 'Chemotherapy'],
-            Microbiology: ['Bacteriology', 'Virology', 'Mycology', 'Parasitology', 'Immunology']
-        };
-        
-        const difficulties = ['Easy', 'Medium', 'Hard', 'Expert'];
-        
-        for (let i = 1; i <= questionCount; i++) {
-            const topic = topics[subjectName][Math.floor(Math.random() * topics[subjectName].length)];
-            const difficulty = difficulties[Math.floor(Math.random() * difficulties.length)];
-            
-            questions.push({
-                id: `${subjectName.toLowerCase()}_${i.toString().padStart(3, '0')}`,
-                question: `Sample question ${i} about ${topic.toLowerCase()} in ${subjectName}?`,
-                options: [
-                    'Option A is the correct answer',
-                    'Option B is incorrect',
-                    'Option C might be correct',
-                    'Option D is definitely wrong',
-                    'Option E requires more thought'
-                ],
-                correct: 'A',
-                explanation: `This is a sample explanation for question ${i}. The correct answer is A because...`,
-                subject: subjectName,
-                topic: topic,
-                difficulty: difficulty,
-                difficultyLevel: difficulties.indexOf(difficulty) + 1,
-                reference: `Reference ${i}: ${subjectName} Textbook, Chapter ${Math.ceil(i/20)}`,
-                hints: [
-                    `Hint 1: Consider the basic principles of ${topic}`,
-                    `Hint 2: Review ${subjectName} concepts related to this topic`
-                ]
-            });
-        }
-        
-        this.questionBank[subjectName] = questions;
-        console.log(`Generated ${questions.length} placeholder questions for ${subjectName}`);
-    }
-    
-    /**
-     * Get question by ID
-     */
-    async getQuestion(questionId) {
-        // Check cache first
-        if (this.questionCache.has(questionId)) {
-            return this.questionCache.get(questionId);
-        }
-        
-        await this.ensureLoaded();
-        
-        // Find question in bank
-        for (const subject in this.questionBank) {
-            const question = this.questionBank[subject].find(q => q.id === questionId);
-            if (question) {
-                // Enhance question with additional data
-                const enhancedQuestion = this.enhanceQuestion(question);
-                this.questionCache.set(questionId, enhancedQuestion);
-                return enhancedQuestion;
-            }
-        }
-        
-        // Try loading from IndexedDB
-        if (typeof db !== 'undefined' && db.getQuestion) {
-            const question = await db.getQuestion(questionId);
-            if (question) {
-                this.questionCache.set(questionId, question);
-                return question;
-            }
-        }
-        
-        console.warn(`Question not found: ${questionId}`);
-        return null;
-    }
-    
-    /**
-     * Enhance question with additional data
-     */
-    enhanceQuestion(question) {
-        if (!question) return null;
-        
-        // Ensure all required fields exist
-        const enhanced = {
-            id: question.id,
-            question: question.question || question.text || '',
-            options: question.options || [],
-            correct: question.correct || question.correctAnswer || '',
-            explanation: question.explanation || '',
-            subject: question.subject || '',
-            topic: question.topic || 'General',
-            difficulty: question.difficulty || 'Medium',
-            difficultyLevel: question.difficultyLevel || 2,
-            image: question.image || null,
-            reference: question.reference || '',
-            hints: question.hints || [],
-            metadata: question.metadata || {}
-        };
-        
-        // Parse options if they're in a different format
-        if (typeof enhanced.options === 'string') {
-            enhanced.options = enhanced.options.split(',').map(opt => opt.trim());
-        }
-        
-        // Ensure we have exactly 5 options
-        while (enhanced.options.length < 5) {
-            enhanced.options.push(`Option ${String.fromCharCode(65 + enhanced.options.length)}`);
-        }
-        
-        // Truncate to 5 options if more
-        if (enhanced.options.length > 5) {
-            enhanced.options = enhanced.options.slice(0, 5);
-        }
-        
-        return enhanced;
-    }
-    
-    /**
-     * Get questions by filter
-     */
-    async getQuestions(filter = {}) {
-        await this.ensureLoaded();
-        
-        let questions = [];
-        
-        // Collect questions based on filter
-        if (filter.subject) {
-            const subjectQuestions = this.questionBank[filter.subject] || [];
-            questions = [...subjectQuestions];
-        } else {
-            // Get questions from all subjects
-            for (const subject in this.questionBank) {
-                questions.push(...this.questionBank[subject]);
-            }
-        }
-        
-        // Apply filters
-        if (filter.topic) {
-            questions = questions.filter(q => q.topic === filter.topic);
-        }
-        
-        if (filter.difficulty) {
-            questions = questions.filter(q => q.difficulty === filter.difficulty);
-        }
-        
-        if (filter.difficultyLevel) {
-            questions = questions.filter(q => q.difficultyLevel === filter.difficultyLevel);
-        }
-        
-        if (filter.minDifficulty) {
-            questions = questions.filter(q => q.difficultyLevel >= filter.minDifficulty);
-        }
-        
-        if (filter.maxDifficulty) {
-            questions = questions.filter(q => q.difficultyLevel <= filter.maxDifficulty);
-        }
-        
-        // Apply limit
-        if (filter.limit) {
-            questions = questions.slice(0, filter.limit);
-        }
-        
-        // Apply offset for pagination
-        if (filter.offset) {
-            questions = questions.slice(filter.offset);
-        }
-        
-        // Randomize if requested
-        if (filter.randomize) {
-            questions = this.shuffleArray(questions);
-        }
-        
-        // Enhance questions
-        return questions.map(q => this.enhanceQuestion(q));
-    }
-    
-    /**
-     * Get questions for exam
-     */
-    async getExamQuestions(examConfig) {
-        const {
-            subjects = [],
-            topics = [],
-            questionCount = 25,
-            difficulty = 'mixed',
-            randomize = true
-        } = examConfig;
-        
-        let allQuestions = [];
-        
-        // Get questions for selected subjects
-        if (subjects.length > 0) {
-            for (const subject of subjects) {
-                const subjectQuestions = await this.getQuestions({
-                    subject: subject,
-                    topic: topics.length > 0 ? undefined : undefined
-                });
-                allQuestions.push(...subjectQuestions);
-            }
-        } else {
-            // Get questions from all subjects
-            allQuestions = await this.getQuestions({});
-        }
-        
-        // Filter by topics if specified
-        if (topics.length > 0) {
-            allQuestions = allQuestions.filter(q => topics.includes(q.topic));
-        }
-        
-        // Apply difficulty filter
-        if (difficulty !== 'mixed') {
-            allQuestions = allQuestions.filter(q => q.difficulty === difficulty);
-        } else {
-            // Mixed difficulty: ensure distribution
-            allQuestions = this.balanceDifficulty(allQuestions);
-        }
-        
-        // Randomize
-        if (randomize) {
-            allQuestions = this.shuffleArray(allQuestions);
-        }
-        
-        // Apply question count limit
-        const selectedQuestions = allQuestions.slice(0, questionCount);
-        
-        // Add question numbers
-        return selectedQuestions.map((q, index) => ({
-            ...q,
-            questionNumber: index + 1
-        }));
-    }
-    
-    /**
-     * Balance difficulty levels
-     */
-    balanceDifficulty(questions) {
-        const difficultyDistribution = {
-            'Easy': 0.2,    // 20%
-            'Medium': 0.3,  // 30%
-            'Hard': 0.3,    // 30%
-            'Expert': 0.2   // 20%
-        };
-        
-        const grouped = {
-            'Easy': [],
-            'Medium': [],
-            'Hard': [],
-            'Expert': []
-        };
-        
-        // Group questions by difficulty
-        questions.forEach(q => {
-            if (grouped[q.difficulty]) {
-                grouped[q.difficulty].push(q);
-            }
-        });
-        
-        // Shuffle each group
-        Object.keys(grouped).forEach(diff => {
-            grouped[diff] = this.shuffleArray(grouped[diff]);
-        });
-        
-        // Calculate target counts
-        const totalQuestions = questions.length;
-        const targetCounts = {};
-        Object.keys(difficultyDistribution).forEach(diff => {
-            targetCounts[diff] = Math.floor(totalQuestions * difficultyDistribution[diff]);
-        });
-        
-        // Select questions based on target distribution
-        const selected = [];
-        Object.keys(grouped).forEach(diff => {
-            const count = Math.min(targetCounts[diff] || 0, grouped[diff].length);
-            selected.push(...grouped[diff].slice(0, count));
-        });
-        
-        // If we don't have enough questions, add more from whatever is available
-        if (selected.length < totalQuestions) {
-            const remaining = questions.filter(q => !selected.includes(q));
-            selected.push(...remaining.slice(0, totalQuestions - selected.length));
-        }
-        
-        return this.shuffleArray(selected);
-    }
-    
-    /**
-     * Search questions
-     */
-    async searchQuestions(query, options = {}) {
-        await this.ensureLoaded();
-        
-        const {
-            subject = null,
-            topic = null,
-            difficulty = null,
-            limit = 50
-        } = options;
-        
-        let results = [];
-        const searchTerms = query.toLowerCase().split(' ').filter(term => term.length > 2);
-        
-        if (searchTerms.length === 0) {
-            return [];
-        }
-        
-        // Search through all questions
-        for (const subjectName in this.questionBank) {
-            // Skip if subject filter doesn't match
-            if (subject && subjectName !== subject) continue;
-            
-            for (const question of this.questionBank[subjectName]) {
-                // Apply filters
-                if (topic && question.topic !== topic) continue;
-                if (difficulty && question.difficulty !== difficulty) continue;
-                
-                // Search in question text and options
-                const searchText = (
-                    question.question +
-                    ' ' + (question.options || []).join(' ') +
-                    ' ' + (question.explanation || '') +
-                    ' ' + (question.topic || '')
-                ).toLowerCase();
-                
-                // Check if all search terms are found
-                const matches = searchTerms.every(term => searchText.includes(term));
-                
-                if (matches) {
-                    results.push(this.enhanceQuestion(question));
-                    
-                    if (results.length >= limit) {
-                        return results;
-                    }
-                }
-            }
-        }
-        
-        return results;
-    }
-    
-    /**
-     * Get question statistics
-     */
-    async getQuestionStats() {
-        await this.ensureLoaded();
-        
-        if (Object.keys(this.stats).length > 0) {
-            return this.stats;
-        }
-        
-        await this.calculateStats();
-        return this.stats;
-    }
-    
-    /**
-     * Calculate statistics
-     */
-    async calculateStats() {
-        await this.ensureLoaded();
-        
-        const stats = {
-            totalQuestions: 0,
-            bySubject: {},
-            byTopic: {},
-            byDifficulty: {},
-            topics: []
-        };
-        
-        for (const subject in this.questionBank) {
-            const questions = this.questionBank[subject];
-            stats.totalQuestions += questions.length;
-            
-            // Subject statistics
-            stats.bySubject[subject] = {
-                count: questions.length,
-                topics: new Set(),
-                difficulties: {}
-            };
-            
-            // Process each question
-            questions.forEach(q => {
-                const question = this.enhanceQuestion(q);
-                
-                // Topic statistics
-                const topic = question.topic;
-                if (topic) {
-                    stats.bySubject[subject].topics.add(topic);
-                    
-                    if (!stats.byTopic[topic]) {
-                        stats.byTopic[topic] = {
-                            count: 0,
-                            subject: subject,
-                            difficulties: {}
-                        };
-                        stats.topics.push({
-                            name: topic,
-                            subject: subject,
-                            count: 0
-                        });
-                    }
-                    stats.byTopic[topic].count++;
-                    
-                    const topicObj = stats.topics.find(t => t.name === topic);
-                    if (topicObj) {
-                        topicObj.count++;
-                    }
-                }
-                
-                // Difficulty statistics
-                const difficulty = question.difficulty;
-                if (difficulty) {
-                    // Subject difficulty
-                    if (!stats.bySubject[subject].difficulties[difficulty]) {
-                        stats.bySubject[subject].difficulties[difficulty] = 0;
-                    }
-                    stats.bySubject[subject].difficulties[difficulty]++;
-                    
-                    // Global difficulty
-                    if (!stats.byDifficulty[difficulty]) {
-                        stats.byDifficulty[difficulty] = 0;
-                    }
-                    stats.byDifficulty[difficulty]++;
-                    
-                    // Topic difficulty
-                    if (topic) {
-                        if (!stats.byTopic[topic].difficulties[difficulty]) {
-                            stats.byTopic[topic].difficulties[difficulty] = 0;
-                        }
-                        stats.byTopic[topic].difficulties[difficulty]++;
-                    }
-                }
-            });
-            
-            // Convert Set to Array
-            stats.bySubject[subject].topics = Array.from(stats.bySubject[subject].topics);
-        }
-        
-        // Sort topics by count
-        stats.topics.sort((a, b) => b.count - a.count);
-        
-        this.stats = stats;
-        return stats;
-    }
-    
-    /**
-     * Get topics for subject
-     */
-    async getTopicsForSubject(subject) {
-        await this.ensureLoaded();
-        
-        const stats = await this.getQuestionStats();
-        const subjectStats = stats.bySubject[subject];
-        
-        if (!subjectStats) {
-            return [];
-        }
-        
-        return subjectStats.topics.map(topic => ({
-            name: topic,
-            count: stats.byTopic[topic]?.count || 0,
-            subject: subject
-        }));
-    }
-    
-    /**
-     * Get question count by subject and topic
-     */
-    async getQuestionCount(subject = null, topic = null) {
-        await this.ensureLoaded();
-        
-        if (!subject) {
-            return this.questionBank.reduce((total, questions) => total + questions.length, 0);
-        }
-        
-        const subjectQuestions = this.questionBank[subject] || [];
-        
-        if (!topic) {
-            return subjectQuestions.length;
-        }
-        
-        return subjectQuestions.filter(q => q.topic === topic).length;
-    }
-    
-    /**
-     * Mark question as reviewed
-     */
-    async markQuestionReviewed(questionId, correct = null) {
-        await this.loadUserProgress();
-        
-        if (!this.userProgress.reviews) {
-            this.userProgress.reviews = {};
-        }
-        
-        this.userProgress.reviews[questionId] = {
-            reviewedAt: new Date().toISOString(),
-            correct: correct,
-            count: (this.userProgress.reviews[questionId]?.count || 0) + 1
-        };
-        
-        await this.saveUserProgress();
-        
-        // Update cache
-        if (this.questionCache.has(questionId)) {
-            const question = this.questionCache.get(questionId);
-            question.reviewed = this.userProgress.reviews[questionId];
-            this.questionCache.set(questionId, question);
-        }
-    }
-    
-    /**
-     * Flag question
-     */
-    async flagQuestion(questionId, reason = '') {
-        await this.loadUserProgress();
-        
-        if (!this.userProgress.flags) {
-            this.userProgress.flags = {};
-        }
-        
-        this.userProgress.flags[questionId] = {
-            flaggedAt: new Date().toISOString(),
-            reason: reason
-        };
-        
-        await this.saveUserProgress();
-    }
-    
-    /**
-     * Unflag question
-     */
-    async unflagQuestion(questionId) {
-        await this.loadUserProgress();
-        
-        if (this.userProgress.flags && this.userProgress.flags[questionId]) {
-            delete this.userProgress.flags[questionId];
-            await this.saveUserProgress();
-        }
-    }
-    
-    /**
-     * Add note to question
-     */
-    async addQuestionNote(questionId, note) {
-        await this.loadUserProgress();
-        
-        if (!this.userProgress.notes) {
-            this.userProgress.notes = {};
-        }
-        
-        if (!this.userProgress.notes[questionId]) {
-            this.userProgress.notes[questionId] = [];
-        }
-        
-        this.userProgress.notes[questionId].push({
-            note: note,
-            createdAt: new Date().toISOString()
-        });
-        
-        await this.saveUserProgress();
-    }
-    
-    /**
-     * Get question notes
-     */
-    async getQuestionNotes(questionId) {
-        await this.loadUserProgress();
-        
-        return this.userProgress.notes?.[questionId] || [];
-    }
-    
-    /**
-     * Get flagged questions
-     */
-    async getFlaggedQuestions() {
-        await this.loadUserProgress();
-        
-        const flaggedIds = Object.keys(this.userProgress.flags || {});
-        const questions = [];
-        
-        for (const questionId of flaggedIds) {
-            const question = await this.getQuestion(questionId);
-            if (question) {
-                question.flag = this.userProgress.flags[questionId];
-                questions.push(question);
-            }
-        }
+        // Save to localStorage for offline use
+        saveToLocalStorage(subject, topic, questions);
         
         return questions;
+    } catch (error) {
+        console.error(`Error loading questions for ${subject}/${topic}:`, error);
+        
+        // Try to load from localStorage as fallback
+        const cached = loadFromLocalStorage(subject, topic);
+        if (cached && cached.length > 0) {
+            console.log(`Loaded ${cached.length} questions from localStorage fallback`);
+            return cached;
+        }
+        
+        throw error;
+    }
+}
+
+/**
+ * Load questions for multiple topics
+ * @param {Array} topics - Array of {subject, topic} objects
+ * @returns {Promise<Array>} - Combined array of questions
+ */
+async function loadMultipleTopics(topics) {
+    const allQuestions = [];
+    
+    for (const topic of topics) {
+        try {
+            const questions = await loadQuestions(topic.subject, topic.topic);
+            allQuestions.push(...questions);
+        } catch (error) {
+            console.error(`Failed to load ${topic.subject}/${topic.topic}:`, error);
+            // Continue with other topics
+        }
     }
     
-    /**
-     * Get review history
-     */
-    async getReviewHistory() {
-        await this.loadUserProgress();
-        
-        const reviewIds = Object.keys(this.userProgress.reviews || {});
-        const history = [];
-        
-        for (const questionId of reviewIds) {
-            const question = await this.getQuestion(questionId);
-            if (question) {
-                history.push({
-                    question: question,
-                    review: this.userProgress.reviews[questionId]
+    return allQuestions;
+}
+
+/**
+ * Get questions for exam based on criteria
+ * @param {Object} criteria - Selection criteria
+ * @returns {Promise<Array>} - Selected questions
+ */
+async function getQuestionsForExam(criteria) {
+    const {
+        subjects = [],
+        topics = [],
+        difficulty = [],
+        count = 25,
+        randomize = true,
+        excludeSeen = false
+    } = criteria;
+    
+    let allQuestions = [];
+    
+    // Load questions based on subjects/topics
+    if (topics.length > 0) {
+        allQuestions = await loadMultipleTopics(topics);
+    } else if (subjects.length > 0) {
+        // Load all topics for selected subjects
+        const topicsToLoad = [];
+        subjects.forEach(subject => {
+            if (SUBJECTS[subject]) {
+                SUBJECTS[subject].topics.forEach(topic => {
+                    topicsToLoad.push({ subject, topic });
                 });
             }
-        }
-        
-        // Sort by most recent review
-        history.sort((a, b) => 
-            new Date(b.review.reviewedAt) - new Date(a.review.reviewedAt)
-        );
-        
-        return history;
-    }
-    
-    /**
-     * Get weak areas based on review history
-     */
-    async getWeakAreas() {
-        await this.loadUserProgress();
-        
-        const reviews = this.userProgress.reviews || {};
-        const topicPerformance = {};
-        
-        // Analyze performance by topic
-        for (const [questionId, review] of Object.entries(reviews)) {
-            if (review.correct === false) {
-                const question = await this.getQuestion(questionId);
-                if (question && question.topic) {
-                    if (!topicPerformance[question.topic]) {
-                        topicPerformance[question.topic] = {
-                            subject: question.subject,
-                            total: 0,
-                            incorrect: 0
-                        };
-                    }
-                    topicPerformance[question.topic].total++;
-                    topicPerformance[question.topic].incorrect++;
-                }
-            } else if (review.correct === true) {
-                const question = await this.getQuestion(questionId);
-                if (question && question.topic) {
-                    if (!topicPerformance[question.topic]) {
-                        topicPerformance[question.topic] = {
-                            subject: question.subject,
-                            total: 0,
-                            incorrect: 0
-                        };
-                    }
-                    topicPerformance[question.topic].total++;
-                }
-            }
-        }
-        
-        // Calculate error rates
-        const weakAreas = [];
-        for (const [topic, data] of Object.entries(topicPerformance)) {
-            if (data.total >= 3) { // Only consider topics with enough data
-                const errorRate = data.incorrect / data.total;
-                if (errorRate > 0.3) { // More than 30% error rate
-                    weakAreas.push({
-                        topic: topic,
-                        subject: data.subject,
-                        errorRate: Math.round(errorRate * 100),
-                        totalQuestions: data.total,
-                        incorrect: data.incorrect
-                    });
-                }
-            }
-        }
-        
-        // Sort by error rate (highest first)
-        weakAreas.sort((a, b) => b.errorRate - a.errorRate);
-        
-        return weakAreas;
-    }
-    
-    /**
-     * Load user progress from localStorage
-     */
-    async loadUserProgress() {
-        try {
-            const progressJson = localStorage.getItem('question_progress');
-            if (progressJson) {
-                this.userProgress = JSON.parse(progressJson);
-            } else {
-                this.userProgress = {
-                    reviews: {},
-                    flags: {},
-                    notes: {}
-                };
-            }
-        } catch (error) {
-            console.error('Error loading user progress:', error);
-            this.userProgress = {
-                reviews: {},
-                flags: {},
-                notes: {}
-            };
-        }
-    }
-    
-    /**
-     * Save user progress to localStorage
-     */
-    async saveUserProgress() {
-        try {
-            localStorage.setItem('question_progress', JSON.stringify(this.userProgress));
-        } catch (error) {
-            console.error('Error saving user progress:', error);
-        }
-    }
-    
-    /**
-     * Preload images for questions
-     */
-    async preloadImages(questionIds) {
-        const imageUrls = new Set();
-        
-        // Collect image URLs
-        for (const questionId of questionIds) {
-            const question = await this.getQuestion(questionId);
-            if (question && question.image) {
-                imageUrls.add(`images/${question.image}`);
-            }
-        }
-        
-        // Preload images
-        const preloadPromises = Array.from(imageUrls).map(url => {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = resolve;
-                img.onerror = reject;
-                img.src = url;
-            });
         });
-        
-        try {
-            await Promise.all(preloadPromises);
-            console.log(`Preloaded ${preloadPromises.length} images`);
-        } catch (error) {
-            console.warn('Some images failed to preload:', error);
-        }
+        allQuestions = await loadMultipleTopics(topicsToLoad);
+    } else {
+        throw new Error("No subjects or topics specified");
     }
     
-    /**
-     * Clear question cache
-     */
-    clearCache() {
-        this.questionCache.clear();
-        console.log('Question cache cleared');
+    // Apply filters
+    let filteredQuestions = allQuestions;
+    
+    // Filter by difficulty
+    if (difficulty.length > 0) {
+        filteredQuestions = filteredQuestions.filter(q => 
+            difficulty.includes(q.difficulty)
+        );
     }
     
-    /**
-     * Reset user progress
-     */
-    async resetProgress() {
-        this.userProgress = {
-            reviews: {},
-            flags: {},
-            notes: {}
-        };
-        await this.saveUserProgress();
-        console.log('User progress reset');
+    // Exclude recently seen questions
+    if (excludeSeen) {
+        filteredQuestions = filteredQuestions.filter(q => {
+            const lastSeen = questionStats.lastSeen[q.id];
+            if (!lastSeen) return true;
+            
+            // Exclude if seen in last 24 hours
+            const hoursSinceSeen = (Date.now() - lastSeen) / (1000 * 60 * 60);
+            return hoursSinceSeen > 24;
+        });
     }
     
-    /**
-     * Ensure question bank is loaded
-     */
-    async ensureLoaded() {
-        if (!this.loaded && !this.loading) {
-            await this.loadQuestionBank();
-        } else if (this.loading) {
-            // Wait for loading to complete
-            await new Promise(resolve => {
-                const checkInterval = setInterval(() => {
-                    if (this.loaded) {
-                        clearInterval(checkInterval);
-                        resolve();
-                    }
-                }, 100);
-            });
-        }
+    // Randomize if requested
+    if (randomize) {
+        filteredQuestions = shuffleArray(filteredQuestions);
     }
     
-    /**
-     * Shuffle array (Fisher-Yates algorithm)
-     */
-    shuffleArray(array) {
-        const shuffled = [...array];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        return shuffled;
+    // Limit to requested count
+    return filteredQuestions.slice(0, count);
+}
+
+/**
+ * Get a single question by ID
+ * @param {string} questionId - Question ID
+ * @returns {Promise<Object>} - Question object
+ */
+async function getQuestionById(questionId) {
+    // Check cache first
+    if (questionBank.cache.has(questionId)) {
+        return questionBank.cache.get(questionId);
     }
     
-    /**
-     * Validate question
-     */
-    validateQuestion(question) {
-        const errors = [];
-        
-        if (!question.id) {
-            errors.push('Question must have an id');
-        }
-        
-        if (!question.question || question.question.trim().length === 0) {
-            errors.push('Question must have text');
-        }
-        
-        if (!question.options || !Array.isArray(question.options) || question.options.length < 2) {
-            errors.push('Question must have at least 2 options');
-        }
-        
-        if (!question.correct || question.correct.trim().length === 0) {
-            errors.push('Question must have a correct answer');
-        }
-        
-        if (!question.subject || question.subject.trim().length === 0) {
-            errors.push('Question must have a subject');
-        }
-        
-        if (!question.topic || question.topic.trim().length === 0) {
-            errors.push('Question must have a topic');
-        }
-        
-        if (!question.difficulty || !['Easy', 'Medium', 'Hard', 'Expert'].includes(question.difficulty)) {
-            errors.push('Question must have a valid difficulty (Easy, Medium, Hard, Expert)');
-        }
-        
+    // Parse subject and topic from ID
+    const parts = questionId.split('_');
+    if (parts.length < 3) {
+        throw new Error(`Invalid question ID format: ${questionId}`);
+    }
+    
+    const subject = parts[0];
+    const topic = parts[1];
+    
+    // Load the topic and find the question
+    const questions = await loadQuestions(subject, topic);
+    const question = questions.find(q => q.id === questionId);
+    
+    if (!question) {
+        throw new Error(`Question not found: ${questionId}`);
+    }
+    
+    return question;
+}
+
+// ============================================================================
+// EXAM-RELATED FUNCTIONS
+// ============================================================================
+
+/**
+ * Prepare questions for exam room
+ * @param {Array} questions - Raw questions from selection
+ * @returns {Array} - Processed questions ready for exam
+ */
+function prepareForExam(questions) {
+    return questions.map(q => {
+        // Create a clean version without answers for exam
         return {
-            isValid: errors.length === 0,
-            errors: errors
+            id: q.id,
+            question: q.question,
+            options: q.options,
+            subject: q.subject,
+            topic: q.topic,
+            difficulty: q.difficulty,
+            image: q.image,
+            // Don't include correct answer or explanation
+            timeAllocated: getTimeForDifficulty(q.difficulty)
         };
+    });
+}
+
+/**
+ * Get time allocation based on difficulty
+ * @param {number} difficulty - Difficulty level 1-5
+ * @returns {number} - Time in seconds
+ */
+function getTimeForDifficulty(difficulty) {
+    switch(difficulty) {
+        case 1: return 21; // Easy
+        case 2: return 30; // Moderate
+        case 3: return 42; // Intermediate
+        case 4: // Fall through
+        case 5: return 54; // Hard/Expert
+        default: return 30;
     }
 }
 
-// Create global instance
-const questions = new QuestionBankManager();
-
-// Export for use in other files
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = questions;
+/**
+ * Save exam attempt to storage for review
+ * @param {Array} examQuestions - Questions with user answers
+ * @param {Object} examResult - Overall exam result
+ */
+function saveExamAttempt(examQuestions, examResult) {
+    try {
+        const attempt = {
+            id: generateId(),
+            timestamp: Date.now(),
+            questions: examQuestions,
+            result: examResult,
+            subject: examResult.subject,
+            score: examResult.score,
+            timeSpent: examResult.timeSpent
+        };
+        
+        // Save to IndexedDB via db.js
+        if (typeof window.saveExamResult === 'function') {
+            window.saveExamResult(attempt);
+        } else {
+            // Fallback to localStorage
+            const attempts = JSON.parse(localStorage.getItem('exam_attempts') || '[]');
+            attempts.push(attempt);
+            localStorage.setItem('exam_attempts', JSON.stringify(attempts));
+        }
+        
+        // Update question statistics
+        updateQuestionStatsFromExam(examQuestions);
+        
+        console.log("Exam attempt saved successfully");
+        return attempt.id;
+    } catch (error) {
+        console.error("Failed to save exam attempt:", error);
+        throw error;
+    }
 }
+
+/**
+ * Update statistics based on exam results
+ * @param {Array} examQuestions - Questions with user answers
+ */
+function updateQuestionStatsFromExam(examQuestions) {
+    examQuestions.forEach(q => {
+        const questionId = q.id;
+        
+        // Initialize if needed
+        if (!questionStats.attempts[questionId]) {
+            questionStats.attempts[questionId] = 0;
+            questionStats.correct[questionId] = 0;
+            questionStats.timeSpent[questionId] = 0;
+        }
+        
+        // Update statistics
+        questionStats.attempts[questionId]++;
+        
+        if (q.userAnswer === q.correct) {
+            questionStats.correct[questionId]++;
+        }
+        
+        questionStats.timeSpent[questionId] += q.timeSpent || 0;
+        questionStats.lastSeen[questionId] = Date.now();
+        
+        // Save to localStorage
+        saveQuestionStats();
+    });
+}
+
+// ============================================================================
+// QUESTION FILTERING & SEARCH
+// ============================================================================
+
+/**
+ * Filter questions by various criteria
+ * @param {Array} questions - Questions to filter
+ * @param {Object} filters - Filter criteria
+ * @returns {Array} - Filtered questions
+ */
+function filterQuestions(questions, filters) {
+    let filtered = [...questions];
+    
+    // Filter by subject
+    if (filters.subject) {
+        filtered = filtered.filter(q => q.subject === filters.subject);
+    }
+    
+    // Filter by topic
+    if (filters.topic) {
+        filtered = filtered.filter(q => q.topic === filters.topic);
+    }
+    
+    // Filter by difficulty
+    if (filters.difficulty) {
+        const difficulties = Array.isArray(filters.difficulty) ? 
+            filters.difficulty : [filters.difficulty];
+        filtered = filtered.filter(q => difficulties.includes(q.difficulty));
+    }
+    
+    // Filter by keyword search
+    if (filters.search) {
+        const searchTerm = filters.search.toLowerCase();
+        filtered = filtered.filter(q => 
+            q.question.toLowerCase().includes(searchTerm) ||
+            (q.keywords && q.keywords.some(kw => kw.toLowerCase().includes(searchTerm)))
+        );
+    }
+    
+    // Filter by flagged status
+    if (filters.flagged === true) {
+        filtered = filtered.filter(q => questionStats.flagged && questionStats.flagged[q.id]);
+    }
+    
+    // Filter by not attempted
+    if (filters.notAttempted === true) {
+        filtered = filtered.filter(q => !questionStats.attempts || !questionStats.attempts[q.id]);
+    }
+    
+    return filtered;
+}
+
+/**
+ * Search questions by keyword
+ * @param {string} keyword - Search term
+ * @param {string} subject - Optional subject filter
+ * @returns {Promise<Array>} - Matching questions
+ */
+async function searchQuestions(keyword, subject = null) {
+    const results = [];
+    const searchTerm = keyword.toLowerCase();
+    
+    // Get all loaded questions
+    const allQuestions = Array.from(questionBank.cache.values());
+    
+    // Search through loaded questions
+    for (const question of allQuestions) {
+        // Apply subject filter
+        if (subject && question.subject !== subject) {
+            continue;
+        }
+        
+        // Check question text
+        if (question.question.toLowerCase().includes(searchTerm)) {
+            results.push(question);
+            continue;
+        }
+        
+        // Check options
+        if (question.options && question.options.some(opt => 
+            opt.toLowerCase().includes(searchTerm))) {
+            results.push(question);
+            continue;
+        }
+        
+        // Check keywords
+        if (question.keywords && question.keywords.some(kw => 
+            kw.toLowerCase().includes(searchTerm))) {
+            results.push(question);
+            continue;
+        }
+        
+        // Check explanation
+        if (question.explanation && 
+            question.explanation.toLowerCase().includes(searchTerm)) {
+            results.push(question);
+        }
+    }
+    
+    return results;
+}
+
+// ============================================================================
+// STATISTICS & ANALYTICS
+// ============================================================================
+
+/**
+ * Get question statistics
+ * @param {string} questionId - Question ID
+ * @returns {Object} - Statistics object
+ */
+function getQuestionStats(questionId) {
+    return {
+        attempts: questionStats.attempts[questionId] || 0,
+        correct: questionStats.correct[questionId] || 0,
+        accuracy: questionStats.attempts[questionId] ? 
+            (questionStats.correct[questionId] / questionStats.attempts[questionId] * 100).toFixed(1) : 0,
+        timeSpent: questionStats.timeSpent[questionId] || 0,
+        flagged: questionStats.flagged && questionStats.flagged[questionId] || false,
+        lastSeen: questionStats.lastSeen[questionId] || null
+    };
+}
+
+/**
+ * Toggle flagged status for a question
+ * @param {string} questionId - Question ID
+ * @returns {boolean} - New flagged status
+ */
+function toggleFlagQuestion(questionId) {
+    if (!questionStats.flagged) {
+        questionStats.flagged = {};
+    }
+    
+    questionStats.flagged[questionId] = !questionStats.flagged[questionId];
+    saveQuestionStats();
+    
+    return questionStats.flagged[questionId];
+}
+
+/**
+ * Get flagged questions
+ * @returns {Array} - Array of flagged question IDs
+ */
+function getFlaggedQuestions() {
+    if (!questionStats.flagged) return [];
+    
+    return Object.keys(questionStats.flagged)
+        .filter(id => questionStats.flagged[id]);
+}
+
+// ============================================================================
+// NOTES MANAGEMENT
+// ============================================================================
+
+/**
+ * Add/edit note for a question
+ * @param {string} questionId - Question ID
+ * @param {string} note - Note text
+ */
+function saveQuestionNote(questionId, note) {
+    if (!questionNotes[questionId]) {
+        questionNotes[questionId] = [];
+    }
+    
+    questionNotes[questionId].push({
+        id: generateId(),
+        text: note,
+        timestamp: Date.now()
+    });
+    
+    saveQuestionNotes();
+}
+
+/**
+ * Get notes for a question
+ * @param {string} questionId - Question ID
+ * @returns {Array} - Array of notes
+ */
+function getQuestionNotes(questionId) {
+    return questionNotes[questionId] || [];
+}
+
+/**
+ * Delete a specific note
+ * @param {string} questionId - Question ID
+ * @param {string} noteId - Note ID to delete
+ */
+function deleteQuestionNote(questionId, noteId) {
+    if (!questionNotes[questionId]) return;
+    
+    questionNotes[questionId] = questionNotes[questionId]
+        .filter(note => note.id !== noteId);
+    
+    saveQuestionNotes();
+}
+
+// ============================================================================
+// STORAGE MANAGEMENT
+// ============================================================================
+
+/**
+ * Save questions to localStorage
+ * @param {string} subject - Subject key
+ * @param {string} topic - Topic key
+ * @param {Array} questions - Questions to save
+ */
+function saveToLocalStorage(subject, topic, questions) {
+    try {
+        const key = `${QUESTION_STORAGE_KEY}_${subject}_${topic}`;
+        localStorage.setItem(key, JSON.stringify({
+            timestamp: Date.now(),
+            version: '1.0',
+            questions: questions
+        }));
+        
+        console.log(`Saved ${questions.length} questions to localStorage: ${key}`);
+    } catch (error) {
+        console.error("Failed to save to localStorage:", error);
+    }
+}
+
+/**
+ * Load questions from localStorage
+ * @param {string} subject - Optional subject filter
+ * @param {string} topic - Optional topic filter
+ * @returns {Array|Object} - Loaded questions or all cached data
+ */
+function loadFromLocalStorage(subject = null, topic = null) {
+    if (subject && topic) {
+        const key = `${QUESTION_STORAGE_KEY}_${subject}_${topic}`;
+        const data = localStorage.getItem(key);
+        
+        if (data) {
+            try {
+                const parsed = JSON.parse(data);
+                console.log(`Loaded ${parsed.questions.length} questions from localStorage: ${key}`);
+                
+                // Add to cache
+                parsed.questions.forEach(q => {
+                    questionBank.cache.set(q.id, q);
+                });
+                
+                return parsed.questions;
+            } catch (error) {
+                console.error("Failed to parse localStorage data:", error);
+            }
+        }
+        return [];
+    }
+    
+    // Load all cached questions
+    const allQuestions = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith(QUESTION_STORAGE_KEY)) {
+            try {
+                const data = JSON.parse(localStorage.getItem(key));
+                allQuestions.push(...data.questions);
+                
+                // Add to cache
+                data.questions.forEach(q => {
+                    questionBank.cache.set(q.id, q);
+                });
+            } catch (error) {
+                console.error(`Failed to parse ${key}:`, error);
+            }
+        }
+    }
+    
+    console.log(`Loaded ${allQuestions.length} total questions from localStorage cache`);
+    return allQuestions;
+}
+
+/**
+ * Save question statistics to localStorage
+ */
+function saveQuestionStats() {
+    try {
+        localStorage.setItem(QUESTION_STATS_KEY, JSON.stringify(questionStats));
+    } catch (error) {
+        console.error("Failed to save question stats:", error);
+    }
+}
+
+/**
+ * Load question statistics from localStorage
+ */
+function loadQuestionStats() {
+    try {
+        const data = localStorage.getItem(QUESTION_STATS_KEY);
+        if (data) {
+            questionStats = JSON.parse(data);
+            console.log("Loaded question statistics from localStorage");
+        }
+    } catch (error) {
+        console.error("Failed to load question stats:", error);
+    }
+}
+
+/**
+ * Save question notes to localStorage
+ */
+function saveQuestionNotes() {
+    try {
+        localStorage.setItem(QUESTION_NOTES_KEY, JSON.stringify(questionNotes));
+    } catch (error) {
+        console.error("Failed to save question notes:", error);
+    }
+}
+
+/**
+ * Load question notes from localStorage
+ */
+function loadQuestionNotes() {
+    try {
+        const data = localStorage.getItem(QUESTION_NOTES_KEY);
+        if (data) {
+            questionNotes = JSON.parse(data);
+            console.log("Loaded question notes from localStorage");
+        }
+    } catch (error) {
+        console.error("Failed to load question notes:", error);
+    }
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Validate question format
+ * @param {Object} question - Question to validate
+ * @returns {boolean} - True if valid
+ */
+function validateQuestion(question) {
+    const required = ['question', 'options', 'correct'];
+    
+    for (const field of required) {
+        if (!question[field]) {
+            console.error(`Missing required field: ${field}`, question);
+            return false;
+        }
+    }
+    
+    // Validate options array
+    if (!Array.isArray(question.options) || question.options.length < 2) {
+        console.error("Invalid options array", question);
+        return false;
+    }
+    
+    // Validate correct answer
+    if (!question.options.some(opt => opt.startsWith(question.correct + '.'))) {
+        console.error(`Correct answer ${question.correct} not found in options`, question);
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * Shuffle array (Fisher-Yates algorithm)
+ * @param {Array} array - Array to shuffle
+ * @returns {Array} - Shuffled array
+ */
+function shuffleArray(array) {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+}
+
+/**
+ * Generate unique ID
+ * @returns {string} - Unique ID
+ */
+function generateId() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
+/**
+ * Get all subjects with metadata
+ * @returns {Object} - Subjects configuration
+ */
+function getAllSubjects() {
+    return SUBJECTS;
+}
+
+/**
+ * Get topics for a subject
+ * @param {string} subject - Subject key
+ * @returns {Array} - Array of topic names
+ */
+function getTopicsForSubject(subject) {
+    return SUBJECTS[subject] ? SUBJECTS[subject].topics : [];
+}
+
+/**
+ * Get question count for subject/topic
+ * @param {string} subject - Subject key
+ * @param {string} topic - Topic key
+ * @returns {Promise<number>} - Question count
+ */
+async function getQuestionCount(subject, topic) {
+    try {
+        const questions = await loadQuestions(subject, topic);
+        return questions.length;
+    } catch (error) {
+        console.error(`Failed to get question count for ${subject}/${topic}:`, error);
+        return 0;
+    }
+}
+
+/**
+ * Get total loaded question count
+ * @returns {Object} - Counts by subject and total
+ */
+function getLoadedCounts() {
+    const counts = {
+        total: questionBank.loadedCount,
+        bySubject: {}
+    };
+    
+    Object.keys(SUBJECTS).forEach(subject => {
+        counts.bySubject[subject] = 0;
+    });
+    
+    questionBank.cache.forEach(question => {
+        if (counts.bySubject[question.subject] !== undefined) {
+            counts.bySubject[question.subject]++;
+        }
+    });
+    
+    return counts;
+}
+
+// ============================================================================
+// EXPORTS & INITIALIZATION
+// ============================================================================
+
+// Public API
+window.QuestionBank = {
+    // Initialization
+    init: initQuestionBank,
+    
+    // Core loading
+    loadQuestions,
+    loadMultipleTopics,
+    getQuestionsForExam,
+    getQuestionById,
+    
+    // Exam functions
+    prepareForExam,
+    saveExamAttempt,
+    
+    // Filtering & search
+    filterQuestions,
+    searchQuestions,
+    
+    // Statistics
+    getQuestionStats,
+    toggleFlagQuestion,
+    getFlaggedQuestions,
+    updateQuestionStatsFromExam,
+    
+    // Notes
+    saveQuestionNote,
+    getQuestionNotes,
+    deleteQuestionNote,
+    
+    // Utility
+    getAllSubjects,
+    getTopicsForSubject,
+    getQuestionCount,
+    getLoadedCounts,
+    
+    // Configuration
+    SUBJECTS,
+    
+    // State (read-only)
+    get state() {
+        return {
+            loaded: questionBank.loaded,
+            totalLoaded: questionBank.loadedCount,
+            cacheSize: questionBank.cache.size
+        };
+    }
+};
+
+// Auto-initialize when loaded
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("QuestionBank module loaded, initializing...");
+    
+    // Initialize with a small delay to avoid blocking UI
+    setTimeout(async () => {
+        await initQuestionBank();
+        
+        // Dispatch event when initialized
+        const event = new CustomEvent('questionBankReady', {
+            detail: { success: questionBank.loaded }
+        });
+        document.dispatchEvent(event);
+    }, 100);
+});
+
+// Export for module systems
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = window.QuestionBank;
+}
+
+// ============================================================================
+// EVENT LISTENERS FOR INTEGRATION WITH OTHER MODULES
+// ============================================================================
+
+// Listen for exam start to pre-load questions
+document.addEventListener('examStarting', async (event) => {
+    const { criteria } = event.detail;
+    
+    if (criteria && criteria.topics) {
+        console.log("Pre-loading questions for exam...");
+        await loadMultipleTopics(criteria.topics);
+    }
+});
+
+// Listen for question view to update stats
+document.addEventListener('questionViewed', (event) => {
+    const { questionId } = event.detail;
+    
+    if (questionId && questionStats.lastSeen) {
+        questionStats.lastSeen[questionId] = Date.now();
+        saveQuestionStats();
+    }
+});
+
+// Listen for offline mode to ensure questions are cached
+document.addEventListener('offlineMode', () => {
+    console.log("Offline mode detected, ensuring question cache is ready...");
+    // We could trigger loading of commonly used topics here
+});
+
+// ============================================================================
+// DEBUG & DEVELOPMENT HELPERS
+// ============================================================================
+
+/**
+ * Debug function to inspect question bank state
+ */
+function debugQuestionBank() {
+    console.group("Question Bank Debug Info");
+    console.log("Loaded:", questionBank.loaded);
+    console.log("Total questions loaded:", questionBank.loadedCount);
+    console.log("Cache size:", questionBank.cache.size);
+    console.log("Subjects loaded:", Object.keys(questionBank.subjects));
+    
+    const counts = getLoadedCounts();
+    console.log("Counts by subject:", counts.bySubject);
+    
+    console.log("Question statistics count:", Object.keys(questionStats.attempts || {}).length);
+    console.log("Question notes count:", Object.keys(questionNotes).length);
+    console.groupEnd();
+}
+
+// Make debug function available in development
+if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    window.debugQuestionBank = debugQuestionBank;
+}
+
+console.log("questions.js loaded successfully - Medical Exam Room Pro Question Bank Manager");

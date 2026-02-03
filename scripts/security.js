@@ -1,1777 +1,1526 @@
-// security.js - Security & Anti-Cheating System for Medical Exam Room Pro
-// Blueprint Reference: Frontend User App Implementation - File #10
-// MODIFIED: DevTools detection DISABLED for development
+// ============================================
+// security.js - Security & Anti-Cheating System
+// ============================================
+// Main Focus: Prevent revenue loss without aggressive locking
+// Philosophy: User-friendly, tolerant of natural human errors
+// Time tolerance: 5 minutes (300,000 ms)
+// ============================================
 
-/**
- * Security System for Medical Exam Room Pro
- * Implements anti-cheating measures, device fingerprinting, and security monitoring
- * DEV MODE: DevTools detection disabled for development
- */
+// Security states
+const SecurityState = {
+    NORMAL: 'normal',
+    WARNING: 'warning',
+    TIME_CORRECTION_NEEDED: 'time_correction_needed',
+    SUSPICIOUS: 'suspicious',
+    LOCKED: 'locked'
+};
+
+// Security configuration
+const SecurityConfig = {
+    // Time manipulation detection
+    TIME_TOLERANCE: 300000, // 5 minutes in milliseconds
+    MAX_TIME_DISCREPANCY: 3600000, // 1 hour for extreme cases
+    TIME_CHECK_INTERVAL: 60000, // Check every minute
+    
+    // Suspicious behavior
+    MAX_SUSPICIOUS_EVENTS: 5,
+    SUSPICIOUS_WINDOW: 3600000, // 1 hour window
+    
+    // Notifications
+    NOTIFICATION_DURATION: 5000, // 5 seconds max
+    MIN_NOTIFICATION_INTERVAL: 300000, // 5 minutes between same notifications
+    
+    // Device fingerprint
+    FINGERPRINT_KEY: 'medexam_device_fingerprint',
+    FINGERPRINT_VERSION: '1.0',
+    
+    // Storage keys
+    LAST_SECURITY_CHECK: 'last_security_check',
+    SECURITY_EVENTS: 'security_events',
+    TIME_HISTORY: 'time_history',
+    SUBSCRIPTION_CHECKS: 'subscription_checks'
+};
+
+// Security event types
+const SecurityEventType = {
+    TIME_MISMATCH: 'time_mismatch',
+    TIME_ROLLBACK: 'time_rollback',
+    MULTIPLE_DEVICES: 'multiple_devices',
+    SUBSCRIPTION_TAMPER: 'subscription_tamper',
+    OFFLINE_LONG_PERIOD: 'offline_long_period',
+    EXAM_TAMPER: 'exam_tamper',
+    PAYMENT_BYPASS_ATTEMPT: 'payment_bypass_attempt'
+};
 
 class SecuritySystem {
-    constructor(config = {}) {
-        this.config = {
-            // Anti-cheating settings
-            timeManipulationTolerance: 300000, // 5 minutes in milliseconds
-            maxTimeRollback: -60000, // -1 minute (negative means going back in time)
-            checkInterval: 30000, // Check every 30 seconds
-            syncInterval: 60000, // Sync with server every minute
-            
-            // Device fingerprinting
-            fingerprintComponents: [
-                'userAgent',
-                'language',
-                'platform',
-                'screenResolution',
-                'timezone',
-                'hardwareConcurrency',
-                'deviceMemory',
-                'localStorage',
-                'sessionStorage',
-                'indexedDB'
-            ],
-            
-            // Storage encryption
-            encryptionKey: 'medical_exam_secret_key_2024',
-            encryptionAlgorithm: 'AES-GCM',
-            
-            // Security monitoring
-            logSecurityEvents: true,
-            alertThreshold: 10, // INCREASED: Number of violations before alert (from 3)
-            autoLockOnCheating: false, // DISABLED: Don't auto-lock on cheating
-            
-            // API endpoints
-            securityEndpoint: 'https://medicalexamroom.onrender.com/api/v1/security',
-            syncEndpoint: 'https://medicalexamroom.onrender.com/api/v1/sync',
-            
-            // Callbacks
-            onSecurityViolation: null,
-            onAccountLock: null,
-            onDeviceChange: null,
-            onTimeManipulation: null,
-            
-            ...config
-        };
-        
-        this.state = {
-            deviceFingerprint: null,
-            lastServerTime: null,
-            lastLocalTime: null,
-            timeOffset: 0,
-            violationCount: 0,
-            isLocked: false,
-            lockReason: null,
-            securityLog: [],
-            sessionStart: Date.now(),
-            lastSync: null,
-            isOnline: navigator.onLine
-        };
-        
-        this.init();
+    constructor() {
+        this.currentState = SecurityState.NORMAL;
+        this.deviceFingerprint = null;
+        this.lastNotificationTime = {};
+        this.isMonitoring = false;
+        this.timeCheckInterval = null;
+        this.syncInProgress = false;
+        this.initialize();
     }
-    
-    /**
-     * Initialize security system
-     */
-    async init() {
+
+    // ============================================
+    // INITIALIZATION
+    // ============================================
+
+    async initialize() {
+        console.log('[Security] Initializing security system...');
+        
         try {
-            // Generate device fingerprint
+            // Generate or retrieve device fingerprint
             await this.generateDeviceFingerprint();
             
-            // Load security state
-            this.loadSecurityState();
+            // Initialize security storage
+            await this.initSecurityStorage();
             
-            // Start security monitoring (with modified checks)
+            // Start monitoring (subtly, without being intrusive)
             this.startMonitoring();
             
-            // Setup event listeners (without strict DevTools detection)
-            this.setupEventListeners();
+            // Check initial state
+            await this.performSecurityCheck();
             
-            // Initial security check
-            this.performSecurityCheck();
-            
-            this.logSecurityEvent('system_initialized', {
-                deviceId: this.state.deviceFingerprint?.substring(0, 12),
-                devMode: true,
-                message: 'Security system running in DEVELOPMENT mode'
-            });
-            
+            console.log('[Security] Security system initialized successfully');
         } catch (error) {
-            console.error('Security system initialization failed:', error);
-            this.logSecurityEvent('init_failed', { error: error.message });
+            console.error('[Security] Initialization error:', error);
         }
     }
-    
-    /**
-     * Generate unique device fingerprint
-     */
+
     async generateDeviceFingerprint() {
         try {
-            const components = {};
+            // Check if fingerprint already exists
+            const storedFingerprint = localStorage.getItem(SecurityConfig.FINGERPRINT_KEY);
             
-            // Collect fingerprint components
-            components.userAgent = navigator.userAgent;
-            components.language = navigator.language;
-            components.platform = navigator.platform;
-            components.screenResolution = `${screen.width}x${screen.height}`;
-            components.timezone = new Date().getTimezoneOffset();
-            components.hardwareConcurrency = navigator.hardwareConcurrency || 'unknown';
-            components.deviceMemory = navigator.deviceMemory || 'unknown';
-            components.maxTouchPoints = navigator.maxTouchPoints || 'unknown';
-            components.pdfViewerEnabled = navigator.pdfViewerEnabled || 'unknown';
-            
-            // Browser features
-            components.hasLocalStorage = !!window.localStorage;
-            components.hasSessionStorage = !!window.sessionStorage;
-            components.hasIndexedDB = !!window.indexedDB;
-            components.hasServiceWorker = 'serviceWorker' in navigator;
-            components.hasWebGL = this.detectWebGL();
-            
-            // Canvas fingerprint (for additional uniqueness)
-            components.canvasFingerprint = await this.generateCanvasFingerprint();
-            
-            // Audio fingerprint
-            components.audioFingerprint = await this.generateAudioFingerprint();
-            
-            // Timezone and locale
-            components.locale = Intl.DateTimeFormat().resolvedOptions().locale;
-            components.timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            
-            // Generate hash from components
-            const fingerprintString = JSON.stringify(components);
-            const fingerprintHash = await this.hashString(fingerprintString);
-            
-            this.state.deviceFingerprint = `device_${fingerprintHash.substring(0, 16)}`;
-            
-            // Store in localStorage
-            localStorage.setItem('deviceFingerprint', this.state.deviceFingerprint);
-            localStorage.setItem('fingerprintComponents', JSON.stringify(components));
-            
-            this.logSecurityEvent('fingerprint_generated', {
-                deviceId: this.state.deviceFingerprint
-            });
-            
-            return this.state.deviceFingerprint;
-            
-        } catch (error) {
-            console.error('Failed to generate device fingerprint:', error);
-            
-            // Fallback to simpler fingerprint
-            const fallbackComponents = [
+            if (storedFingerprint) {
+                this.deviceFingerprint = storedFingerprint;
+                console.log('[Security] Using existing device fingerprint');
+                return this.deviceFingerprint;
+            }
+
+            // Generate new fingerprint
+            const components = [
                 navigator.userAgent,
+                navigator.language,
                 navigator.platform,
-                screen.width + 'x' + screen.height,
-                new Date().getTimezoneOffset()
-            ].join('|');
+                screen.width + 'x' + screen.height + 'x' + screen.colorDepth,
+                new Date().getTimezoneOffset().toString(),
+                navigator.hardwareConcurrency?.toString() || 'unknown',
+                navigator.deviceMemory?.toString() || 'unknown',
+                'v' + SecurityConfig.FINGERPRINT_VERSION
+            ];
+
+            // Create a stable hash
+            const fingerprintString = components.join('|');
+            const hash = await this.hashString(fingerprintString);
             
-            const fallbackHash = await this.hashString(fallbackComponents);
-            this.state.deviceFingerprint = `device_fallback_${fallbackHash.substring(0, 12)}`;
+            this.deviceFingerprint = hash.substring(0, 32); // 32 chars for readability
+            localStorage.setItem(SecurityConfig.FINGERPRINT_KEY, this.deviceFingerprint);
             
-            localStorage.setItem('deviceFingerprint', this.state.deviceFingerprint);
-            
-            return this.state.deviceFingerprint;
-        }
-    }
-    
-    /**
-     * Generate canvas fingerprint
-     */
-    async generateCanvasFingerprint() {
-        try {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            canvas.width = 200;
-            canvas.height = 50;
-            
-            // Draw text
-            ctx.textBaseline = 'top';
-            ctx.font = '14px Arial';
-            ctx.textBaseline = 'alphabetic';
-            ctx.fillStyle = '#f60';
-            ctx.fillRect(125, 1, 62, 20);
-            ctx.fillStyle = '#069';
-            ctx.fillText('Medical Exam Room Pro', 2, 15);
-            ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
-            ctx.fillText('Security Fingerprint', 4, 30);
-            
-            // Get image data
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-            
-            // Create hash from image data
-            let hash = 0;
-            for (let i = 0; i < Math.min(imageData.length, 1000); i++) {
-                hash = ((hash << 5) - hash) + imageData[i];
-                hash = hash & hash;
-            }
-            
-            return hash.toString(16);
-            
+            console.log('[Security] Generated new device fingerprint:', this.deviceFingerprint);
+            return this.deviceFingerprint;
         } catch (error) {
-            return 'canvas_unavailable';
+            console.error('[Security] Error generating fingerprint:', error);
+            // Fallback to simpler fingerprint
+            this.deviceFingerprint = 'fallback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem(SecurityConfig.FINGERPRINT_KEY, this.deviceFingerprint);
+            return this.deviceFingerprint;
         }
     }
-    
-    /**
-     * Generate audio fingerprint
-     */
-    async generateAudioFingerprint() {
-        try {
-            if (!window.AudioContext && !window.webkitAudioContext) {
-                return 'audio_unavailable';
-            }
-            
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            const audioContext = new AudioContext();
-            
-            // Create oscillator
-            const oscillator = audioContext.createOscillator();
-            const analyser = audioContext.createAnalyser();
-            
-            oscillator.connect(analyser);
-            analyser.connect(audioContext.destination);
-            
-            oscillator.type = 'triangle';
-            oscillator.frequency.value = 1000;
-            
-            // Start and stop quickly
-            oscillator.start();
-            await new Promise(resolve => setTimeout(resolve, 100));
-            oscillator.stop();
-            
-            // Get frequency data
-            const frequencyData = new Uint8Array(analyser.frequencyBinCount);
-            analyser.getByteFrequencyData(frequencyData);
-            
-            // Close audio context
-            await audioContext.close();
-            
-            // Create hash from frequency data
-            let hash = 0;
-            for (let i = 0; i < Math.min(frequencyData.length, 100); i++) {
-                hash = ((hash << 5) - hash) + frequencyData[i];
-                hash = hash & hash;
-            }
-            
-            return hash.toString(16);
-            
-        } catch (error) {
-            return 'audio_error';
-        }
-    }
-    
-    /**
-     * Detect WebGL support
-     */
-    detectWebGL() {
-        try {
-            const canvas = document.createElement('canvas');
-            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-            return !!gl;
-        } catch (e) {
-            return false;
-        }
-    }
-    
-    /**
-     * Hash a string using SHA-256
-     */
+
     async hashString(str) {
-        try {
-            // Use Web Crypto API if available
-            if (window.crypto && window.crypto.subtle) {
-                const encoder = new TextEncoder();
-                const data = encoder.encode(str);
-                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-                const hashArray = Array.from(new Uint8Array(hashBuffer));
-                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-            }
-        } catch (error) {
-            // Fallback to simple hash
-        }
-        
-        // Simple hash fallback
+        // Simple hash function for fingerprint
         let hash = 0;
         for (let i = 0; i < str.length; i++) {
             const char = str.charCodeAt(i);
             hash = ((hash << 5) - hash) + char;
             hash = hash & hash;
         }
-        return Math.abs(hash).toString(16);
+        return Math.abs(hash).toString(36);
     }
-    
-    /**
-     * Load security state from storage
-     */
-    loadSecurityState() {
-        try {
-            // Load device fingerprint
-            const storedFingerprint = localStorage.getItem('deviceFingerprint');
-            if (storedFingerprint) {
-                this.state.deviceFingerprint = storedFingerprint;
-            }
-            
-            // Load security logs
-            const storedLogs = localStorage.getItem('securityLogs');
-            if (storedLogs) {
-                this.state.securityLog = JSON.parse(storedLogs).slice(-100); // Keep last 100 logs
-            }
-            
-            // Load violation count
-            const storedViolations = localStorage.getItem('violationCount');
-            if (storedViolations) {
-                this.state.violationCount = parseInt(storedViolations);
-            }
-            
-            // Check if account is locked
-            const lockStatus = localStorage.getItem('accountLocked');
-            if (lockStatus === 'true') {
-                this.state.isLocked = true;
-                this.state.lockReason = localStorage.getItem('lockReason');
-            }
-            
-            // Load last sync time
-            const lastSync = localStorage.getItem('lastSecuritySync');
-            if (lastSync) {
-                this.state.lastSync = parseInt(lastSync);
-            }
-            
-        } catch (error) {
-            console.warn('Failed to load security state:', error);
+
+    async initSecurityStorage() {
+        // Initialize security events array if not exists
+        if (!localStorage.getItem(SecurityConfig.SECURITY_EVENTS)) {
+            localStorage.setItem(SecurityConfig.SECURITY_EVENTS, JSON.stringify([]));
+        }
+        
+        // Initialize time history
+        if (!localStorage.getItem(SecurityConfig.TIME_HISTORY)) {
+            localStorage.setItem(SecurityConfig.TIME_HISTORY, JSON.stringify([]));
+        }
+        
+        // Initialize subscription checks
+        if (!localStorage.getItem(SecurityConfig.SUBSCRIPTION_CHECKS)) {
+            localStorage.setItem(SecurityConfig.SUBSCRIPTION_CHECKS, JSON.stringify([]));
         }
     }
-    
-    /**
-     * Save security state to storage
-     */
-    saveSecurityState() {
-        try {
-            localStorage.setItem('deviceFingerprint', this.state.deviceFingerprint);
-            localStorage.setItem('securityLogs', JSON.stringify(this.state.securityLog.slice(-100)));
-            localStorage.setItem('violationCount', this.state.violationCount.toString());
-            localStorage.setItem('accountLocked', this.state.isLocked.toString());
-            
-            if (this.state.lockReason) {
-                localStorage.setItem('lockReason', this.state.lockReason);
-            }
-            
-            if (this.state.lastSync) {
-                localStorage.setItem('lastSecuritySync', this.state.lastSync.toString());
-            }
-            
-        } catch (error) {
-            console.warn('Failed to save security state:', error);
-        }
-    }
-    
-    /**
-     * Setup event listeners for security monitoring
-     */
-    setupEventListeners() {
-        // Online/offline detection
-        window.addEventListener('online', () => {
-            this.state.isOnline = true;
-            this.logSecurityEvent('network_online');
-            this.syncWithServer();
-        });
-        
-        window.addEventListener('offline', () => {
-            this.state.isOnline = false;
-            this.logSecurityEvent('network_offline');
-        });
-        
-        // Visibility change (tab switching) - MONITOR BUT DON'T LOCK
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                this.logSecurityEvent('tab_switched', {
-                    timestamp: Date.now(),
-                    visibilityState: document.visibilityState
-                });
-            }
-        });
-        
-        // Window blur/focus - MONITOR ONLY
-        window.addEventListener('blur', () => {
-            this.logSecurityEvent('window_blurred', {
-                timestamp: Date.now()
-            });
-        });
-        
-        window.addEventListener('focus', () => {
-            this.logSecurityEvent('window_focused', {
-                timestamp: Date.now(),
-                timeSinceBlur: Date.now() - parseInt(localStorage.getItem('lastBlurTime') || Date.now())
-            });
-        });
-        
-        // DEV MODE: Skip DevTools detection entirely
-        console.log('🔓 DEV MODE: DevTools detection DISABLED');
-        
-        // Beforeunload (user leaving)
-        window.addEventListener('beforeunload', (e) => {
-            this.handleBeforeUnload(e);
-        });
-        
-        // Resize (potential screen sharing detection)
-        window.addEventListener('resize', () => {
-            this.logSecurityEvent('window_resized', {
-                width: window.innerWidth,
-                height: window.innerHeight
-            });
-        });
-    }
-    
-    /**
-     * Setup DevTools detection - DISABLED FOR DEVELOPMENT
-     */
-    setupDevToolsDetection() {
-        // COMPLETELY DISABLED - Only log for monitoring
-        console.log('🔓 DEV MODE: DevTools detection bypassed - safe to use console');
-        
-        // Still log console usage for debugging (but don't count as violation)
-        const originalConsoleLog = console.log;
-        const originalConsoleError = console.error;
-        const originalConsoleWarn = console.warn;
-        
-        // Monitor but don't penalize
-        console.log = function(...args) {
-            this.logSecurityEvent('console_usage', {
-                type: 'log',
-                argsCount: args.length,
-                firstArg: typeof args[0]
-            });
-            originalConsoleLog.apply(console, args);
-        }.bind(this);
-        
-        console.error = function(...args) {
-            this.logSecurityEvent('console_usage', {
-                type: 'error',
-                argsCount: args.length
-            });
-            originalConsoleError.apply(console, args);
-        }.bind(this);
-        
-        console.warn = function(...args) {
-            this.logSecurityEvent('console_usage', {
-                type: 'warn',
-                argsCount: args.length
-            });
-            originalConsoleWarn.apply(console, args);
-        }.bind(this);
-    }
-    
-    /**
-     * Start security monitoring intervals
-     */
+
+    // ============================================
+    // MONITORING SYSTEM
+    // ============================================
+
     startMonitoring() {
-        // Time validation check
+        if (this.isMonitoring) return;
+        
+        console.log('[Security] Starting security monitoring');
+        this.isMonitoring = true;
+        
+        // Periodic time checks (every minute)
         this.timeCheckInterval = setInterval(() => {
-            this.performSecurityCheck();
-        }, this.config.checkInterval);
+            this.checkTimeIntegrity();
+        }, SecurityConfig.TIME_CHECK_INTERVAL);
         
-        // Sync with server
-        this.syncInterval = setInterval(() => {
-            if (this.state.isOnline) {
-                this.syncWithServer();
-            }
-        }, this.config.syncInterval);
+        // Listen for online/offline events
+        window.addEventListener('online', () => this.handleOnline());
+        window.addEventListener('offline', () => this.handleOffline());
         
-        // Periodic fingerprint verification
-        this.fingerprintCheckInterval = setInterval(async () => {
-            await this.verifyDeviceFingerprint();
-        }, 300000); // Every 5 minutes
+        // Listen for visibility changes (tab switches)
+        document.addEventListener('visibilitychange', () => this.handleVisibilityChange());
         
-        console.log('🔓 DEV MODE: Security monitoring started (reduced restrictions)');
+        // Monitor storage changes (for subscription tampering attempts)
+        window.addEventListener('storage', (e) => this.handleStorageChange(e));
     }
-    
-    /**
-     * Perform comprehensive security check
-     */
-    async performSecurityCheck() {
-        const checks = [
-            this.checkTimeManipulation(),
-            this.checkDeviceConsistency(),
-            this.checkStorageTampering(),
-            this.checkEnvironment()
-        ];
-        
-        const results = await Promise.allSettled(checks);
-        
-        let violations = [];
-        results.forEach((result, index) => {
-            if (result.status === 'fulfilled' && result.value?.isViolation) {
-                violations.push({
-                    check: ['time', 'device', 'storage', 'environment'][index],
-                    ...result.value
-                });
-            }
-        });
-        
-        if (violations.length > 0) {
-            this.handleSecurityViolations(violations);
+
+    stopMonitoring() {
+        if (this.timeCheckInterval) {
+            clearInterval(this.timeCheckInterval);
+            this.timeCheckInterval = null;
         }
-        
-        return { violations, timestamp: Date.now() };
+        this.isMonitoring = false;
+        console.log('[Security] Security monitoring stopped');
     }
-    
-    /**
-     * Check for time manipulation
-     */
-    async checkTimeManipulation() {
+
+    // ============================================
+    // TIME INTEGRITY CHECKS (Main Anti-Cheating)
+    // ============================================
+
+    async checkTimeIntegrity() {
         try {
-            const currentTime = Date.now();
-            const storedTime = parseInt(localStorage.getItem('lastTimeCheck') || currentTime);
+            // Don't check if we're already in time correction mode
+            if (this.currentState === SecurityState.TIME_CORRECTION_NEEDED) {
+                return;
+            }
             
-            // Calculate time difference
-            const timeDiff = currentTime - storedTime;
-            const expectedDiff = this.config.checkInterval; // Expected time since last check
-            
-            // Check for significant deviation
-            const deviation = Math.abs(timeDiff - expectedDiff);
-            const isViolation = deviation > this.config.timeManipulationTolerance;
-            
-            // Check for time rollback
-            const isRollback = timeDiff < this.config.maxTimeRollback;
-            
-            // Store current time for next check
-            localStorage.setItem('lastTimeCheck', currentTime.toString());
-            
-            // Get server time if online
+            const clientTime = Date.now();
             let serverTime = null;
-            if (this.state.isOnline) {
+            
+            // Try to get server time if online
+            if (navigator.onLine) {
                 serverTime = await this.getServerTime();
             }
             
-            const result = {
-                isViolation: isViolation || isRollback,
-                deviation,
-                expectedDiff,
-                actualDiff: timeDiff,
-                isRollback,
+            if (serverTime) {
+                // We have server time, compare
+                const timeDiff = Math.abs(serverTime - clientTime);
+                
+                if (timeDiff > SecurityConfig.TIME_TOLERANCE) {
+                    // Time discrepancy detected
+                    await this.handleTimeDiscrepancy(clientTime, serverTime, timeDiff);
+                } else {
+                    // Time is within tolerance, record good time
+                    await this.recordGoodTime(clientTime, serverTime);
+                }
+            } else {
+                // Offline mode - check against last known good time
+                await this.checkOfflineTimeIntegrity(clientTime);
+            }
+        } catch (error) {
+            console.warn('[Security] Time check error:', error);
+        }
+    }
+
+    async getServerTime() {
+        try {
+            // Try multiple methods to get accurate time
+            const responses = await Promise.race([
+                fetch('https://worldtimeapi.org/api/timezone/Africa/Nairobi', { 
+                    method: 'HEAD',
+                    cache: 'no-cache'
+                }),
+                fetch('https://api.timezonedb.com/v2.1/get-time-zone?key=demo&format=json&by=zone&zone=Africa/Nairobi', {
+                    method: 'HEAD',
+                    cache: 'no-cache'
+                }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+            ]);
+            
+            // Get time from response headers
+            const dateHeader = responses.headers.get('date');
+            if (dateHeader) {
+                return new Date(dateHeader).getTime();
+            }
+            
+            // Fallback to current time with network latency adjustment
+            const startTime = Date.now();
+            await fetch('/api/time-check', { method: 'HEAD', cache: 'no-cache' });
+            const endTime = Date.now();
+            const latency = (endTime - startTime) / 2;
+            
+            return endTime - latency;
+            
+        } catch (error) {
+            console.warn('[Security] Could not get server time:', error);
+            return null;
+        }
+    }
+
+    async handleTimeDiscrepancy(clientTime, serverTime, timeDiff) {
+        console.warn(`[Security] Time discrepancy detected: ${timeDiff}ms`);
+        
+        // Record the event
+        await this.logSecurityEvent(SecurityEventType.TIME_MISMATCH, {
+            clientTime,
+            serverTime,
+            timeDiff,
+            tolerance: SecurityConfig.TIME_TOLERANCE
+        });
+        
+        // Check if this is extreme (more than 1 hour)
+        if (timeDiff > SecurityConfig.MAX_TIME_DISCREPANCY) {
+            // Extreme time manipulation suspected
+            await this.handleExtremeTimeManipulation(clientTime, serverTime, timeDiff);
+            return;
+        }
+        
+        // Check time history for patterns
+        const timeHistory = JSON.parse(localStorage.getItem(SecurityConfig.TIME_HISTORY) || '[]');
+        const recentMismatches = timeHistory.filter(event => 
+            event.type === SecurityEventType.TIME_MISMATCH && 
+            Date.now() - event.timestamp < 3600000 // Last hour
+        );
+        
+        if (recentMismatches.length >= 3) {
+            // Pattern detected - multiple time mismatches in short period
+            await this.handleTimeManipulationPattern(recentMismatches);
+        } else {
+            // Single or infrequent mismatch - gentle correction
+            await this.gentlyCorrectTime(clientTime, serverTime, timeDiff);
+        }
+    }
+
+    async gentlyCorrectTime(clientTime, serverTime, timeDiff) {
+        // Don't show notification for first minor discrepancy
+        if (timeDiff < 600000) { // Less than 10 minutes
+            console.log('[Security] Minor time discrepancy, adjusting silently');
+            
+            // Store the correction for future reference
+            const corrections = JSON.parse(localStorage.getItem('time_corrections') || '[]');
+            corrections.push({
+                clientTime,
                 serverTime,
-                localTime: currentTime
-            };
+                correctedAt: Date.now(),
+                difference: timeDiff
+            });
+            localStorage.setItem('time_corrections', JSON.stringify(corrections.slice(-10))); // Keep last 10
             
-            if (isViolation || isRollback) {
-                this.logSecurityEvent('time_manipulation_detected', result);
-                console.warn('⚠️ Time manipulation detected (logged but not penalized):', result);
-            }
-            
-            return result;
-            
-        } catch (error) {
-            this.logSecurityEvent('time_check_failed', { error: error.message });
-            return { isViolation: false, error: error.message };
-        }
-    }
-    
-    /**
-     * Check device consistency
-     */
-    async checkDeviceConsistency() {
-        try {
-            const originalFingerprint = this.state.deviceFingerprint;
-            const currentFingerprint = await this.generateDeviceFingerprint();
-            
-            const isViolation = originalFingerprint !== currentFingerprint;
-            
-            const result = {
-                isViolation,
-                originalFingerprint: originalFingerprint?.substring(0, 12),
-                currentFingerprint: currentFingerprint?.substring(0, 12),
-                match: !isViolation
-            };
-            
-            if (isViolation) {
-                this.logSecurityEvent('device_fingerprint_changed', result);
-                console.warn('⚠️ Device fingerprint changed (logged but not penalized):', result);
-            }
-            
-            return result;
-            
-        } catch (error) {
-            return { isViolation: false, error: error.message };
-        }
-    }
-    
-    /**
-     * Check for storage tampering
-     */
-    checkStorageTampering() {
-        try {
-            // Check subscription expiry encryption
-            const encryptedExpiry = localStorage.getItem('subscriptionExpiry');
-            const isTampered = this.isStorageTampered();
-            
-            // Check for forced values
-            const forcedSubscription = localStorage.getItem('forceSubscription');
-            const isForced = forcedSubscription === 'true';
-            
-            const result = {
-                isViolation: isTampered || isForced,
-                isTampered,
-                isForced,
-                hasEncryptedExpiry: !!encryptedExpiry
-            };
-            
-            if (isTampered || isForced) {
-                this.logSecurityEvent('storage_tampering_detected', result);
-                console.warn('⚠️ Storage tampering detected (logged but not penalized):', result);
-            }
-            
-            return result;
-            
-        } catch (error) {
-            return { isViolation: false, error: error.message };
-        }
-    }
-    
-    /**
-     * Check environment for suspicious activity
-     */
-    checkEnvironment() {
-        const checks = {
-            // Check if running in iframe (could be embedded maliciously)
-            isInIframe: window.self !== window.top,
-            
-            // Check for automation tools - LOG BUT DON'T PENALIZE
-            hasWebDriver: navigator.webdriver || false,
-            
-            // Check for headless browser indicators
-            hasChrome: !!window.chrome,
-            hasPermissions: !!navigator.permissions,
-            
-            // Check for common bot/automation indicators
-            pluginsLength: navigator.plugins?.length || 0,
-            languagesLength: navigator.languages?.length || 0
-        };
-        
-        // Determine if any indicators suggest automation
-        const isSuspicious = checks.isInIframe || 
-                            checks.hasWebDriver || 
-                            checks.pluginsLength === 0;
-        
-        const result = {
-            isViolation: false, // ALWAYS FALSE IN DEV MODE
-            ...checks
-        };
-        
-        if (isSuspicious) {
-            this.logSecurityEvent('suspicious_environment', result);
-            console.warn('⚠️ Suspicious environment detected (logged but not penalized):', result);
+            return;
         }
         
-        return result;
+        // Show gentle notification (like WhatsApp)
+        if (this.canShowNotification('time_correction')) {
+            this.showTemporaryNotification({
+                type: 'warning',
+                title: 'Time Sync Needed',
+                message: 'Your device time appears to be incorrect. Please sync your device time for optimal experience.',
+                duration: SecurityConfig.NOTIFICATION_DURATION,
+                actions: [
+                    {
+                        text: 'Sync Now',
+                        action: () => this.syncDeviceTime()
+                    },
+                    {
+                        text: 'Ignore',
+                        action: () => {
+                            this.lastNotificationTime['time_correction'] = Date.now();
+                        }
+                    }
+                ]
+            });
+            
+            this.lastNotificationTime['time_correction'] = Date.now();
+        }
+        
+        // Set state to time correction needed
+        this.currentState = SecurityState.TIME_CORRECTION_NEEDED;
+        
+        // Store this state
+        localStorage.setItem('security_state', SecurityState.TIME_CORRECTION_NEEDED);
+        
+        // Prevent navigation beyond index.html if time is way off
+        if (timeDiff > 1800000) { // More than 30 minutes
+            this.restrictNavigation();
+        }
     }
-    
-    /**
-     * Verify device fingerprint
-     */
-    async verifyDeviceFingerprint() {
-        try {
-            const storedComponents = JSON.parse(localStorage.getItem('fingerprintComponents') || '{}');
-            const currentComponents = {};
+
+    restrictNavigation() {
+        // Only allow access to index.html and time correction pages
+        const currentPage = window.location.pathname.split('/').pop();
+        const allowedPages = ['index.html', 'welcome.html', 'login.html', 'signup.html'];
+        
+        if (!allowedPages.includes(currentPage)) {
+            console.log('[Security] Redirecting to index due to time issue');
+            window.location.href = 'index.html';
             
-            // Check key components
-            currentComponents.userAgent = navigator.userAgent;
-            currentComponents.screenResolution = `${screen.width}x${screen.height}`;
-            currentComponents.timezone = new Date().getTimezoneOffset();
-            
-            let mismatchCount = 0;
-            const mismatches = [];
-            
-            for (const key in storedComponents) {
-                if (currentComponents[key] !== undefined && 
-                    storedComponents[key] !== currentComponents[key]) {
-                    mismatchCount++;
-                    mismatches.push({ key, stored: storedComponents[key], current: currentComponents[key] });
-                }
+            // Show notification on index page
+            if (currentPage === 'index.html') {
+                setTimeout(() => {
+                    this.showTemporaryNotification({
+                        type: 'info',
+                        title: 'Time Adjustment Required',
+                        message: 'Please correct your device time to continue using the app.',
+                        duration: 8000
+                    });
+                }, 1000);
             }
+        }
+    }
+
+    async handleExtremeTimeManipulation(clientTime, serverTime, timeDiff) {
+        console.error('[Security] Extreme time manipulation detected:', timeDiff);
+        
+        // Log extreme event
+        await this.logSecurityEvent('extreme_time_manipulation', {
+            clientTime,
+            serverTime,
+            timeDiff,
+            action: 'severe_warning'
+        });
+        
+        // Show stronger warning
+        if (this.canShowNotification('extreme_time_warning')) {
+            this.showTemporaryNotification({
+                type: 'error',
+                title: 'Time Issue Detected',
+                message: 'Your device time is significantly incorrect. Please correct it to avoid account restrictions.',
+                duration: 8000,
+                persistent: true
+            });
             
-            const isViolation = mismatchCount > 2; // Allow minor changes
+            this.lastNotificationTime['extreme_time_warning'] = Date.now();
+        }
+        
+        // Restrict all navigation except essential pages
+        this.currentState = SecurityState.TIME_CORRECTION_NEEDED;
+        localStorage.setItem('security_state', SecurityState.TIME_CORRECTION_NEEDED);
+        this.restrictNavigation();
+    }
+
+    async handleTimeManipulationPattern(events) {
+        console.warn('[Security] Time manipulation pattern detected');
+        
+        // Show pattern warning
+        if (this.canShowNotification('time_pattern_warning')) {
+            this.showTemporaryNotification({
+                type: 'warning',
+                title: 'Multiple Time Issues',
+                message: 'Multiple time discrepancies detected. This may affect your subscription.',
+                duration: 6000
+            });
             
-            if (isViolation) {
-                this.logSecurityEvent('fingerprint_mismatch', {
-                    mismatchCount,
-                    mismatches,
-                    isViolation
+            this.lastNotificationTime['time_pattern_warning'] = Date.now();
+        }
+        
+        // Send pattern to server for analysis
+        if (navigator.onLine) {
+            try {
+                await fetch('/api/security/patterns', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Device-Fingerprint': this.deviceFingerprint
+                    },
+                    body: JSON.stringify({
+                        pattern: 'time_manipulation',
+                        events: events.slice(-5), // Last 5 events
+                        deviceFingerprint: this.deviceFingerprint
+                    })
                 });
-                console.warn('⚠️ Fingerprint mismatch (logged but not penalized):', { mismatchCount, mismatches });
+            } catch (error) {
+                console.warn('[Security] Could not report pattern:', error);
             }
-            
-            return { isViolation, mismatchCount, mismatches };
-            
-        } catch (error) {
-            return { isViolation: false, error: error.message };
         }
     }
-    
-    /**
-     * Check if storage has been tampered with
-     */
-    isStorageTampered() {
+
+    async recordGoodTime(clientTime, serverTime) {
+        // Record successful time check
+        const timeHistory = JSON.parse(localStorage.getItem(SecurityConfig.TIME_HISTORY) || '[]');
+        
+        timeHistory.push({
+            clientTime,
+            serverTime,
+            timestamp: Date.now(),
+            type: 'time_check_ok'
+        });
+        
+        // Keep only last 100 entries
+        if (timeHistory.length > 100) {
+            timeHistory.splice(0, timeHistory.length - 100);
+        }
+        
+        localStorage.setItem(SecurityConfig.TIME_HISTORY, JSON.stringify(timeHistory));
+        
+        // Update security state if it was in time correction mode
+        if (this.currentState === SecurityState.TIME_CORRECTION_NEEDED) {
+            this.currentState = SecurityState.NORMAL;
+            localStorage.removeItem('security_state');
+            
+            // Show success notification
+            this.showTemporaryNotification({
+                type: 'success',
+                title: 'Time Synced',
+                message: 'Your device time is now correct.',
+                duration: 3000
+            });
+        }
+    }
+
+    async checkOfflineTimeIntegrity(clientTime) {
+        // Check against last known good time
+        const timeHistory = JSON.parse(localStorage.getItem(SecurityConfig.TIME_HISTORY) || '[]');
+        const lastGoodTime = timeHistory.filter(t => t.type === 'time_check_ok').pop();
+        
+        if (lastGoodTime) {
+            const expectedPassedTime = clientTime - lastGoodTime.clientTime;
+            const actualPassedTime = Date.now() - lastGoodTime.timestamp;
+            
+            const timeDrift = Math.abs(expectedPassedTime - actualPassedTime);
+            
+            if (timeDrift > SecurityConfig.TIME_TOLERANCE * 2) { // More tolerant offline
+                console.warn('[Security] Offline time drift detected:', timeDrift);
+                
+                await this.logSecurityEvent(SecurityEventType.TIME_MISMATCH, {
+                    clientTime,
+                    lastGoodTime: lastGoodTime.serverTime,
+                    timeDrift,
+                    isOffline: true
+                });
+            }
+        }
+    }
+
+    // ============================================
+    // SUBSCRIPTION PROTECTION
+    // ============================================
+
+    async validateSubscription(subscriptionData) {
         try {
-            // Check subscription data
-            const subscription = JSON.parse(localStorage.getItem('subscription') || '{}');
+            if (!subscriptionData) {
+                return { isValid: false, reason: 'No subscription data' };
+            }
             
-            // Verify expiry date is encrypted or properly formatted
-            if (subscription.expiryDate) {
-                const expiry = new Date(subscription.expiryDate);
-                const now = new Date();
+            const now = Date.now();
+            const checks = JSON.parse(localStorage.getItem(SecurityConfig.SUBSCRIPTION_CHECKS) || '[]');
+            
+            // Check for rapid subscription validation attempts
+            const recentChecks = checks.filter(check => 
+                now - check.timestamp < 60000 // Last minute
+            );
+            
+            if (recentChecks.length > 10) {
+                // Too many checks in short time - suspicious
+                await this.logSecurityEvent(SecurityEventType.SUBSCRIPTION_TAMPER, {
+                    checkCount: recentChecks.length,
+                    timeframe: '1 minute'
+                });
                 
-                // Check for impossibly far future dates
-                if (expiry > new Date(now.getFullYear() + 10, 0, 1)) {
-                    return true;
+                return { 
+                    isValid: false, 
+                    reason: 'Too many validation attempts',
+                    requiresDelay: true 
+                };
+            }
+            
+            // Record this check
+            checks.push({
+                timestamp: now,
+                subscriptionId: subscriptionData.id,
+                action: 'validation'
+            });
+            
+            // Keep only last 50 checks
+            if (checks.length > 50) {
+                checks.splice(0, checks.length - 50);
+            }
+            
+            localStorage.setItem(SecurityConfig.SUBSCRIPTION_CHECKS, JSON.stringify(checks));
+            
+            // Validate expiry date
+            if (subscriptionData.expiryDate) {
+                const expiryTime = new Date(subscriptionData.expiryDate).getTime();
+                
+                if (expiryTime < now) {
+                    return { isValid: false, reason: 'Subscription expired' };
                 }
                 
-                // Check for past dates that claim to be active
-                if (expiry < now && subscription.isActive === true) {
-                    return true;
+                // Check for suspicious expiry dates (far in future)
+                const maxFutureExpiry = now + (365 * 24 * 60 * 60 * 1000); // 1 year max
+                if (expiryTime > maxFutureExpiry) {
+                    await this.logSecurityEvent(SecurityEventType.SUBSCRIPTION_TAMPER, {
+                        expiryDate: subscriptionData.expiryDate,
+                        suspicious: 'too_far_future'
+                    });
+                    
+                    return { isValid: false, reason: 'Invalid expiry date' };
                 }
             }
             
-            // Check for manual override flags
-            if (localStorage.getItem('bypassSubscription') === 'true') {
-                return true;
-            }
-            
-            // Check for multiple device fingerprints
-            const fingerprints = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key.startsWith('deviceFingerprint')) {
-                    fingerprints.push(localStorage.getItem(key));
-                }
-            }
-            
-            if (fingerprints.length > 1) {
-                return true;
-            }
-            
-            return false;
+            return { isValid: true };
             
         } catch (error) {
-            return false; // In dev mode, assume not tampered
+            console.error('[Security] Subscription validation error:', error);
+            return { isValid: false, reason: 'Validation error' };
         }
     }
-    
-    /**
-     * Handle security violations - MODIFIED FOR DEV MODE
-     */
-    handleSecurityViolations(violations) {
-        // In DEV MODE: Only log violations, don't lock account
-        this.state.violationCount += violations.length;
+
+    async checkSubscriptionTampering(subscriptionData) {
+        // Check for signs of subscription tampering
+        const signs = [];
         
-        // Log each violation with DEV MODE warning
-        violations.forEach(violation => {
-            this.logSecurityEvent('security_violation_dev_mode', {
-                ...violation,
-                devMode: true,
-                action: 'logged_only'
+        // 1. Check if subscription was modified offline
+        const lastSync = localStorage.getItem('last_subscription_sync');
+        if (lastSync && subscriptionData.lastModified > lastSync) {
+            signs.push('modified_offline');
+        }
+        
+        // 2. Check for unrealistic subscription durations
+        if (subscriptionData.durationDays > 3650) { // More than 10 years
+            signs.push('unrealistic_duration');
+        }
+        
+        // 3. Check for rapid plan changes
+        const planChanges = JSON.parse(localStorage.getItem('plan_changes') || '[]');
+        const recentChanges = planChanges.filter(change => 
+            Date.now() - change.timestamp < 3600000 // Last hour
+        );
+        
+        if (recentChanges.length > 3) {
+            signs.push('rapid_plan_changes');
+        }
+        
+        if (signs.length > 0) {
+            await this.logSecurityEvent(SecurityEventType.SUBSCRIPTION_TAMPER, {
+                signs,
+                subscriptionData
             });
-            console.warn('🔓 DEV MODE VIOLATION (not penalized):', violation);
-        });
+            
+            return { isTampered: true, signs };
+        }
         
-        // DEV MODE: Don't lock account, just warn
-        if (this.state.violationCount >= this.config.alertThreshold) {
-            console.warn(`🔓 DEV MODE: Would lock account for ${this.state.violationCount} violations`);
-            this.logSecurityEvent('would_lock_account_dev_mode', {
-                violationCount: this.state.violationCount,
-                threshold: this.config.alertThreshold,
-                action: 'skipped_in_dev_mode'
+        return { isTampered: false };
+    }
+
+    // ============================================
+    // PAYMENT BYPROTECTION
+    // ============================================
+
+    async validatePaymentFlow(paymentData) {
+        try {
+            // Check for duplicate payment attempts
+            const paymentAttempts = JSON.parse(localStorage.getItem('payment_attempts') || '[]');
+            const recentAttempts = paymentAttempts.filter(attempt => 
+                Date.now() - attempt.timestamp < 300000 // Last 5 minutes
+            );
+            
+            if (recentAttempts.length > 3) {
+                // Too many payment attempts
+                await this.logSecurityEvent(SecurityEventType.PAYMENT_BYPASS_ATTEMPT, {
+                    attempts: recentAttempts.length,
+                    timeframe: '5 minutes'
+                });
+                
+                return { 
+                    isValid: false, 
+                    reason: 'Too many payment attempts',
+                    cooloffPeriod: 300000 // 5 minutes
+                };
+            }
+            
+            // Record this attempt
+            paymentAttempts.push({
+                timestamp: Date.now(),
+                amount: paymentData.amount,
+                plan: paymentData.plan,
+                deviceFingerprint: this.deviceFingerprint
             });
+            
+            // Keep only last 20 attempts
+            if (paymentAttempts.length > 20) {
+                paymentAttempts.splice(0, paymentAttempts.length - 20);
+            }
+            
+            localStorage.setItem('payment_attempts', JSON.stringify(paymentAttempts));
+            
+            return { isValid: true };
+            
+        } catch (error) {
+            console.error('[Security] Payment validation error:', error);
+            return { isValid: false, reason: 'Validation error' };
+        }
+    }
+
+    async detectPaymentBypass() {
+        // Check for signs of payment bypass attempts
+        const signs = [];
+        
+        // 1. Check for modified subscription data without payment record
+        const subscription = JSON.parse(localStorage.getItem('subscription') || '{}');
+        const payments = JSON.parse(localStorage.getItem('payments') || '[]');
+        
+        if (subscription.isActive && subscription.plan !== 'trial') {
+            const correspondingPayment = payments.find(p => 
+                p.subscriptionId === subscription.id
+            );
+            
+            if (!correspondingPayment) {
+                signs.push('active_subscription_without_payment');
+            }
         }
         
-        // Call violation callback if exists
-        if (typeof this.config.onSecurityViolation === 'function') {
-            this.config.onSecurityViolation(violations, this.state.violationCount);
+        // 2. Check for trial abuse
+        const trialData = JSON.parse(localStorage.getItem('trial_data') || '{}');
+        if (trialData.used && trialData.devices && trialData.devices.length > 1) {
+            signs.push('multiple_device_trial');
         }
         
-        // Save updated state
-        this.saveSecurityState();
+        if (signs.length > 0) {
+            await this.logSecurityEvent(SecurityEventType.PAYMENT_BYPASS_ATTEMPT, {
+                signs,
+                subscription,
+                deviceFingerprint: this.deviceFingerprint
+            });
+            
+            return { bypassDetected: true, signs };
+        }
+        
+        return { bypassDetected: false };
     }
-    
-    /**
-     * Lock the account - MODIFIED FOR DEV MODE
-     */
-    lockAccount(reason = 'security_violation') {
-        // In DEV MODE: Only simulate locking
-        console.warn(`🔓 DEV MODE: Would lock account for: ${reason}`);
-        
-        this.logSecurityEvent('account_lock_simulated_dev_mode', { 
-            reason,
-            simulated: true,
-            devMode: true
-        });
-        
-        // Don't actually lock in dev mode
-        return false;
+
+    // ============================================
+    // DEVICE & SESSION PROTECTION
+    // ============================================
+
+    async detectMultipleDevices() {
+        try {
+            // Get stored device sessions
+            const sessions = JSON.parse(localStorage.getItem('device_sessions') || '[]');
+            
+            // Check for concurrent sessions
+            const activeSessions = sessions.filter(session => 
+                Date.now() - session.lastActive < 300000 // Active in last 5 minutes
+            );
+            
+            if (activeSessions.length > 1) {
+                // Multiple active sessions detected
+                const differentDevices = activeSessions.filter(session => 
+                    session.deviceFingerprint !== this.deviceFingerprint
+                );
+                
+                if (differentDevices.length > 0) {
+                    await this.logSecurityEvent(SecurityEventType.MULTIPLE_DEVICES, {
+                        currentDevice: this.deviceFingerprint,
+                        otherDevices: differentDevices.map(d => d.deviceFingerprint),
+                        sessionCount: activeSessions.length
+                    });
+                    
+                    return { multipleDevices: true, deviceCount: activeSessions.length };
+                }
+            }
+            
+            // Update current session
+            const currentSessionIndex = sessions.findIndex(s => 
+                s.deviceFingerprint === this.deviceFingerprint
+            );
+            
+            if (currentSessionIndex >= 0) {
+                sessions[currentSessionIndex].lastActive = Date.now();
+            } else {
+                sessions.push({
+                    deviceFingerprint: this.deviceFingerprint,
+                    lastActive: Date.now(),
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform
+                });
+            }
+            
+            // Keep only recent sessions (last 24 hours)
+            const filteredSessions = sessions.filter(session => 
+                Date.now() - session.lastActive < 86400000
+            );
+            
+            localStorage.setItem('device_sessions', JSON.stringify(filteredSessions));
+            
+            return { multipleDevices: false };
+            
+        } catch (error) {
+            console.error('[Security] Multiple device detection error:', error);
+            return { multipleDevices: false };
+        }
     }
-    
-    /**
-     * Unlock the account
-     */
-    unlockAccount() {
-        this.state.isLocked = false;
-        this.state.lockReason = null;
-        this.state.violationCount = 0;
+
+    // ============================================
+    // EXAM INTEGRITY
+    // ============================================
+
+    async monitorExamSession(examData) {
+        try {
+            const monitoringData = {
+                examId: examData.id,
+                startTime: Date.now(),
+                deviceFingerprint: this.deviceFingerprint,
+                events: []
+            };
+            
+            // Start monitoring exam-specific events
+            const examMonitor = {
+                logEvent: (eventType, data) => {
+                    monitoringData.events.push({
+                        type: eventType,
+                        timestamp: Date.now(),
+                        data
+                    });
+                },
+                
+                checkIntegrity: () => {
+                    // Check for suspicious patterns
+                    const suspiciousPatterns = [];
+                    
+                    // 1. Check answer timing patterns
+                    const answerEvents = monitoringData.events.filter(e => 
+                        e.type === 'answer_submitted'
+                    );
+                    
+                    if (answerEvents.length > 0) {
+                        const answerTimes = answerEvents.map(e => e.data.timeSpent);
+                        const avgTime = answerTimes.reduce((a, b) => a + b, 0) / answerTimes.length;
+                        
+                        // Check for unrealistically consistent times
+                        const variance = answerTimes.reduce((sum, time) => 
+                            sum + Math.pow(time - avgTime, 2), 0) / answerTimes.length;
+                        
+                        if (variance < 0.1 && answerTimes.length > 5) {
+                            suspiciousPatterns.push('too_consistent_timing');
+                        }
+                    }
+                    
+                    // 2. Check for rapid question answering
+                    const rapidAnswers = monitoringData.events.filter(e => 
+                        e.type === 'answer_submitted' && e.data.timeSpent < 2
+                    );
+                    
+                    if (rapidAnswers.length > 3) {
+                        suspiciousPatterns.push('rapid_answering');
+                    }
+                    
+                    // 3. Check for tab switching during exam
+                    const visibilityChanges = monitoringData.events.filter(e => 
+                        e.type === 'visibility_change'
+                    );
+                    
+                    if (visibilityChanges.length > 5) {
+                        suspiciousPatterns.push('frequent_tab_switching');
+                    }
+                    
+                    return suspiciousPatterns;
+                },
+                
+                getReport: () => {
+                    const suspiciousPatterns = examMonitor.checkIntegrity();
+                    return {
+                        examId: monitoringData.examId,
+                        duration: Date.now() - monitoringData.startTime,
+                        eventCount: monitoringData.events.length,
+                        suspiciousPatterns,
+                        deviceFingerprint: this.deviceFingerprint
+                    };
+                }
+            };
+            
+            // Log initial exam start
+            examMonitor.logEvent('exam_started', {
+                subject: examData.subject,
+                questionCount: examData.questionCount,
+                mode: examData.mode
+            });
+            
+            return examMonitor;
+            
+        } catch (error) {
+            console.error('[Security] Exam monitoring error:', error);
+            return null;
+        }
+    }
+
+    // ============================================
+    // NOTIFICATION SYSTEM (User-friendly)
+    // ============================================
+
+    canShowNotification(notificationType) {
+        // Check if enough time has passed since last same notification
+        const lastTime = this.lastNotificationTime[notificationType];
+        if (lastTime) {
+            const timeSinceLast = Date.now() - lastTime;
+            if (timeSinceLast < SecurityConfig.MIN_NOTIFICATION_INTERVAL) {
+                return false;
+            }
+        }
         
-        // Remove lock from localStorage
-        localStorage.removeItem('accountLocked');
-        localStorage.removeItem('lockReason');
-        localStorage.removeItem('lockTime');
+        // Don't show notifications during critical moments (like exams)
+        if (document.body.classList.contains('exam-mode')) {
+            return false;
+        }
         
-        this.logSecurityEvent('account_unlocked');
-        this.saveSecurityState();
+        // Don't show if user is interacting with payment or subscription pages
+        const currentPage = window.location.pathname.split('/').pop();
+        const sensitivePages = ['payment.html', 'subscription.html', 'free-trial.html'];
+        if (sensitivePages.includes(currentPage)) {
+            return false;
+        }
         
         return true;
     }
-    
-    /**
-     * Handle tab switching - MODIFIED FOR DEV MODE
-     */
-    handleTabSwitch() {
-        this.logSecurityEvent('tab_switched_dev_mode', {
-            timestamp: Date.now(),
-            visibilityState: document.visibilityState,
-            action: 'monitored_only'
+
+    showTemporaryNotification(options) {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `security-notification security-notification-${options.type}`;
+        
+        notification.innerHTML = `
+            <div class="security-notification-content">
+                <div class="security-notification-icon">${this.getNotificationIcon(options.type)}</div>
+                <div class="security-notification-text">
+                    <div class="security-notification-title">${options.title}</div>
+                    <div class="security-notification-message">${options.message}</div>
+                </div>
+                <button class="security-notification-close">&times;</button>
+            </div>
+            ${options.actions ? `
+            <div class="security-notification-actions">
+                ${options.actions.map(action => `
+                    <button class="security-notification-action" data-action="${action.text}">
+                        ${action.text}
+                    </button>
+                `).join('')}
+            </div>
+            ` : ''}
+        `;
+        
+        // Add styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .security-notification {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 10000;
+                max-width: 400px;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                overflow: hidden;
+                animation: slideIn 0.3s ease-out;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+            
+            .dark-theme .security-notification {
+                background: #2d2d2d;
+                color: white;
+            }
+            
+            .security-notification-warning {
+                border-left: 4px solid #ff9800;
+            }
+            
+            .security-notification-error {
+                border-left: 4px solid #f44336;
+            }
+            
+            .security-notification-info {
+                border-left: 4px solid #2196f3;
+            }
+            
+            .security-notification-success {
+                border-left: 4px solid #4caf50;
+            }
+            
+            .security-notification-content {
+                display: flex;
+                align-items: flex-start;
+                padding: 16px;
+            }
+            
+            .security-notification-icon {
+                font-size: 24px;
+                margin-right: 12px;
+                flex-shrink: 0;
+            }
+            
+            .security-notification-text {
+                flex-grow: 1;
+            }
+            
+            .security-notification-title {
+                font-weight: 600;
+                font-size: 16px;
+                margin-bottom: 4px;
+            }
+            
+            .security-notification-message {
+                font-size: 14px;
+                line-height: 1.4;
+                color: #666;
+            }
+            
+            .dark-theme .security-notification-message {
+                color: #aaa;
+            }
+            
+            .security-notification-close {
+                background: none;
+                border: none;
+                font-size: 20px;
+                color: #999;
+                cursor: pointer;
+                padding: 0;
+                margin-left: 8px;
+                line-height: 1;
+            }
+            
+            .security-notification-actions {
+                display: flex;
+                padding: 0 16px 16px 16px;
+                gap: 8px;
+            }
+            
+            .security-notification-action {
+                flex: 1;
+                padding: 8px 16px;
+                border: none;
+                border-radius: 4px;
+                background: #f5f5f5;
+                color: #333;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+                transition: background 0.2s;
+            }
+            
+            .dark-theme .security-notification-action {
+                background: #3d3d3d;
+                color: white;
+            }
+            
+            .security-notification-action:hover {
+                background: #e0e0e0;
+            }
+            
+            .dark-theme .security-notification-action:hover {
+                background: #4d4d4d;
+            }
+            
+            @keyframes slideIn {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            
+            @keyframes slideOut {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+            }
+        `;
+        
+        document.head.appendChild(style);
+        document.body.appendChild(notification);
+        
+        // Add close functionality
+        const closeBtn = notification.querySelector('.security-notification-close');
+        closeBtn.addEventListener('click', () => {
+            notification.style.animation = 'slideOut 0.3s ease-out forwards';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
         });
         
-        // In DEV MODE: Monitor but don't penalize rapid switching
-        const lastSwitch = parseInt(localStorage.getItem('lastTabSwitch') || '0');
-        const now = Date.now();
-        
-        if (lastSwitch && now - lastSwitch < 5000) { // Switched twice within 5 seconds
-            this.logSecurityEvent('rapid_tab_switching_dev_mode', {
-                timeBetweenSwitches: now - lastSwitch,
-                action: 'logged_only'
+        // Add action handlers
+        if (options.actions) {
+            notification.querySelectorAll('.security-notification-action').forEach((btn, index) => {
+                btn.addEventListener('click', () => {
+                    options.actions[index].action();
+                    notification.style.animation = 'slideOut 0.3s ease-out forwards';
+                    setTimeout(() => {
+                        if (notification.parentNode) {
+                            notification.parentNode.removeChild(notification);
+                        }
+                    }, 300);
+                });
             });
-            console.warn('🔓 DEV MODE: Rapid tab switching detected (logged only)');
         }
         
-        localStorage.setItem('lastTabSwitch', now.toString());
+        // Auto-remove after duration
+        if (options.duration) {
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.style.animation = 'slideOut 0.3s ease-out forwards';
+                    setTimeout(() => {
+                        if (notification.parentNode) {
+                            notification.parentNode.removeChild(notification);
+                        }
+                    }, 300);
+                }
+            }, options.duration);
+        }
     }
-    
-    /**
-     * Handle window blur - MODIFIED FOR DEV MODE
-     */
-    handleWindowBlur() {
-        this.logSecurityEvent('window_blurred_dev_mode', {
-            timestamp: Date.now(),
-            action: 'monitored_only'
-        });
+
+    getNotificationIcon(type) {
+        const icons = {
+            warning: '⚠️',
+            error: '❌',
+            info: 'ℹ️',
+            success: '✅'
+        };
+        return icons[type] || 'ℹ️';
     }
-    
-    /**
-     * Handle window focus - MODIFIED FOR DEV MODE
-     */
-    handleWindowFocus() {
-        this.logSecurityEvent('window_focused_dev_mode', {
-            timestamp: Date.now(),
-            timeSinceBlur: Date.now() - parseInt(localStorage.getItem('lastBlurTime') || Date.now())
-        });
-    }
-    
-    /**
-     * Handle DevTools opening - MODIFIED FOR DEV MODE
-     */
-    handleDevToolsOpen() {
-        // In DEV MODE: Log but don't penalize
-        this.logSecurityEvent('devtools_opened_dev_mode', {
-            timestamp: Date.now(),
-            userAgent: navigator.userAgent,
-            action: 'allowed_in_dev_mode'
-        });
+
+    // ============================================
+    // EVENT HANDLERS
+    // ============================================
+
+    async handleOnline() {
+        console.log('[Security] Device is online, performing security check...');
+        await this.performSecurityCheck();
         
-        console.log('🔓 DEV MODE: DevTools usage allowed');
-        
-        // Don't increment violation count for DevTools usage
-        return;
+        // Sync security events with server
+        if (!this.syncInProgress) {
+            this.syncSecurityEvents();
+        }
     }
-    
-    /**
-     * Handle before unload
-     */
-    handleBeforeUnload(event) {
-        // Check if user is trying to leave during exam
-        const isExamActive = localStorage.getItem('examActive') === 'true';
-        
-        if (isExamActive) {
-            this.logSecurityEvent('page_leave_during_exam', {
+
+    async handleOffline() {
+        console.log('[Security] Device is offline, adjusting security checks...');
+        // Reduce monitoring frequency when offline
+        if (this.timeCheckInterval) {
+            clearInterval(this.timeCheckInterval);
+            this.timeCheckInterval = setInterval(() => {
+                this.checkTimeIntegrity();
+            }, SecurityConfig.TIME_CHECK_INTERVAL * 5); // Check less frequently
+        }
+    }
+
+    handleVisibilityChange() {
+        if (document.hidden) {
+            // Tab/window hidden
+            this.logSecurityEvent('visibility_change', {
+                state: 'hidden',
+                timestamp: Date.now()
+            });
+        } else {
+            // Tab/window visible again
+            this.logSecurityEvent('visibility_change', {
+                state: 'visible',
+                timestamp: Date.now()
+            });
+            
+            // Check time integrity when returning
+            setTimeout(() => {
+                this.checkTimeIntegrity();
+            }, 1000);
+        }
+    }
+
+    handleStorageChange(event) {
+        // Monitor for suspicious storage changes
+        if (event.key === 'subscription' || event.key === 'trial_data') {
+            console.warn('[Security] Suspicious storage change detected:', event.key);
+            
+            // Log the event
+            this.logSecurityEvent('storage_modified', {
+                key: event.key,
+                oldValue: event.oldValue,
+                newValue: event.newValue,
+                url: event.url
+            });
+        }
+    }
+
+    // ============================================
+    // LOGGING & REPORTING
+    // ============================================
+
+    async logSecurityEvent(eventType, data) {
+        try {
+            const event = {
+                type: eventType,
                 timestamp: Date.now(),
-                examId: localStorage.getItem('currentExamId')
-            });
-            
-            // Show warning message
-            event.preventDefault();
-            event.returnValue = 'Are you sure you want to leave? Your exam progress may be lost.';
-            
-            return event.returnValue;
-        }
-    }
-    
-    /**
-     * Encrypt sensitive data
-     */
-    async encryptData(data, key = this.config.encryptionKey) {
-        try {
-            const textEncoder = new TextEncoder();
-            const dataBuffer = textEncoder.encode(JSON.stringify(data));
-            
-            // Generate random IV
-            const iv = crypto.getRandomValues(new Uint8Array(12));
-            
-            // Import key
-            const cryptoKey = await crypto.subtle.importKey(
-                'raw',
-                textEncoder.encode(key),
-                { name: 'AES-GCM' },
-                false,
-                ['encrypt']
-            );
-            
-            // Encrypt data
-            const encryptedBuffer = await crypto.subtle.encrypt(
-                {
-                    name: 'AES-GCM',
-                    iv: iv
-                },
-                cryptoKey,
-                dataBuffer
-            );
-            
-            // Combine IV and encrypted data
-            const combined = new Uint8Array(iv.length + encryptedBuffer.byteLength);
-            combined.set(iv);
-            combined.set(new Uint8Array(encryptedBuffer), iv.length);
-            
-            // Convert to base64 for storage
-            return btoa(String.fromCharCode.apply(null, combined));
-            
-        } catch (error) {
-            console.error('Encryption failed:', error);
-            
-            // Fallback to simple obfuscation
-            const fallback = JSON.stringify(data);
-            return btoa(unescape(encodeURIComponent(fallback)));
-        }
-    }
-    
-    /**
-     * Decrypt sensitive data
-     */
-    async decryptData(encryptedData, key = this.config.encryptionKey) {
-        try {
-            // Convert from base64
-            const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
-            
-            // Extract IV and encrypted data
-            const iv = combined.slice(0, 12);
-            const encryptedBuffer = combined.slice(12);
-            
-            // Import key
-            const textEncoder = new TextEncoder();
-            const cryptoKey = await crypto.subtle.importKey(
-                'raw',
-                textEncoder.encode(key),
-                { name: 'AES-GCM' },
-                false,
-                ['decrypt']
-            );
-            
-            // Decrypt data
-            const decryptedBuffer = await crypto.subtle.decrypt(
-                {
-                    name: 'AES-GCM',
-                    iv: iv
-                },
-                cryptoKey,
-                encryptedBuffer
-            );
-            
-            // Convert to string
-            const textDecoder = new TextDecoder();
-            const decryptedText = textDecoder.decode(decryptedBuffer);
-            
-            return JSON.parse(decryptedText);
-            
-        } catch (error) {
-            console.error('Decryption failed:', error);
-            
-            // Try fallback decryption
-            try {
-                const fallbackText = decodeURIComponent(escape(atob(encryptedData)));
-                return JSON.parse(fallbackText);
-            } catch (e) {
-                throw new Error('Failed to decrypt data');
-            }
-        }
-    }
-    
-    /**
-     * Encrypt subscription expiry date
-     */
-    async encryptSubscriptionExpiry(expiryDate) {
-        const encrypted = await this.encryptData({
-            expiry: expiryDate,
-            deviceId: this.state.deviceFingerprint,
-            timestamp: Date.now()
-        });
-        
-        localStorage.setItem('subscriptionExpiry', encrypted);
-        return encrypted;
-    }
-    
-    /**
-     * Decrypt and verify subscription expiry
-     */
-    async verifySubscriptionExpiry() {
-        try {
-            const encrypted = localStorage.getItem('subscriptionExpiry');
-            if (!encrypted) return null;
-            
-            const decrypted = await this.decryptData(encrypted);
-            
-            // Verify device matches
-            if (decrypted.deviceId !== this.state.deviceFingerprint) {
-                this.logSecurityEvent('subscription_device_mismatch', {
-                    storedDevice: decrypted.deviceId?.substring(0, 12),
-                    currentDevice: this.state.deviceFingerprint?.substring(0, 12)
-                });
-                return null;
-            }
-            
-            // Check if expiry is valid
-            const expiryDate = new Date(decrypted.expiry);
-            const now = new Date();
-            
-            return {
-                expiryDate,
-                isValid: expiryDate > now,
-                daysRemaining: Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24))
+                data,
+                deviceFingerprint: this.deviceFingerprint,
+                userAgent: navigator.userAgent,
+                page: window.location.pathname
             };
             
-        } catch (error) {
-            this.logSecurityEvent('subscription_verification_failed', {
-                error: error.message
-            });
-            return null;
-        }
-    }
-    
-    /**
-     * Get server time for synchronization
-     */
-    async getServerTime() {
-        try {
-            if (!this.state.isOnline) return null;
+            // Get existing events
+            const events = JSON.parse(localStorage.getItem(SecurityConfig.SECURITY_EVENTS) || '[]');
             
-            const startTime = Date.now();
-            const response = await fetch(`${this.config.securityEndpoint}/time`, {
-                method: 'GET',
-                headers: {
-                    'X-Device-Fingerprint': this.state.deviceFingerprint,
-                    'X-Client-Time': Date.now().toString()
-                },
-                cache: 'no-cache'
-            });
+            // Add new event
+            events.push(event);
             
-            const endTime = Date.now();
-            const roundTripTime = endTime - startTime;
-            
-            if (response.ok) {
-                const data = await response.json();
-                const serverTime = data.serverTime;
-                
-                // Calculate time offset
-                this.state.timeOffset = serverTime - endTime + Math.round(roundTripTime / 2);
-                this.state.lastServerTime = serverTime;
-                this.state.lastLocalTime = endTime;
-                
-                this.logSecurityEvent('time_synced', {
-                    serverTime,
-                    localTime: endTime,
-                    offset: this.state.timeOffset,
-                    roundTripTime
-                });
-                
-                return serverTime;
+            // Keep only last 100 events
+            if (events.length > 100) {
+                events.splice(0, events.length - 100);
             }
             
-            return null;
+            // Save back to localStorage
+            localStorage.setItem(SecurityConfig.SECURITY_EVENTS, JSON.stringify(events));
+            
+            // Send to server if online (non-blocking)
+            if (navigator.onLine && !this.syncInProgress) {
+                this.syncSecurityEvent(event);
+            }
+            
+            console.log(`[Security] Event logged: ${eventType}`, data);
+            
+            // Check for suspicious patterns
+            await this.checkForSuspiciousPatterns(events);
             
         } catch (error) {
-            this.logSecurityEvent('time_sync_failed', { error: error.message });
-            return null;
+            console.error('[Security] Error logging event:', error);
         }
     }
-    
-    /**
-     * Sync security data with server
-     */
-    async syncWithServer() {
+
+    async syncSecurityEvent(event) {
         try {
-            if (!this.state.isOnline) return;
+            // Don't sync if already in progress
+            if (this.syncInProgress) return;
             
-            const syncData = {
-                deviceFingerprint: this.state.deviceFingerprint,
-                securityLog: this.state.securityLog.slice(-20), // Send last 20 logs
-                violationCount: this.state.violationCount,
-                isLocked: this.state.isLocked,
-                lastSync: this.state.lastSync,
-                clientTime: Date.now(),
-                devMode: true // Indicate this is from dev mode
-            };
+            this.syncInProgress = true;
             
-            const response = await fetch(this.config.syncEndpoint, {
+            await fetch('/api/security/events', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Device-Fingerprint': this.state.deviceFingerprint,
-                    'X-Client-Time': Date.now().toString()
+                    'X-Device-Fingerprint': this.deviceFingerprint
                 },
-                body: JSON.stringify(syncData)
+                body: JSON.stringify(event)
             });
             
-            if (response.ok) {
-                const result = await response.json();
-                
-                // Update local state based on server response
-                if (result.lockAccount) {
-                    console.warn('🔓 DEV MODE: Server requested lock (ignored in dev mode)');
+            this.syncInProgress = false;
+            
+        } catch (error) {
+            console.warn('[Security] Could not sync event:', error);
+            this.syncInProgress = false;
+        }
+    }
+
+    async syncSecurityEvents() {
+        try {
+            const events = JSON.parse(localStorage.getItem(SecurityConfig.SECURITY_EVENTS) || '[]');
+            const unsyncedEvents = events.filter(event => !event.synced);
+            
+            if (unsyncedEvents.length === 0) return;
+            
+            this.syncInProgress = true;
+            
+            for (const event of unsyncedEvents.slice(0, 10)) { // Sync max 10 at a time
+                try {
+                    await fetch('/api/security/events', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Device-Fingerprint': this.deviceFingerprint
+                        },
+                        body: JSON.stringify(event)
+                    });
+                    
+                    // Mark as synced
+                    event.synced = true;
+                    
+                } catch (error) {
+                    console.warn('[Security] Failed to sync event:', error);
+                    break; // Stop on first error
                 }
-                
-                if (result.resetViolations) {
-                    this.state.violationCount = 0;
-                }
-                
-                this.state.lastSync = Date.now();
-                this.saveSecurityState();
-                
-                this.logSecurityEvent('sync_completed', {
-                    success: true,
-                    serverResponse: result
+            }
+            
+            // Update localStorage with synced status
+            localStorage.setItem(SecurityConfig.SECURITY_EVENTS, JSON.stringify(events));
+            
+            this.syncInProgress = false;
+            
+        } catch (error) {
+            console.error('[Security] Error syncing events:', error);
+            this.syncInProgress = false;
+        }
+    }
+
+    async checkForSuspiciousPatterns(events) {
+        // Check for patterns that might indicate cheating
+        const now = Date.now();
+        const recentEvents = events.filter(event => 
+            now - event.timestamp < SecurityConfig.SUSPICIOUS_WINDOW
+        );
+        
+        // Group by type
+        const eventCounts = {};
+        recentEvents.forEach(event => {
+            eventCounts[event.type] = (eventCounts[event.type] || 0) + 1;
+        });
+        
+        // Check for excessive time mismatches
+        if (eventCounts[SecurityEventType.TIME_MISMATCH] > SecurityConfig.MAX_SUSPICIOUS_EVENTS) {
+            console.warn('[Security] Excessive time mismatches detected');
+            
+            // Show gentle warning
+            if (this.canShowNotification('excessive_time_warnings')) {
+                this.showTemporaryNotification({
+                    type: 'warning',
+                    title: 'Time Sync Issues',
+                    message: 'Multiple time sync issues detected. Please ensure your device time is set correctly.',
+                    duration: SecurityConfig.NOTIFICATION_DURATION
                 });
                 
-                return result;
+                this.lastNotificationTime['excessive_time_warnings'] = Date.now();
+            }
+        }
+        
+        // Check for subscription tampering patterns
+        if (eventCounts[SecurityEventType.SUBSCRIPTION_TAMPER] > 2) {
+            console.warn('[Security] Subscription tampering pattern detected');
+            
+            // This is more serious - show stronger warning
+            if (this.canShowNotification('subscription_tampering')) {
+                this.showTemporaryNotification({
+                    type: 'error',
+                    title: 'Account Issue',
+                    message: 'Suspicious activity detected. Please contact support if you need assistance.',
+                    duration: 8000,
+                    persistent: true
+                });
+                
+                this.lastNotificationTime['subscription_tampering'] = Date.now();
+            }
+        }
+    }
+
+    // ============================================
+    // PUBLIC API
+    // ============================================
+
+    async performSecurityCheck() {
+        console.log('[Security] Performing comprehensive security check...');
+        
+        try {
+            // 1. Check time integrity
+            await this.checkTimeIntegrity();
+            
+            // 2. Check for multiple devices
+            await this.detectMultipleDevices();
+            
+            // 3. Check subscription tampering
+            const subscription = JSON.parse(localStorage.getItem('subscription') || '{}');
+            if (subscription.isActive) {
+                await this.checkSubscriptionTampering(subscription);
             }
             
+            // 4. Check for payment bypass attempts
+            await this.detectPaymentBypass();
+            
+            // 5. Update last check timestamp
+            localStorage.setItem(SecurityConfig.LAST_SECURITY_CHECK, Date.now().toString());
+            
+            console.log('[Security] Security check completed');
+            
         } catch (error) {
-            this.logSecurityEvent('sync_failed', { error: error.message });
+            console.error('[Security] Security check error:', error);
         }
     }
-    
-    /**
-     * Log security event
-     */
-    logSecurityEvent(event, data = {}) {
-        const logEntry = {
-            timestamp: Date.now(),
-            event,
-            deviceFingerprint: this.state.deviceFingerprint?.substring(0, 12),
-            isOnline: this.state.isOnline,
-            isLocked: this.state.isLocked,
-            violationCount: this.state.violationCount,
-            devMode: true, // Mark all logs as from dev mode
-            ...data
-        };
-        
-        // Add to security log
-        this.state.securityLog.push(logEntry);
-        
-        // Keep log size manageable
-        if (this.state.securityLog.length > 1000) {
-            this.state.securityLog = this.state.securityLog.slice(-500);
-        }
-        
-        // Save to localStorage
-        if (this.config.logSecurityEvents) {
-            try {
-                localStorage.setItem('securityLogs', JSON.stringify(this.state.securityLog.slice(-100)));
-            } catch (e) {
-                // Storage might be full
-            }
-        }
-        
-        // Console log in development (this is safe now)
-        console.log(`[Security-DEV] ${event}:`, logEntry);
-        
-        return logEntry;
-    }
-    
-    /**
-     * Get security logs
-     */
-    getSecurityLogs(limit = 100) {
-        return this.state.securityLog.slice(-limit);
-    }
-    
-    /**
-     * Clear security logs
-     */
-    clearSecurityLogs() {
-        this.state.securityLog = [];
-        localStorage.removeItem('securityLogs');
-    }
-    
-    /**
-     * Get security status
-     */
+
     getSecurityStatus() {
         return {
-            deviceFingerprint: this.state.deviceFingerprint,
-            isLocked: this.state.isLocked,
-            lockReason: this.state.lockReason,
-            violationCount: this.state.violationCount,
-            isOnline: this.state.isOnline,
-            lastSync: this.state.lastSync,
-            timeOffset: this.state.timeOffset,
-            sessionDuration: Date.now() - this.state.sessionStart,
-            checksPerformed: this.state.securityLog.length,
-            devMode: true, // Indicate dev mode
-            restrictions: 'reduced'
+            state: this.currentState,
+            deviceFingerprint: this.deviceFingerprint,
+            lastCheck: localStorage.getItem(SecurityConfig.LAST_SECURITY_CHECK),
+            eventCount: JSON.parse(localStorage.getItem(SecurityConfig.SECURITY_EVENTS) || '[]').length
         };
     }
-    
-    /**
-     * Check if access is allowed - MODIFIED FOR DEV MODE
-     */
-    isAccessAllowed() {
-        // DEV MODE: Always allow access
-        return {
-            allowed: true,
-            violationCount: this.state.violationCount,
-            deviceId: this.state.deviceFingerprint?.substring(0, 12),
-            devMode: true,
-            message: 'Development mode - all access allowed'
-        };
+
+    resetSecurityState() {
+        // Only reset if not in locked state
+        if (this.currentState !== SecurityState.LOCKED) {
+            this.currentState = SecurityState.NORMAL;
+            localStorage.removeItem('security_state');
+            
+            // Clear notifications
+            document.querySelectorAll('.security-notification').forEach(notification => {
+                notification.remove();
+            });
+            
+            console.log('[Security] Security state reset to NORMAL');
+        }
     }
-    
-    /**
-     * Validate exam environment before starting - MODIFIED FOR DEV MODE
-     */
-    async validateExamEnvironment() {
-        const checks = await this.performSecurityCheck();
+
+    async syncDeviceTime() {
+        try {
+            // Get accurate server time
+            const serverTime = await this.getServerTime();
+            
+            if (serverTime) {
+                // Calculate correction
+                const clientTime = Date.now();
+                const correction = serverTime - clientTime;
+                
+                // Store correction for future reference
+                const corrections = JSON.parse(localStorage.getItem('time_corrections') || '[]');
+                corrections.push({
+                    clientTime,
+                    serverTime,
+                    correction,
+                    correctedAt: Date.now()
+                });
+                localStorage.setItem('time_corrections', JSON.stringify(corrections.slice(-10)));
+                
+                // Show success message
+                this.showTemporaryNotification({
+                    type: 'success',
+                    title: 'Time Synced',
+                    message: `Time adjusted by ${Math.abs(correction) > 60000 ? 
+                        `${Math.round(Math.abs(correction) / 60000)} minutes` : 
+                        `${Math.round(Math.abs(correction) / 1000)} seconds'}`,
+                    duration: 3000
+                });
+                
+                // Reset security state
+                this.resetSecurityState();
+                
+                return true;
+            }
+        } catch (error) {
+            console.error('[Security] Time sync error:', error);
+            this.showTemporaryNotification({
+                type: 'error',
+                title: 'Sync Failed',
+                message: 'Could not sync time. Please check your internet connection.',
+                duration: 5000
+            });
+        }
         
-        // DEV MODE: Always return valid
-        return {
-            valid: true,
-            violations: checks.violations,
-            deviceId: this.state.deviceFingerprint,
-            devMode: true,
-            message: 'Development mode - environment validation bypassed',
-            timestamp: Date.now()
-        };
+        return false;
     }
-    
-    /**
-     * Start exam monitoring - MODIFIED FOR DEV MODE
-     */
-    startExamMonitoring(examId) {
-        // Set exam as active
-        localStorage.setItem('examActive', 'true');
-        localStorage.setItem('currentExamId', examId);
-        localStorage.setItem('examStartTime', Date.now().toString());
-        
-        // Increase security check frequency during exam (but still dev mode)
-        clearInterval(this.timeCheckInterval);
-        this.timeCheckInterval = setInterval(() => {
-            this.performSecurityCheck();
-        }, 10000); // Check every 10 seconds during exam
-        
-        this.logSecurityEvent('exam_monitoring_started_dev_mode', { 
-            examId,
-            devMode: true,
-            restrictions: 'reduced'
-        });
-        
-        console.log('🔓 DEV MODE: Exam monitoring started (reduced restrictions)');
-    }
-    
-    /**
-     * Stop exam monitoring
-     */
-    stopExamMonitoring() {
-        localStorage.removeItem('examActive');
-        localStorage.removeItem('currentExamId');
-        localStorage.removeItem('examStartTime');
-        
-        // Restore normal check frequency
-        clearInterval(this.timeCheckInterval);
-        this.timeCheckInterval = setInterval(() => {
-            this.performSecurityCheck();
-        }, this.config.checkInterval);
-        
-        this.logSecurityEvent('exam_monitoring_stopped');
-    }
-    
-    /**
-     * Export security data
-     */
-    exportSecurityData() {
-        return {
-            config: this.config,
-            state: this.state,
-            logs: this.getSecurityLogs(),
-            exportTime: Date.now(),
-            devMode: true
-        };
-    }
-    
-    /**
-     * Destroy security system
-     */
+
+    // ============================================
+    // DESTRUCTOR
+    // ============================================
+
     destroy() {
-        clearInterval(this.timeCheckInterval);
-        clearInterval(this.syncInterval);
-        clearInterval(this.fingerprintCheckInterval);
+        this.stopMonitoring();
         
         // Remove event listeners
-        window.removeEventListener('online', () => {});
-        window.removeEventListener('offline', () => {});
-        document.removeEventListener('visibilitychange', () => {});
-        window.removeEventListener('blur', () => {});
-        window.removeEventListener('focus', () => {});
-        window.removeEventListener('beforeunload', () => {});
-        window.removeEventListener('resize', () => {});
+        window.removeEventListener('online', this.handleOnline);
+        window.removeEventListener('offline', this.handleOffline);
+        document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+        window.removeEventListener('storage', this.handleStorageChange);
+        
+        console.log('[Security] Security system destroyed');
     }
 }
 
-// Utility functions for standalone security operations
-const SecurityUtils = {
-    /**
-     * Generate a simple device fingerprint
-     */
-    generateSimpleFingerprint() {
-        const components = [
-            navigator.userAgent,
-            navigator.language,
-            navigator.platform,
-            screen.width + 'x' + screen.height,
-            new Date().getTimezoneOffset()
-        ].join('|');
-        
-        let hash = 0;
-        for (let i = 0; i < components.length; i++) {
-            const char = components.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash;
-        }
-        
-        return 'device_' + Math.abs(hash).toString(16);
-    },
-    
-    /**
-     * Check for time manipulation
-     */
-    checkTimeManipulationSimple() {
-        const currentTime = Date.now();
-        const storedTime = parseInt(localStorage.getItem('lastSecurityCheck') || currentTime);
-        
-        // Allow up to 5 minutes deviation
-        const timeDiff = Math.abs(currentTime - storedTime);
-        const isManipulated = timeDiff > 300000; // 5 minutes
-        
-        localStorage.setItem('lastSecurityCheck', currentTime.toString());
-        
-        return {
-            isManipulated,
-            timeDiff,
-            currentTime,
-            storedTime
-        };
-    },
-    
-    /**
-     * Simple data encryption
-     */
-    simpleEncrypt(data) {
-        try {
-            const jsonString = JSON.stringify(data);
-            const base64 = btoa(unescape(encodeURIComponent(jsonString)));
-            
-            // Add device identifier
-            const deviceId = SecurityUtils.generateSimpleFingerprint().substring(0, 8);
-            return `${deviceId}_${base64}`;
-            
-        } catch (error) {
-            console.error('Simple encryption failed:', error);
-            return null;
-        }
-    },
-    
-    /**
-     * Simple data decryption
-     */
-    simpleDecrypt(encryptedData) {
-        try {
-            if (!encryptedData) return null;
-            
-            // Remove device identifier
-            const parts = encryptedData.split('_');
-            if (parts.length < 2) return null;
-            
-            const base64 = parts.slice(1).join('_');
-            const jsonString = decodeURIComponent(escape(atob(base64)));
-            
-            return JSON.parse(jsonString);
-            
-        } catch (error) {
-            console.error('Simple decryption failed:', error);
-            return null;
-        }
-    },
-    
-    /**
-     * Validate Kenyan phone number
-     */
-    validatePhoneNumber(phone) {
-        const digits = phone.replace(/\D/g, '');
-        
-        // Acceptable formats:
-        // 254712345678 (12 digits, starts with 254)
-        // 0712345678 (10 digits, starts with 07)
-        // 712345678 (9 digits, starts with 7)
-        
-        if (digits.length === 12 && digits.startsWith('254')) {
-            return {
-                valid: true,
-                formatted: digits,
-                type: 'international'
-            };
-        } else if (digits.length === 10 && digits.startsWith('07')) {
-            return {
-                valid: true,
-                formatted: '254' + digits.substring(1),
-                type: 'local'
-            };
-        } else if (digits.length === 9 && digits.startsWith('7')) {
-            return {
-                valid: true,
-                formatted: '254' + digits,
-                type: 'local_short'
-            };
-        }
-        
-        return {
-            valid: false,
-            reason: 'Invalid Kenyan phone number format'
-        };
-    },
-    
-    /**
-     * Validate password strength
-     */
-    validatePassword(password) {
-        const checks = {
-            length: password.length >= 8,
-            uppercase: /[A-Z]/.test(password),
-            lowercase: /[a-z]/.test(password),
-            number: /[0-9]/.test(password),
-            special: /[^A-Za-z0-9]/.test(password)
-        };
-        
-        const passed = Object.values(checks).filter(Boolean).length;
-        let strength = 'weak';
-        
-        if (passed === 5) strength = 'very_strong';
-        else if (passed >= 4) strength = 'strong';
-        else if (passed >= 3) strength = 'medium';
-        
-        return {
-            valid: checks.length && checks.uppercase && checks.lowercase && checks.number,
-            strength,
-            checks,
-            score: passed
-        };
-    },
-    
-    /**
-     * Detect DevTools - MODIFIED FOR DEV MODE
-     */
-    detectDevTools() {
-        // DEV MODE: Always return that DevTools are not open (even if they are)
-        return {
-            isDevToolsOpen: false, // Always false in dev mode
-            detectors: ['dev_mode_bypassed'],
-            debuggerTime: 0,
-            message: 'DevTools detection disabled in development mode'
-        };
-    },
-    
-    /**
-     * Prevent copy-paste in exam - MODIFIED FOR DEV MODE
-     */
-    preventCopyPaste(element) {
-        if (!element) return;
-        
-        // In DEV MODE: Allow copy-paste but log it
-        const handlers = {
-            copy: (e) => {
-                console.log('🔓 DEV MODE: Copy event (allowed)');
-                // Don't prevent default
-            },
-            cut: (e) => {
-                console.log('🔓 DEV MODE: Cut event (allowed)');
-                // Don't prevent default
-            },
-            paste: (e) => {
-                console.log('🔓 DEV MODE: Paste event (allowed)');
-                // Don't prevent default
-            },
-            contextmenu: (e) => {
-                console.log('🔓 DEV MODE: Right-click (allowed)');
-                // Don't prevent default
-            },
-            selectstart: (e) => {
-                // Don't prevent default
-            }
-        };
-        
-        // Attach handlers
-        Object.entries(handlers).forEach(([event, handler]) => {
-            element.addEventListener(event, handler);
-        });
-        
-        // Return cleanup function
-        return () => {
-            Object.entries(handlers).forEach(([event, handler]) => {
-                element.removeEventListener(event, handler);
-            });
-        };
-    },
-    
-    /**
-     * Generate security headers for API requests
-     */
-    generateSecurityHeaders() {
-        const deviceId = localStorage.getItem('deviceFingerprint') || 
-                        SecurityUtils.generateSimpleFingerprint();
-        
-        return {
-            'X-Device-Fingerprint': deviceId,
-            'X-Client-Time': Date.now().toString(),
-            'X-Client-Version': '1.0.0',
-            'X-Security-Check': 'development_mode' // Indicate dev mode
-        };
+// ============================================
+// GLOBAL SECURITY INSTANCE
+// ============================================
+
+let securityInstance = null;
+
+function initSecurity() {
+    if (!securityInstance) {
+        securityInstance = new SecuritySystem();
     }
-};
-
-// CSS for security warnings (to be injected)
-const SecurityStyles = `
-.security-warning {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 9999;
-    background-color: #f8d7da;
-    border: 1px solid #f5c6cb;
-    border-radius: 4px;
-    padding: 15px;
-    max-width: 300px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    animation: security-warning-slide 0.3s ease;
+    return securityInstance;
 }
 
-@keyframes security-warning-slide {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
+function getSecurity() {
+    if (!securityInstance) {
+        return initSecurity();
     }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
+    return securityInstance;
 }
 
-.security-warning-title {
-    font-weight: bold;
-    color: #721c24;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
+// ============================================
+// SECURITY HELPER FUNCTIONS
+// ============================================
 
-.security-warning-message {
-    color: #721c24;
-    font-size: 14px;
-    line-height: 1.4;
-}
-
-.security-warning-icon {
-    font-size: 18px;
-}
-
-.security-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0,0,0,0.8);
-    z-index: 10000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.security-modal {
-    background-color: white;
-    border-radius: 8px;
-    padding: 30px;
-    max-width: 500px;
-    width: 90%;
-    text-align: center;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-}
-
-.security-modal-title {
-    font-size: 24px;
-    font-weight: bold;
-    margin-bottom: 15px;
-    color: #dc3545;
-}
-
-.security-modal-message {
-    margin-bottom: 20px;
-    line-height: 1.6;
-}
-
-.security-modal-contact {
-    background-color: #f8f9fa;
-    border-radius: 4px;
-    padding: 15px;
-    margin-top: 20px;
-}
-
-.security-modal-contact h4 {
-    margin-bottom: 10px;
-    color: #495057;
-}
-
-.security-modal-contact p {
-    margin: 5px 0;
-    color: #6c757d;
-}
-
-.no-copy {
-    user-select: none !important;
-    -webkit-user-select: none !important;
-    -moz-user-select: none !important;
-    -ms-user-select: none !important;
-}
-
-.no-context-menu {
-    -webkit-touch-callout: none !important;
-    -webkit-user-select: none !important;
-    -khtml-user-select: none !important;
-    -moz-user-select: none !important;
-    -ms-user-select: none !important;
-    user-select: none !important;
-}
-
-.anti-cheat-warning {
-    background-color: #fff3cd;
-    border: 1px solid #ffeaa7;
-    color: #856404;
-    padding: 10px;
-    border-radius: 4px;
-    margin: 10px 0;
-    font-size: 14px;
-}
-
-.time-manipulation-detected {
-    animation: time-warning-pulse 1s infinite;
-    background-color: #f8d7da;
-    border-color: #f5c6cb;
-}
-
-@keyframes time-warning-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-}
-
-.device-mismatch-warning {
-    border-left: 4px solid #dc3545;
-    padding-left: 15px;
-    margin: 15px 0;
-}
-
-/* DEV MODE Indicator */
-.dev-mode-indicator {
-    position: fixed;
-    bottom: 10px;
-    left: 10px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 8px 15px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: bold;
-    z-index: 99999;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.dev-mode-flashing {
-    animation: dev-mode-pulse 2s infinite;
-}
-
-@keyframes dev-mode-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-}
-`;
-
-// Inject styles into the document
-if (typeof document !== 'undefined') {
-    const styleElement = document.createElement('style');
-    styleElement.textContent = SecurityStyles;
-    document.head.appendChild(styleElement);
+function validateSubscriptionAccess() {
+    const security = getSecurity();
+    const subscription = JSON.parse(localStorage.getItem('subscription') || '{}');
     
-    // Add DEV MODE indicator to page
-    const devIndicator = document.createElement('div');
-    devIndicator.className = 'dev-mode-indicator dev-mode-flashing';
-    devIndicator.innerHTML = `
-        <span>🔓</span>
-        <span>DEVELOPMENT MODE</span>
-    `;
-    devIndicator.title = 'Security restrictions reduced for development';
-    document.body.appendChild(devIndicator);
+    return security.validateSubscription(subscription);
 }
 
-// Export for different module systems
+function checkExamIntegrity(examData) {
+    const security = getSecurity();
+    return security.monitorExamSession(examData);
+}
+
+function performQuickSecurityCheck() {
+    const security = getSecurity();
+    return security.performSecurityCheck();
+}
+
+// ============================================
+// EXPORTS (if using modules)
+// ============================================
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         SecuritySystem,
-        SecurityUtils,
-        SecurityStyles
+        SecurityState,
+        SecurityConfig,
+        SecurityEventType,
+        initSecurity,
+        getSecurity,
+        validateSubscriptionAccess,
+        checkExamIntegrity,
+        performQuickSecurityCheck
     };
-} else if (typeof define === 'function' && define.amd) {
-    define([], function() {
-        return {
-            SecuritySystem,
-            SecurityUtils,
-            SecurityStyles
-        };
-    });
 } else {
-    window.SecuritySystem = SecuritySystem;
-    window.SecurityUtils = SecurityUtils;
-    window.SecurityStyles = SecurityStyles;
-    
-    // Initialize global security instance with DEV MODE
-    if (!window.medicalExamSecurity) {
-        window.medicalExamSecurity = new SecuritySystem({
-            debug: true, // Enable debug logging
-            autoLockOnCheating: false, // Disable auto-lock
-            alertThreshold: 10 // Higher threshold
+    // Browser global
+    window.MedicalExamSecurity = {
+        SecuritySystem,
+        SecurityState,
+        SecurityConfig,
+        SecurityEventType,
+        initSecurity,
+        getSecurity,
+        validateSubscriptionAccess,
+        checkExamIntegrity,
+        performQuickSecurityCheck
+    };
+}
+
+// Auto-initialize if in browser
+if (typeof window !== 'undefined') {
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                initSecurity();
+            }, 1000); // Small delay to not interfere with page load
         });
-        
-        console.log('🔓 DEVELOPMENT MODE: Security system initialized with reduced restrictions');
-        console.log('🔓 You can safely use DevTools without getting locked');
+    } else {
+        setTimeout(() => {
+            initSecurity();
+        }, 1000);
     }
 }
