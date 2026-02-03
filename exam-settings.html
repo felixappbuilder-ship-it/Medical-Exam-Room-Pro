@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exam Settings - Medical Exam Room Pro</title>
+    <title>Exam Configuration - Medical Exam Room Pro</title>
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="css/common.css">
     <link rel="stylesheet" href="css/exam-settings.css">
@@ -207,148 +207,394 @@
 <script src="scripts/router.js"></script>
 <script src="scripts/ui.js"></script>
 <script src="scripts/utils.js"></script>
-<script src="scripts/auth.js"></script>
-<script src="scripts/validation.js"></script>
-<script src="scripts/security.js"></script>
 <script src="scripts/subscription.js"></script>
-<script src="scripts/payment.js"></script>
 <script src="scripts/questions.js"></script>
 <script src="scripts/exam-engine.js"></script>
-<script src="scripts/timer.js"></script>
-<script src="scripts/db.js"></script>
-<script src="scripts/sync.js"></script>
-<script src="scripts/analytics.js"></script>
-<script src="scripts/offline.js"></script>
+
 
 <script>
-    // Minimal initialization script that delegates to imported modules
-    document.addEventListener('DOMContentLoaded', function() {
+    /**
+ * exam-settings.js - Exam Configuration Handler
+ * Purpose: Exam setup, configuration validation, and preparation for exam-room.html
+ * Uses: app.js, exam-engine.js, questions.js, subscription.js, ui.js, utils.js, router.js
+ */
+
+// Wait for all modules to be ready
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log("Exam Settings: Initializing...");
+    
+    // ==================== MODULE INITIALIZATION ====================
+    
+    // Wait for essential modules to load
+    await waitForModules(['App', 'QuestionBank', 'Subscription', 'UI', 'Utils', 'Router']);
+    
+    // Module references
+    const app = window.App || {};
+    const questionBank = window.QuestionBank;
+    const subscription = window.Subscription;
+    const ui = window.UI;
+    const utils = window.Utils;
+    const router = window.Router;
+    
+    // ==================== STATE MANAGEMENT ====================
+    
+    let state = {
+        selectedSubjects: [],
+        selectedTopics: [],
+        availableQuestions: 0,
+        examConfig: {},
+        isConfigValid: false
+    };
+    
+    // ==================== INITIALIZATION ====================
+    
+    async function initializeExamSettings() {
+        try {
+            console.log("Exam Settings: Starting initialization...");
+            
+            // 1. Initialize theme from UI module
+            initializeTheme();
+            
+            // 2. Load user state from app
+            await loadUserState();
+            
+            // 3. Load selected subjects and topics
+            loadSelections();
+            
+            // 4. Calculate available questions
+            await calculateAvailableQuestions();
+            
+            // 5. Initialize UI components
+            initializeUIComponents();
+            
+            // 6. Load saved exam configuration
+            loadSavedConfiguration();
+            
+            // 7. Setup event listeners
+            setupEventListeners();
+            
+            // 8. Update UI based on state
+            updateUI();
+            
+            console.log("Exam Settings: Initialization complete");
+            
+        } catch (error) {
+            console.error("Exam Settings: Initialization failed:", error);
+            showError("Failed to initialize exam settings. Please refresh the page.");
+        }
+    }
+    
+    // ==================== MODULE INTEGRATION FUNCTIONS ====================
+    
+    async function waitForModules(moduleNames) {
+        const promises = moduleNames.map(moduleName => {
+            return new Promise((resolve) => {
+                const checkModule = () => {
+                    if (window[moduleName]) {
+                        console.log(`${moduleName} module loaded`);
+                        resolve(window[moduleName]);
+                    } else {
+                        setTimeout(checkModule, 100);
+                    }
+                };
+                checkModule();
+            });
+        });
         
-        // Initialize App State (app.js)
-        if (typeof App !== 'undefined') {
-            App.init();
+        await Promise.all(promises);
+    }
+    
+    function initializeTheme() {
+        if (ui && ui.initializeTheme) {
+            ui.initializeTheme();
+        } else {
+            // Fallback theme handling
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.classList.toggle('dark-theme', savedTheme === 'dark');
+            
+            const themeToggle = document.getElementById('themeToggle');
+            if (themeToggle) {
+                themeToggle.addEventListener('click', function() {
+                    const isDark = document.body.classList.toggle('dark-theme');
+                    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                    
+                    const themeIcon = this.querySelector('.theme-icon');
+                    const themeText = this.querySelector('.theme-text');
+                    
+                    if (isDark) {
+                        themeIcon.textContent = '☀️';
+                        themeText.textContent = 'Light Mode';
+                    } else {
+                        themeIcon.textContent = '🌙';
+                        themeText.textContent = 'Dark Mode';
+                    }
+                });
+            }
+        }
+    }
+    
+    async function loadUserState() {
+        try {
+            // Check if user is logged in via app module
+            if (app && app.getCurrentUser) {
+                const user = app.getCurrentUser();
+                if (!user) {
+                    throw new Error("User not logged in");
+                }
+                console.log("User state loaded:", user.id);
+            }
+        } catch (error) {
+            console.warn("Could not load user state:", error);
+        }
+    }
+    
+    function loadSelections() {
+        try {
+            // Load from localStorage (this would come from subjects page)
+            state.selectedSubjects = JSON.parse(localStorage.getItem('selectedSubjects') || '[]');
+            state.selectedTopics = JSON.parse(localStorage.getItem('selectedTopics') || '[]');
+            
+            if (state.selectedTopics.length === 0) {
+                showWarning("No topics selected. Please go back and select topics.");
+            }
+            
+            console.log("Loaded selections:", {
+                subjects: state.selectedSubjects.length,
+                topics: state.selectedTopics.length
+            });
+        } catch (error) {
+            console.error("Failed to load selections:", error);
+            state.selectedSubjects = [];
+            state.selectedTopics = [];
+        }
+    }
+    
+    async function calculateAvailableQuestions() {
+        try {
+            if (!questionBank || !questionBank.getQuestionCount) {
+                throw new Error("Question bank module not available");
+            }
+            
+            let totalQuestions = 0;
+            
+            // Calculate questions for each topic
+            for (const topic of state.selectedTopics) {
+                const parts = topic.split('_');
+                if (parts.length === 2) {
+                    const [subject, topicName] = parts;
+                    try {
+                        const count = await questionBank.getQuestionCount(subject, topicName);
+                        totalQuestions += count;
+                    } catch (error) {
+                        console.warn(`Could not get count for ${subject}/${topicName}:`, error);
+                    }
+                }
+            }
+            
+            state.availableQuestions = totalQuestions;
+            console.log(`Available questions: ${totalQuestions}`);
+            
+        } catch (error) {
+            console.error("Failed to calculate available questions:", error);
+            // Fallback estimation
+            state.availableQuestions = state.selectedTopics.length * 50;
+        }
+    }
+    
+    // ==================== UI COMPONENTS INITIALIZATION ====================
+    
+    function initializeUIComponents() {
+        // Initialize UI components if UI module is available
+        if (ui) {
+            // Initialize tooltips
+            const tooltips = document.querySelectorAll('[data-tooltip]');
+            tooltips.forEach(el => {
+                if (ui.initializeTooltip) {
+                    ui.initializeTooltip(el);
+                }
+            });
+            
+            // Initialize progress indicators
+            const progressBars = document.querySelectorAll('.progress-bar');
+            progressBars.forEach(el => {
+                if (ui.initializeProgressBar) {
+                    ui.initializeProgressBar(el);
+                }
+            });
+        }
+    }
+    
+    function loadSavedConfiguration() {
+        try {
+            const savedConfig = JSON.parse(localStorage.getItem('examConfiguration') || '{}');
+            if (savedConfig && Object.keys(savedConfig).length > 0) {
+                state.examConfig = savedConfig;
+                applySavedConfiguration(savedConfig);
+                console.log("Loaded saved exam configuration");
+            }
+        } catch (error) {
+            console.error("Failed to load saved configuration:", error);
+        }
+    }
+    
+    function applySavedConfiguration(config) {
+        // Apply mode
+        const modeElement = document.querySelector(`.mode-option[data-mode="${config.examMode}"]`);
+        if (modeElement) {
+            selectMode(modeElement);
         }
         
-        // Check authentication (auth.js)
-        if (typeof Auth !== 'undefined') {
-            if (!Auth.isAuthenticated()) {
-                // Redirect to login if not authenticated
-                if (typeof Router !== 'undefined') {
-                    Router.navigateTo('login.html');
-                } else {
-                    window.location.href = 'login.html';
+        // Apply question count
+        if (config.questionCount) {
+            const count = parseInt(config.questionCount);
+            if ([10, 25, 50].includes(count)) {
+                const countBtn = document.querySelector(`.count-btn[data-count="${count}"]`);
+                if (countBtn) countBtn.click();
+            } else if (count > 0) {
+                const customInput = document.getElementById('customCount');
+                if (customInput) {
+                    customInput.value = count;
+                    updateCustomCount();
                 }
-                return;
             }
         }
         
-        // Setup UI components (ui.js)
-        if (typeof UI !== 'undefined') {
-            // Theme toggle
-            UI.setupThemeToggle('themeToggle');
-            
-            // Setup form controls
-            UI.setupFormControl('examMode', 'change', updateConfig);
-            UI.setupFormControl('questionCountSelect', 'change', handleQuestionCountChange);
-            UI.setupFormControl('difficultyLevel', 'input', updateDifficulty);
-            UI.setupFormControl('timerMode', 'change', updateConfig);
-            UI.setupFormControl('questionDistribution', 'change', updateConfig);
-            
-            // Setup advanced menu controls
-            setupAdvancedControls();
-            
-            // Setup button handlers
-            UI.setupButton('resetBtn', resetToDefaults);
-            UI.setupButton('savePresetBtn', savePreset);
-            UI.setupButton('startExamBtn', startExam);
+        // Apply difficulty
+        if (config.difficulty) {
+            const slider = document.getElementById('difficultyLevel');
+            if (slider) {
+                slider.value = config.difficulty;
+                updateDifficultyDisplay();
+            }
         }
         
-        // Setup navigation (router.js)
-        if (typeof Router !== 'undefined') {
-            Router.setupNavigation('backBtn', 'subjects.html');
-            Router.setupNavigation('cancelBtn', null, function() {
-                return confirm('Are you sure you want to cancel? Your settings will not be saved.');
-            });
+        // Apply timer mode
+        if (config.timerMode) {
+            const timerRadio = document.querySelector(`input[name="timer"][value="${config.timerMode}"]`);
+            if (timerRadio) timerRadio.checked = true;
+        }
+        
+        // Load presets if available
+        loadPresets();
+    }
+    
+    // ==================== UI UPDATE FUNCTIONS ====================
+    
+    function updateUI() {
+        updateExamSummary();
+        updateTopicsReview();
+        updateQuestionCountLimits();
+        calculateEstimatedTime();
+        updateValidationStatus();
+    }
+    
+    function updateExamSummary() {
+        const subjectNames = {
+            'anatomy': 'Anatomy', 'physiology': 'Physiology', 'biochemistry': 'Biochemistry',
+            'histology': 'Histology', 'embryology': 'Embryology', 'pathology': 'Pathology',
+            'pharmacology': 'Pharmacology', 'microbiology': 'Microbiology'
+        };
+        
+        const subjectList = state.selectedSubjects.map(sub => subjectNames[sub] || sub).join(', ');
+        const topicCount = state.selectedTopics.length;
+        
+        const summaryHTML = `
+            <div class="summary-card">
+                <div class="summary-item">
+                    <span class="summary-label">Subjects:</span>
+                    <span class="summary-value">${subjectList || 'None selected'}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Topics Selected:</span>
+                    <span class="summary-value">${topicCount} topic${topicCount !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Available Questions:</span>
+                    <span class="summary-value" id="availableQuestions">
+                        ${state.availableQuestions.toLocaleString()}
+                    </span>
+                </div>
+            </div>
+        `;
+        
+        const summaryElement = document.getElementById('examSummary');
+        if (summaryElement) {
+            summaryElement.innerHTML = summaryHTML;
+        }
+        
+        // Update hint
+        const countHint = document.getElementById('countHint');
+        if (countHint) {
+            countHint.textContent = `Available: ${state.availableQuestions.toLocaleString()} questions`;
+        }
+    }
+    
+    function updateTopicsReview() {
+        const topicsContainer = document.getElementById('topicsReview');
+        if (!topicsContainer) return;
+        
+        if (state.selectedTopics.length === 0) {
+            topicsContainer.innerHTML = `
+                <div class="no-topics">
+                    <span class="warning-icon">⚠️</span>
+                    <span class="warning-text">No topics selected</span>
+                </div>
+            `;
         } else {
-            // Fallback navigation
-            document.getElementById('backBtn').addEventListener('click', function() {
-                window.history.back() || (window.location.href = 'subjects.html');
-            });
-            
-            document.getElementById('cancelBtn').addEventListener('click', function() {
-                if (confirm('Are you sure you want to cancel? Your settings will not be saved.')) {
-                    window.history.back();
+            // Format topic names for display
+            const topicDisplay = state.selectedTopics.map(topic => {
+                const parts = topic.split('_');
+                if (parts.length === 2) {
+                    const [subject, topicName] = parts;
+                    const formattedName = topicName.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    return `${subject.charAt(0).toUpperCase() + subject.slice(1)}: ${formattedName}`;
                 }
+                return topic;
             });
-        }
-        
-        // Load exam configuration (exam-engine.js)
-        if (typeof ExamEngine !== 'undefined') {
-            ExamEngine.loadConfiguration();
-            updateExamSummary();
-            updateEstimatedTime();
-            loadPresets();
-        } else {
-            // Fallback to localStorage
-            loadFromLocalStorage();
-        }
-        
-        // Setup security (security.js)
-        if (typeof Security !== 'undefined') {
-            Security.initializePageProtection();
-        }
-        
-        // Check offline status (offline.js)
-        if (typeof Offline !== 'undefined') {
-            Offline.checkStatus();
-        }
-        
-        // Initialize database (db.js)
-        if (typeof DB !== 'undefined') {
-            DB.init().then(() => {
-                console.log('Database initialized for settings');
-            });
-        }
-    });
-    
-    // Configuration update handlers
-    function updateConfig() {
-        const config = collectConfig();
-        
-        if (typeof ExamEngine !== 'undefined') {
-            ExamEngine.updateConfiguration(config);
-        } else {
-            // Fallback to localStorage
-            localStorage.setItem('examConfiguration', JSON.stringify(config));
-        }
-        
-        updateEstimatedTime();
-        
-        if (typeof UI !== 'undefined') {
-            UI.showToast('Settings updated', 'info');
+            
+            const topicList = topicDisplay.slice(0, 5).map(topic => 
+                `<span class="topic-tag">${topic}</span>`
+            ).join('');
+            
+            const extraCount = Math.max(0, state.selectedTopics.length - 5);
+            const extraText = extraCount > 0 ? `<span class="extra-count">+${extraCount} more</span>` : '';
+            
+            topicsContainer.innerHTML = `
+                <div class="topics-list">
+                    ${topicList}
+                    ${extraText}
+                </div>
+            `;
         }
     }
     
-    function handleQuestionCountChange() {
-        const select = document.getElementById('questionCountSelect');
-        const customInput = document.getElementById('customCount');
-        
-        if (select.value === 'custom') {
-            customInput.style.display = 'block';
-            select.style.flex = '2';
-            customInput.focus();
-        } else {
-            customInput.style.display = 'none';
-            select.style.flex = '1';
+    function updateQuestionCountLimits() {
+        const customCountInput = document.getElementById('customCount');
+        if (customCountInput) {
+            customCountInput.max = state.availableQuestions;
+            customCountInput.min = 1;
+            
+            // Update placeholder
+            customCountInput.placeholder = `1-${state.availableQuestions}`;
+            
+            // Validate current value
+            if (customCountInput.value) {
+                const value = parseInt(customCountInput.value);
+                if (value > state.availableQuestions) {
+                    customCountInput.value = state.availableQuestions;
+                }
+            }
         }
-        
-        updateConfig();
     }
     
-    function updateDifficulty() {
-        const slider = document.getElementById('difficultyLevel');
-        const value = parseInt(slider.value);
+    function updateDifficultyDisplay() {
+        const difficultySlider = document.getElementById('difficultyLevel');
+        const difficultyValue = document.getElementById('difficultyValue');
+        const difficultyDesc = document.getElementById('difficultyDesc');
         
+        if (!difficultySlider || !difficultyValue || !difficultyDesc) return;
+        
+        const value = parseInt(difficultySlider.value);
         const difficultyLabels = ['Easy Only', 'Mostly Easy', 'Mixed Difficulty', 'Mostly Hard', 'Expert Only'];
         const difficultyDescriptions = [
             'All easy questions (21 seconds each)',
@@ -358,255 +604,339 @@
             'All expert questions (54 seconds each)'
         ];
         
-        document.getElementById('difficultyValue').textContent = difficultyLabels[value];
-        document.getElementById('difficultyDesc').textContent = difficultyDescriptions[value];
-        
-        updateConfig();
+        difficultyValue.textContent = difficultyLabels[value];
+        difficultyDesc.textContent = difficultyDescriptions[value];
     }
     
-    function updateExamSummary() {
-        const selectedSubjects = JSON.parse(localStorage.getItem('selectedSubjects') || '[]');
-        const selectedTopics = JSON.parse(localStorage.getItem('selectedTopics') || '[]');
+    function calculateEstimatedTime() {
+        const questionCount = getSelectedQuestionCount();
+        const difficulty = parseInt(document.getElementById('difficultyLevel')?.value || 2);
+        const timerMode = document.querySelector('input[name="timer"]:checked')?.value || 'adaptive';
         
-        const subjectNames = {
-            'anatomy': 'Anatomy', 'physiology': 'Physiology', 'biochemistry': 'Biochemistry',
-            'histology': 'Histology', 'embryology': 'Embryology', 'pathology': 'Pathology',
-            'pharmacology': 'Pharmacology', 'microbiology': 'Microbiology'
-        };
+        // Base times for each difficulty level (in seconds)
+        const difficultyTimes = [21, 27, 36, 45, 54];
+        const baseTime = difficultyTimes[difficulty] || 30;
         
-        const subjectList = selectedSubjects.map(sub => subjectNames[sub] || sub).join(', ');
-        const displayedTopics = selectedTopics.slice(0, 3);
-        const extraCount = Math.max(0, selectedTopics.length - 3);
-        const topicsDisplay = displayedTopics.length > 0 
-            ? displayedTopics.join(', ') + (extraCount > 0 ? ` +${extraCount} more` : '')
-            : 'No topics selected';
-        
-        // Calculate available questions using questions.js if available
-        let availableQuestions = 0;
-        if (typeof Questions !== 'undefined') {
-            availableQuestions = Questions.countAvailable(selectedSubjects, selectedTopics);
-        } else {
-            availableQuestions = selectedTopics.length * 50; // Fallback estimate
+        let totalSeconds;
+        switch(timerMode) {
+            case 'adaptive':
+                totalSeconds = questionCount * baseTime;
+                break;
+            case 'strict':
+                totalSeconds = questionCount * 30;
+                break;
+            case 'relaxed':
+                totalSeconds = questionCount * 60;
+                break;
+            case 'untimed':
+                totalSeconds = 0;
+                break;
+            default:
+                totalSeconds = questionCount * 30;
         }
         
-        document.getElementById('examSummary').innerHTML = `
-            <strong>Subject:</strong> ${subjectList || 'None selected'} <br>
-            <strong>Topics:</strong> ${topicsDisplay} <br>
-            <strong>Available Questions:</strong> ${availableQuestions.toLocaleString()}
-        `;
+        const estimatedTimeElement = document.getElementById('estimatedTime');
+        if (!estimatedTimeElement) return;
         
-        document.getElementById('countHint').textContent = `Available: ${availableQuestions.toLocaleString()} questions`;
-        
-        // Update custom count max
-        const customCount = document.getElementById('customCount');
-        customCount.max = availableQuestions;
-        if (parseInt(customCount.value) > availableQuestions) {
-            customCount.value = availableQuestions;
-        }
-    }
-    
-    function updateEstimatedTime() {
-        const config = collectConfig();
-        let timeText = 'Calculating...';
-        
-        if (typeof Utils !== 'undefined' && typeof ExamEngine !== 'undefined') {
-            timeText = ExamEngine.calculateEstimatedTime(config);
+        if (totalSeconds === 0) {
+            estimatedTimeElement.textContent = 'No time limit (Practice mode)';
         } else {
-            // Fallback calculation
-            const questionCount = getQuestionCount();
-            const difficulty = parseInt(document.getElementById('difficultyLevel').value);
-            const timerMode = document.getElementById('timerMode').value;
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
             
-            let avgTimePerQuestion;
-            switch(timerMode) {
-                case 'adaptive':
-                    const times = [21, 27, 36, 45, 54];
-                    avgTimePerQuestion = times[difficulty];
-                    break;
-                case 'strict':
-                    avgTimePerQuestion = 30;
-                    break;
-                case 'relaxed':
-                    avgTimePerQuestion = 60;
-                    break;
-                case 'untimed':
-                    avgTimePerQuestion = 0;
-                    break;
-                default:
-                    avgTimePerQuestion = 30;
-            }
-            
-            const totalSeconds = questionCount * avgTimePerQuestion;
-            if (avgTimePerQuestion === 0) {
-                timeText = 'No time limit (Practice mode)';
+            if (minutes === 0) {
+                estimatedTimeElement.textContent = `Estimated exam time: ${seconds} seconds`;
+            } else if (seconds === 0) {
+                estimatedTimeElement.textContent = `Estimated exam time: ${minutes} minute${minutes !== 1 ? 's' : ''}`;
             } else {
-                const minutes = Math.floor(totalSeconds / 60);
-                const seconds = totalSeconds % 60;
-                timeText = `Estimated exam time: ${minutes}m ${seconds}s`;
+                estimatedTimeElement.textContent = `Estimated exam time: ${minutes} minute${minutes !== 1 ? 's' : ''} ${seconds} seconds`;
             }
         }
+    }
+    
+    function updateValidationStatus() {
+        const hasTopics = state.selectedTopics.length > 0;
+        const questionCount = getSelectedQuestionCount();
+        const isValid = hasTopics && questionCount > 0 && questionCount <= state.availableQuestions;
         
-        document.getElementById('estimatedTime').textContent = timeText;
-    }
-    
-    function collectConfig() {
-        return {
-            examMode: document.getElementById('examMode').value,
-            questionCount: getQuestionCount(),
-            difficulty: document.getElementById('difficultyLevel').value,
-            timerMode: document.getElementById('timerMode').value,
-            distribution: document.getElementById('questionDistribution').value,
-            questionOrder: document.getElementById('questionOrder').value,
-            passingScore: parseInt(document.getElementById('passingScore').value) || 70,
-            breakInterval: document.getElementById('breakInterval').value,
-            fullscreen: document.getElementById('fullscreen').checked,
-            distractionFree: document.getElementById('distractionFree').checked,
-            showProgress: document.getElementById('showProgress').checked,
-            preventCopy: document.getElementById('preventCopy').checked,
-            autoSave: document.getElementById('autoSave').checked,
-            pauseDetection: document.getElementById('pauseDetection').checked,
-            flagQuestions: document.getElementById('flagQuestions').checked,
-            showExplanations: document.getElementById('showExplanations').checked,
-            colorWarnings: document.getElementById('colorWarnings').checked,
-            flashWarnings: document.getElementById('flashWarnings').checked,
-            subjects: JSON.parse(localStorage.getItem('selectedSubjects') || '[]'),
-            topics: JSON.parse(localStorage.getItem('selectedTopics') || '[]'),
-            configTimestamp: Date.now()
-        };
-    }
-    
-    function getQuestionCount() {
-        const select = document.getElementById('questionCountSelect');
-        if (select.value === 'custom') {
-            return document.getElementById('customCount').value || '25';
+        state.isConfigValid = isValid;
+        
+        // Update start button state
+        const startBtn = document.getElementById('startExamBtn');
+        if (startBtn) {
+            startBtn.disabled = !isValid;
+            if (!isValid) {
+                startBtn.title = !hasTopics ? 'Select topics first' : 
+                               questionCount === 0 ? 'Select question count' :
+                               'Question count exceeds available questions';
+            } else {
+                startBtn.title = 'Start exam with current settings';
+            }
         }
-        return select.value;
     }
     
-    function setupAdvancedControls() {
-        const advancedIds = [
-            'fullscreen', 'distractionFree', 'showProgress', 'preventCopy',
-            'autoSave', 'pauseDetection', 'flagQuestions', 'showExplanations',
-            'colorWarnings', 'flashWarnings', 'questionOrder', 'breakInterval', 'passingScore'
-        ];
+    // ==================== EVENT HANDLERS ====================
+    
+    function setupEventListeners() {
+        // Navigation
+        setupNavigationListeners();
         
-        advancedIds.forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.addEventListener('change', updateConfig);
+        // Question count selection
+        setupQuestionCountListeners();
+        
+        // Difficulty slider
+        setupDifficultyListeners();
+        
+        // Mode selection
+        setupModeListeners();
+        
+        // Timer mode
+        setupTimerListeners();
+        
+        // Custom count input
+        setupCustomCountListener();
+        
+        // Change topics button
+        setupChangeTopicsListener();
+        
+        // Preset functionality
+        setupPresetListeners();
+        
+        // Reset button
+        setupResetListener();
+        
+        // Start exam button
+        setupStartExamListener();
+        
+        // Additional settings
+        setupAdditionalSettingsListeners();
+    }
+    
+    function setupNavigationListeners() {
+        const backBtn = document.getElementById('backBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        
+        if (backBtn) {
+            backBtn.addEventListener('click', function() {
+                if (router && router.navigateBack) {
+                    router.navigateBack();
+                } else {
+                    window.history.back() || (window.location.href = 'subjects.html');
+                }
+            });
+        }
+        
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function() {
+                if (confirm('Are you sure you want to cancel? Your settings will not be saved.')) {
+                    if (router && router.navigateBack) {
+                        router.navigateBack();
+                    } else {
+                        window.history.back();
+                    }
+                }
+            });
+        }
+    }
+    
+    function setupQuestionCountListeners() {
+        document.querySelectorAll('.count-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                // Remove active class from all buttons
+                document.querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
+                // Add active class to clicked button
+                this.classList.add('active');
+                // Clear custom count
+                const customCount = document.getElementById('customCount');
+                if (customCount) customCount.value = '';
+                
+                updateValidationStatus();
+                calculateEstimatedTime();
+            });
+        });
+    }
+    
+    function setupCustomCountListener() {
+        const customCount = document.getElementById('customCount');
+        if (!customCount) return;
+        
+        customCount.addEventListener('input', function() {
+            updateCustomCount();
+        });
+        
+        customCount.addEventListener('blur', function() {
+            validateCustomCount();
+        });
+    }
+    
+    function updateCustomCount() {
+        const customCount = document.getElementById('customCount');
+        if (!customCount) return;
+        
+        // Remove active class from count buttons
+        document.querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
+        
+        updateValidationStatus();
+        calculateEstimatedTime();
+    }
+    
+    function validateCustomCount() {
+        const customCount = document.getElementById('customCount');
+        if (!customCount) return;
+        
+        let value = parseInt(customCount.value) || 0;
+        const max = parseInt(customCount.max) || state.availableQuestions;
+        
+        if (value < 1) value = 1;
+        if (value > max) value = max;
+        
+        customCount.value = value;
+        updateValidationStatus();
+        calculateEstimatedTime();
+    }
+    
+    function setupDifficultyListeners() {
+        const difficultySlider = document.getElementById('difficultyLevel');
+        if (!difficultySlider) return;
+        
+        difficultySlider.addEventListener('input', function() {
+            updateDifficultyDisplay();
+            calculateEstimatedTime();
+        });
+    }
+    
+    function setupModeListeners() {
+        document.querySelectorAll('.mode-option').forEach(option => {
+            option.addEventListener('click', function() {
+                selectMode(this);
+                calculateEstimatedTime();
+            });
+        });
+    }
+    
+    function selectMode(element) {
+        // Remove selected class from all options
+        document.querySelectorAll('.mode-option').forEach(opt => {
+            opt.classList.remove('selected');
+            const check = opt.querySelector('.mode-check');
+            if (check) check.textContent = '';
+        });
+        
+        // Add selected class to clicked option
+        element.classList.add('selected');
+        const check = element.querySelector('.mode-check');
+        if (check) check.textContent = '✓';
+    }
+    
+    function setupTimerListeners() {
+        document.querySelectorAll('input[name="timer"]').forEach(radio => {
+            radio.addEventListener('change', calculateEstimatedTime);
+        });
+    }
+    
+    function setupChangeTopicsListener() {
+        const changeTopicsBtn = document.getElementById('changeTopicsBtn');
+        if (!changeTopicsBtn) return;
+        
+        changeTopicsBtn.addEventListener('click', function() {
+            if (state.selectedSubjects.length === 1) {
+                // Go back to specific subject page
+                const subject = state.selectedSubjects[0];
+                window.location.href = `subject-${subject}.html`;
+            } else {
+                // Go back to subjects page
+                window.location.href = 'subjects.html';
             }
         });
     }
     
-    function resetToDefaults() {
-        if (confirm('Reset all settings to defaults?')) {
-            if (typeof ExamEngine !== 'undefined') {
-                ExamEngine.resetToDefaults();
-                ExamEngine.loadConfiguration();
-            } else {
-                // Fallback reset
-                document.getElementById('examMode').value = 'timed';
-                document.getElementById('questionCountSelect').value = '25';
-                document.getElementById('customCount').style.display = 'none';
-                document.getElementById('questionCountSelect').style.flex = '1';
-                document.getElementById('difficultyLevel').value = 2;
-                updateDifficulty();
-                document.getElementById('timerMode').value = 'adaptive';
-                document.getElementById('questionDistribution').value = 'balanced';
-                
-                // Advanced defaults
-                document.getElementById('questionOrder').value = 'random';
-                document.getElementById('passingScore').value = 70;
-                document.getElementById('breakInterval').value = '0';
-                
-                const checkboxes = [
-                    'fullscreen', 'distractionFree', 'showProgress', 'preventCopy',
-                    'autoSave', 'pauseDetection', 'flagQuestions', 'showExplanations',
-                    'colorWarnings', 'flashWarnings'
-                ];
-                
-                checkboxes.forEach(id => {
-                    const element = document.getElementById(id);
-                    if (element) element.checked = true;
-                });
-                
-                localStorage.removeItem('examConfiguration');
-            }
+    function setupPresetListeners() {
+        const savePresetBtn = document.getElementById('savePresetBtn');
+        const presetNameInput = document.getElementById('presetName');
+        
+        if (savePresetBtn && presetNameInput) {
+            savePresetBtn.addEventListener('click', function() {
+                savePreset();
+            });
             
-            updateEstimatedTime();
-            
-            if (typeof UI !== 'undefined') {
-                UI.showToast('Settings reset to defaults', 'success');
-            } else {
-                alert('Settings reset to defaults!');
-            }
+            presetNameInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    savePreset();
+                }
+            });
         }
+        
+        loadPresets();
     }
     
     function savePreset() {
-        const presetName = document.getElementById('presetName').value.trim();
+        const presetNameInput = document.getElementById('presetName');
+        if (!presetNameInput) return;
+        
+        const presetName = presetNameInput.value.trim();
         if (!presetName) {
-            if (typeof UI !== 'undefined') {
-                UI.showToast('Please enter a preset name', 'error');
-            } else {
-                alert('Please enter a name for your preset');
-            }
+            showError('Please enter a name for your preset');
             return;
         }
         
-        const preset = {
-            name: presetName,
-            ...collectConfig(),
-            timestamp: Date.now()
-        };
+        const preset = getCurrentConfiguration();
+        preset.name = presetName;
+        preset.timestamp = Date.now();
         
-        if (typeof ExamEngine !== 'undefined') {
-            ExamEngine.savePreset(preset);
+        // Save to localStorage
+        const presets = JSON.parse(localStorage.getItem('examPresets') || '[]');
+        
+        // Check if preset with same name exists
+        const existingIndex = presets.findIndex(p => p.name === presetName);
+        if (existingIndex !== -1) {
+            presets[existingIndex] = preset;
         } else {
-            // Fallback to localStorage
-            const presets = JSON.parse(localStorage.getItem('examPresets') || '[]');
             presets.push(preset);
-            localStorage.setItem('examPresets', JSON.stringify(presets));
         }
         
-        document.getElementById('presetName').value = '';
+        localStorage.setItem('examPresets', JSON.stringify(presets));
+        
+        // Clear input
+        presetNameInput.value = '';
+        
+        // Reload presets
         loadPresets();
         
-        if (typeof UI !== 'undefined') {
-            UI.showToast(`Preset "${presetName}" saved`, 'success');
-        } else {
-            alert(`Preset "${presetName}" saved successfully!`);
-        }
+        showSuccess(`Preset "${presetName}" saved successfully!`);
     }
     
     function loadPresets() {
-        let presets = [];
-        
-        if (typeof ExamEngine !== 'undefined') {
-            presets = ExamEngine.getPresets();
-        } else {
-            // Fallback to localStorage
-            presets = JSON.parse(localStorage.getItem('examPresets') || '[]');
-        }
-        
         const presetList = document.getElementById('presetList');
+        if (!presetList) return;
+        
+        const presets = JSON.parse(localStorage.getItem('examPresets') || '[]');
         
         if (presets.length === 0) {
-            presetList.innerHTML = '<div style="font-size: 0.85rem; color: #666; padding: 10px; text-align: center;">No saved presets yet</div>';
+            presetList.innerHTML = '<div class="no-presets">No saved presets yet</div>';
             return;
         }
+        
+        // Sort by timestamp (newest first)
+        presets.sort((a, b) => b.timestamp - a.timestamp);
         
         presetList.innerHTML = presets.map((preset, index) => `
             <div class="preset-item">
                 <div class="preset-info">
                     <div class="preset-name">${preset.name}</div>
                     <div class="preset-details">
-                        ${preset.questionCount} questions • ${preset.difficulty === '0' ? 'Easy' : preset.difficulty === '4' ? 'Expert' : 'Mixed'}
+                        <span class="detail">${preset.examMode || 'timed'}</span>
+                        <span class="detail">${preset.questionCount || 25} questions</span>
+                        <span class="detail">${getDifficultyLabel(preset.difficulty)}</span>
                     </div>
                 </div>
                 <div class="preset-actions">
-                    <button class="btn-preset-load" data-index="${index}">Load</button>
-                    <button class="btn-preset-delete" data-index="${index}">🗑️</button>
+                    <button class="btn-preset-load" data-index="${index}">
+                        <span class="btn-icon">↻</span>
+                        <span class="btn-text">Load</span>
+                    </button>
+                    <button class="btn-preset-delete" data-index="${index}">
+                        <span class="btn-icon">🗑️</span>
+                    </button>
                 </div>
             </div>
         `).join('');
@@ -622,189 +952,330 @@
         document.querySelectorAll('.btn-preset-delete').forEach(btn => {
             btn.addEventListener('click', function() {
                 const index = parseInt(this.dataset.index);
-                if (confirm('Delete this preset?')) {
-                    if (typeof ExamEngine !== 'undefined') {
-                        ExamEngine.deletePreset(index);
-                    } else {
-                        presets.splice(index, 1);
-                        localStorage.setItem('examPresets', JSON.stringify(presets));
-                    }
-                    loadPresets();
-                }
+                deletePreset(index, presets);
             });
         });
     }
     
+    function getDifficultyLabel(difficulty) {
+        const labels = ['Easy', 'Mostly Easy', 'Mixed', 'Mostly Hard', 'Expert'];
+        return labels[difficulty] || 'Mixed';
+    }
+    
     function loadPreset(preset) {
-        // Load basic settings
-        document.getElementById('examMode').value = preset.examMode || 'timed';
+        if (!preset) return;
         
-        const count = preset.questionCount || 25;
-        if ([10, 25, 50].includes(parseInt(count))) {
-            document.getElementById('questionCountSelect').value = count;
-            document.getElementById('customCount').style.display = 'none';
-            document.getElementById('questionCountSelect').style.flex = '1';
-        } else {
-            document.getElementById('questionCountSelect').value = 'custom';
-            document.getElementById('customCount').value = count;
-            document.getElementById('customCount').style.display = 'block';
-            document.getElementById('questionCountSelect').style.flex = '2';
+        // Load mode
+        const modeOption = document.querySelector(`.mode-option[data-mode="${preset.examMode}"]`);
+        if (modeOption) selectMode(modeOption);
+        
+        // Load question count
+        const count = parseInt(preset.questionCount);
+        if ([10, 25, 50].includes(count)) {
+            const countBtn = document.querySelector(`.count-btn[data-count="${count}"]`);
+            if (countBtn) countBtn.click();
+        } else if (count > 0) {
+            const customCount = document.getElementById('customCount');
+            if (customCount) {
+                customCount.value = count;
+                updateCustomCount();
+            }
         }
         
-        document.getElementById('difficultyLevel').value = preset.difficulty || 2;
-        updateDifficulty();
+        // Load difficulty
+        const difficultySlider = document.getElementById('difficultyLevel');
+        if (difficultySlider && preset.difficulty !== undefined) {
+            difficultySlider.value = preset.difficulty;
+            updateDifficultyDisplay();
+        }
         
-        document.getElementById('timerMode').value = preset.timerMode || 'adaptive';
-        document.getElementById('questionDistribution').value = preset.distribution || 'balanced';
+        // Load timer mode
+        if (preset.timerMode) {
+            const timerRadio = document.querySelector(`input[name="timer"][value="${preset.timerMode}"]`);
+            if (timerRadio) timerRadio.checked = true;
+        }
         
-        // Load advanced settings
-        document.getElementById('questionOrder').value = preset.questionOrder || 'random';
-        document.getElementById('passingScore').value = preset.passingScore || 70;
-        document.getElementById('breakInterval').value = preset.breakInterval || '0';
-        
-        const advancedIds = [
-            'fullscreen', 'distractionFree', 'showProgress', 'preventCopy',
-            'autoSave', 'pauseDetection', 'flagQuestions', 'showExplanations',
-            'colorWarnings', 'flashWarnings'
+        // Load checkboxes
+        const checkboxes = [
+            'fullscreen', 'distractionFree', 'autoAdvance', 'showProgress',
+            'preventCopy', 'autoSave', 'pauseDetection', 'timeValidation',
+            'flagQuestions', 'showExplanations', 'instantFeedback', 'reviewAll',
+            'colorWarnings', 'soundWarnings', 'flashWarnings'
         ];
         
-        advancedIds.forEach(id => {
-            const element = document.getElementById(id);
-            if (element && preset[id] !== undefined) {
-                element.checked = preset[id];
+        checkboxes.forEach(id => {
+            const checkbox = document.getElementById(id);
+            if (checkbox && preset[id] !== undefined) {
+                checkbox.checked = preset[id];
             }
         });
         
-        updateConfig();
-        
-        if (typeof UI !== 'undefined') {
-            UI.showToast(`Preset "${preset.name}" loaded`, 'success');
-        } else {
-            alert(`Preset "${preset.name}" loaded successfully!`);
+        showSuccess(`Preset "${preset.name}" loaded successfully!`);
+        calculateEstimatedTime();
+    }
+    
+    function deletePreset(index, presets) {
+        if (confirm('Are you sure you want to delete this preset?')) {
+            presets.splice(index, 1);
+            localStorage.setItem('examPresets', JSON.stringify(presets));
+            loadPresets();
+            showSuccess('Preset deleted successfully!');
         }
     }
     
-    function startExam() {
-        // Check subscription (subscription.js)
-        if (typeof Subscription !== 'undefined') {
-            if (!Subscription.checkActive()) {
-                if (typeof Router !== 'undefined') {
-                    Router.navigateTo('subscription.html');
+    function setupResetListener() {
+        const resetBtn = document.getElementById('resetBtn');
+        if (!resetBtn) return;
+        
+        resetBtn.addEventListener('click', function() {
+            if (confirm('Reset all settings to defaults?')) {
+                resetToDefaults();
+            }
+        });
+    }
+    
+    function resetToDefaults() {
+        // Reset mode to timed
+        const timedMode = document.querySelector('.mode-option[data-mode="timed"]');
+        if (timedMode) selectMode(timedMode);
+        
+        // Reset question count to 25
+        const standardCount = document.querySelector('.count-btn[data-count="25"]');
+        if (standardCount) standardCount.click();
+        
+        // Reset difficulty to mixed (level 2)
+        const difficultySlider = document.getElementById('difficultyLevel');
+        if (difficultySlider) {
+            difficultySlider.value = 2;
+            updateDifficultyDisplay();
+        }
+        
+        // Reset timer to adaptive
+        const adaptiveTimer = document.querySelector('input[name="timer"][value="adaptive"]');
+        if (adaptiveTimer) adaptiveTimer.checked = true;
+        
+        // Reset custom count
+        const customCount = document.getElementById('customCount');
+        if (customCount) customCount.value = '';
+        
+        // Reset checkboxes to defaults
+        const defaultCheckboxes = {
+            fullscreen: true,
+            distractionFree: true,
+            autoAdvance: false,
+            showProgress: true,
+            preventCopy: true,
+            autoSave: true,
+            pauseDetection: true,
+            timeValidation: true,
+            flagQuestions: true,
+            showExplanations: true,
+            instantFeedback: false,
+            reviewAll: true,
+            colorWarnings: true,
+            soundWarnings: false,
+            flashWarnings: true
+        };
+        
+        Object.keys(defaultCheckboxes).forEach(id => {
+            const checkbox = document.getElementById(id);
+            if (checkbox) {
+                checkbox.checked = defaultCheckboxes[id];
+            }
+        });
+        
+        calculateEstimatedTime();
+        showSuccess('Settings reset to defaults!');
+    }
+    
+    function setupAdditionalSettingsListeners() {
+        // Add listeners for additional settings if needed
+        const additionalSettings = document.querySelectorAll('.setting-checkbox');
+        additionalSettings.forEach(setting => {
+            setting.addEventListener('change', function() {
+                // Update validation or calculations if needed
+                updateValidationStatus();
+            });
+        });
+    }
+    
+    function setupStartExamListener() {
+        const startBtn = document.getElementById('startExamBtn');
+        if (!startBtn) return;
+        
+        startBtn.addEventListener('click', async function() {
+            await startExam();
+        });
+    }
+    
+    // ==================== EXAM START FUNCTION ====================
+    
+    async function startExam() {
+        try {
+            // 1. Validate configuration
+            if (!state.isConfigValid) {
+                showError('Please complete the exam configuration');
+                return;
+            }
+            
+            // 2. Check subscription
+            const hasSubscription = await checkSubscription();
+            if (!hasSubscription) {
+                showError('Valid subscription required. Please subscribe to continue.');
+                if (router && router.navigateTo) {
+                    router.navigateTo('subscription.html');
                 } else {
                     window.location.href = 'subscription.html';
                 }
                 return;
             }
-        } else {
-            // Fallback subscription check
-            const subscription = JSON.parse(localStorage.getItem('subscription') || '{}');
-            if (!subscription.isActive || !subscription.expiryDate || new Date(subscription.expiryDate) <= new Date()) {
-                alert('Your subscription has expired. Please subscribe to start exams.');
-                window.location.href = 'subscription.html';
+            
+            // 3. Get current configuration
+            const examConfig = getCurrentConfiguration();
+            
+            // 4. Validate against available questions
+            if (examConfig.questionCount > state.availableQuestions) {
+                showError(`Only ${state.availableQuestions} questions available. Please reduce the question count.`);
                 return;
             }
-        }
-        
-        // Validate topics selection
-        const selectedTopics = JSON.parse(localStorage.getItem('selectedTopics') || '[]');
-        if (selectedTopics.length === 0) {
-            if (typeof UI !== 'undefined') {
-                UI.showToast('Please select at least one topic', 'error');
+            
+            // 5. Save configuration
+            saveExamConfiguration(examConfig);
+            
+            // 6. Navigate to exam room
+            if (router && router.navigateTo) {
+                router.navigateTo('exam-room.html');
             } else {
-                alert('Please select at least one topic before starting the exam.');
+                window.location.href = 'exam-room.html';
             }
-            return;
-        }
-        
-        // Save configuration
-        const config = collectConfig();
-        
-        if (typeof ExamEngine !== 'undefined') {
-            ExamEngine.saveConfiguration(config);
             
-            // Generate exam using exam engine
-            const exam = ExamEngine.generateExam(config);
-            
-            // Save to database if available
-            if (typeof DB !== 'undefined') {
-                DB.saveExam(exam);
-            }
-        } else {
-            // Fallback to localStorage
-            localStorage.setItem('examConfiguration', JSON.stringify(config));
-            
-            // Also save advanced settings separately
-            const advancedSettings = {};
-            const advancedIds = [
-                'fullscreen', 'distractionFree', 'showProgress', 'preventCopy',
-                'autoSave', 'pauseDetection', 'flagQuestions', 'showExplanations',
-                'colorWarnings', 'flashWarnings', 'questionOrder', 'passingScore', 'breakInterval'
-            ];
-            
-            advancedIds.forEach(id => {
-                const element = document.getElementById(id);
-                if (element) {
-                    advancedSettings[id] = element.type === 'checkbox' ? element.checked : element.value;
-                }
-            });
-            localStorage.setItem('advancedSettings', JSON.stringify(advancedSettings));
-        }
-        
-        // Navigate to exam room
-        if (typeof Router !== 'undefined') {
-            Router.navigateTo('exam-room.html');
-        } else {
-            window.location.href = 'exam-room.html';
+        } catch (error) {
+            console.error("Failed to start exam:", error);
+            showError("Failed to start exam. Please try again.");
         }
     }
     
-    function loadFromLocalStorage() {
-        const examConfig = JSON.parse(localStorage.getItem('examConfig') || '{}');
-        
-        if (examConfig.examMode) {
-            document.getElementById('examMode').value = examConfig.examMode;
-        }
-        
-        if (examConfig.questionCount) {
-            const count = parseInt(examConfig.questionCount);
-            if ([10, 25, 50].includes(count)) {
-                document.getElementById('questionCountSelect').value = count;
-            } else {
-                document.getElementById('questionCountSelect').value = 'custom';
-                document.getElementById('customCount').value = count;
-                document.getElementById('customCount').style.display = 'block';
-                document.getElementById('questionCountSelect').style.flex = '2';
-            }
-        }
-        
-        if (examConfig.difficulty) {
-            const difficultyMap = { 'easy': 0, 'medium': 1, 'hard': 2, 'expert': 3, 'mixed': 2 };
-            const value = difficultyMap[examConfig.difficulty] || 2;
-            document.getElementById('difficultyLevel').value = value;
-            updateDifficulty();
-        }
-        
-        if (examConfig.timerMode) {
-            document.getElementById('timerMode').value = examConfig.timerMode;
-        }
-        
-        if (examConfig.distribution) {
-            document.getElementById('questionDistribution').value = examConfig.distribution;
-        }
-        
-        // Load advanced settings
-        const advancedSettings = JSON.parse(localStorage.getItem('advancedSettings') || '{}');
-        Object.keys(advancedSettings).forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                if (element.type === 'checkbox') {
-                    element.checked = advancedSettings[id];
-                } else {
-                    element.value = advancedSettings[id];
+    async function checkSubscription() {
+        try {
+            if (subscription && subscription.hasActiveSubscription) {
+                const user = app.getCurrentUser ? app.getCurrentUser() : null;
+                if (user && user.id) {
+                    return await subscription.hasActiveSubscription(user.id);
                 }
             }
-        });
+            
+            // Fallback to localStorage check
+            const subscriptionData = JSON.parse(localStorage.getItem('subscription') || '{}');
+            const expiryDate = subscriptionData.expiryDate;
+            
+            if (!expiryDate) return false;
+            
+            const now = new Date();
+            const expiry = new Date(expiryDate);
+            return expiry > now;
+            
+        } catch (error) {
+            console.error("Subscription check failed:", error);
+            return false;
+        }
     }
+    
+    function getCurrentConfiguration() {
+        return {
+            examId: 'exam_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+            examMode: document.querySelector('.mode-option.selected')?.dataset.mode || 'timed',
+            questionCount: getSelectedQuestionCount(),
+            difficulty: parseInt(document.getElementById('difficultyLevel')?.value || 2),
+            timerMode: document.querySelector('input[name="timer"]:checked')?.value || 'adaptive',
+            distribution: document.querySelector('input[name="distribution"]:checked')?.value || 'balanced',
+            questionOrder: document.getElementById('questionOrder')?.value || 'random',
+            passingScore: parseInt(document.getElementById('passingScore')?.value || 70),
+            breakInterval: document.getElementById('breakInterval')?.value || '0',
+            // Display settings
+            fullscreen: document.getElementById('fullscreen')?.checked || true,
+            distractionFree: document.getElementById('distractionFree')?.checked || true,
+            autoAdvance: document.getElementById('autoAdvance')?.checked || false,
+            showProgress: document.getElementById('showProgress')?.checked || true,
+            // Security settings
+            preventCopy: document.getElementById('preventCopy')?.checked || true,
+            autoSave: document.getElementById('autoSave')?.checked || true,
+            pauseDetection: document.getElementById('pauseDetection')?.checked || true,
+            timeValidation: document.getElementById('timeValidation')?.checked || true,
+            // Review settings
+            flagQuestions: document.getElementById('flagQuestions')?.checked || true,
+            showExplanations: document.getElementById('showExplanations')?.checked || true,
+            instantFeedback: document.getElementById('instantFeedback')?.checked || false,
+            reviewAll: document.getElementById('reviewAll')?.checked || true,
+            // Warning settings
+            colorWarnings: document.getElementById('colorWarnings')?.checked || true,
+            soundWarnings: document.getElementById('soundWarnings')?.checked || false,
+            flashWarnings: document.getElementById('flashWarnings')?.checked || true,
+            // Subjects and topics
+            subjects: state.selectedSubjects,
+            topics: state.selectedTopics,
+            availableQuestions: state.availableQuestions,
+            // Metadata
+            configTimestamp: Date.now()
+        };
+    }
+    
+    function getSelectedQuestionCount() {
+        const activeBtn = document.querySelector('.count-btn.active');
+        if (activeBtn) {
+            return parseInt(activeBtn.dataset.count);
+        }
+        
+        const customCount = document.getElementById('customCount');
+        if (customCount && customCount.value) {
+            return parseInt(customCount.value) || 25;
+        }
+        
+        return 25; // Default
+    }
+    
+    function saveExamConfiguration(config) {
+        try {
+            localStorage.setItem('examConfiguration', JSON.stringify(config));
+            console.log("Exam configuration saved:", config);
+        } catch (error) {
+            console.error("Failed to save exam configuration:", error);
+            throw error;
+        }
+    }
+    
+    // ==================== UTILITY FUNCTIONS ====================
+    
+    function showError(message) {
+        if (ui && ui.showError) {
+            ui.showError(message);
+        } else {
+            alert(message);
+        }
+    }
+    
+    function showWarning(message) {
+        if (ui && ui.showWarning) {
+            ui.showWarning(message);
+        } else {
+            console.warn(message);
+        }
+    }
+    
+    function showSuccess(message) {
+        if (ui && ui.showSuccess) {
+            ui.showSuccess(message);
+        } else {
+            alert(message);
+        }
+    }
+    
+    // ==================== START INITIALIZATION ====================
+    
+    // Initialize exam settings
+    await initializeExamSettings();
+    
+    console.log("Exam Settings: Script execution complete");
+});
 </script>
 </body>
 </html>
