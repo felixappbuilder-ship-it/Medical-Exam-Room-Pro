@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam Results – Medical Exam Room Pro</title>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/results.css" media="all">
+    
+    <script defer src="../scripts/utils.js"></script>
+    <script defer src="../scripts/ui.js"></script>
+    <script defer src="../scripts/router.js"></script>
+    <script defer src="../scripts/app.js"></script>
+    <script defer src="../scripts/analytics.js"></script>
+    <script defer src="../scripts/db.js"></script>
+    <script defer src="../scripts/sync.js"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+        }
+    </script>
+    
+    <script defer>
+        (async function initResults() {
+            await app.initializeApp();
+            ui.applyTheme();
+            
+            // Auth check (no subscription required)
+            if (!app.checkAuth()) {
+                router.navigateTo('login.html');
+                return;
+            }
+            
+            // Get exam ID from URL (passed from exam-room)
+            const examId = router.getQueryParam('examId');
+            if (!examId) {
+                ui.showToast('No exam specified', 'error');
+                router.navigateTo('subjects.html');
+                return;
+            }
+            
+            // Load exam results from IndexedDB (real data)
+            let results = await db.getExamResult(examId);
+            if (!results) {
+                // Try to fetch from backend if online
+                if (navigator.onLine) {
+                    results = await sync.fetchExamResult(examId);
+                    if (results) await db.saveExamResult(results);
+                }
+            }
+            if (!results) {
+                ui.showToast('Exam results not found', 'error');
+                router.navigateTo('subjects.html');
+                return;
+            }
+            
+            // Display summary
+            displaySummary(results);
+            
+            // Render question-by-question review
+            renderReviewList(results.questions);
+            
+            // Render topic performance chart
+            renderTopicPerformance(results.topicPerformance);
+            
+            // Sync results to backend (background)
+            if (navigator.onLine) {
+                sync.syncExamResults().catch(() => {});
+            }
+            
+            // Weak areas recommendation
+            displayRecommendations(results.weakAreas);
+        })();
+        
+        function displaySummary(results) {
+            document.getElementById('score-percentage').textContent = `${Math.round(results.scorePercentage)}%`;
+            document.getElementById('correct-count').textContent = `${results.correctAnswers}/${results.totalQuestions}`;
+            
+            const timeAlloc = results.timeAllocated || (results.totalQuestions * 30); // fallback
+            const timeSpent = results.timeSpent;
+            const timePercent = Math.round((timeSpent / timeAlloc) * 100);
+            document.getElementById('time-stats').textContent = `${utils.formatTime(timeSpent)} / ${utils.formatTime(timeAlloc)} (${timePercent}%)`;
+            
+            let grade = 'F';
+            if (results.scorePercentage >= 80) grade = 'A';
+            else if (results.scorePercentage >= 70) grade = 'B';
+            else if (results.scorePercentage >= 60) grade = 'C';
+            else if (results.scorePercentage >= 50) grade = 'D';
+            document.getElementById('grade').textContent = grade;
+            
+            document.getElementById('exam-date').textContent = utils.formatDate(results.date);
+            document.getElementById('exam-subject').textContent = results.subject || 'General';
+            document.getElementById('exam-mode').textContent = results.mode || 'Timed';
+        }
+        
+        function renderReviewList(questions) {
+            const container = document.getElementById('review-list');
+            container.innerHTML = questions.map((q, idx) => {
+                const isCorrect = q.correct;
+                const statusClass = isCorrect ? 'correct' : 'incorrect';
+                const statusIcon = isCorrect ? '✅' : '❌';
+                return `
+                    <div class="review-item ${statusClass}">
+                        <div class="review-header">
+                            <span class="q-num">Q${idx + 1}</span>
+                            <span class="status">${statusIcon}</span>
+                            <span class="topic-tag">${q.topic}</span>
+                            <span class="time-spent">⏱️ ${q.timeSpent}s</span>
+                        </div>
+                        <div class="review-question">${q.question}</div>
+                        <div class="review-answers">
+                            <div><strong>Your answer:</strong> ${q.userAnswer || '—'}</div>
+                            <div><strong>Correct answer:</strong> ${q.correctAnswer}</div>
+                        </div>
+                        <div class="review-explanation">
+                            <strong>Explanation:</strong> ${q.explanation}
+                        </div>
+                        ${q.flagged ? '<span class="flagged-badge">🏴 Flagged</span>' : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function renderTopicPerformance(topicData) {
+            const container = document.getElementById('topic-performance');
+            if (!topicData || topicData.length === 0) {
+                container.innerHTML = '<p class="no-data">No topic data available.</p>';
+                return;
+            }
+            
+            // Sort by percentage ascending (worst first)
+            topicData.sort((a, b) => a.percentage - b.percentage);
+            
+            let html = '<h3>Topic Performance</h3><ul class="topic-list">';
+            topicData.forEach(t => {
+                const color = t.percentage >= 70 ? 'green' : (t.percentage >= 50 ? 'orange' : 'red');
+                html += `
+                    <li>
+                        <span class="topic-name">${t.topic}</span>
+                        <span class="topic-score" style="color: ${color};">${Math.round(t.percentage)}%</span>
+                        <span class="topic-count">${t.correct}/${t.questions}</span>
+                        <div class="topic-bar">
+                            <div class="bar-fill" style="width: ${t.percentage}%; background: ${color};"></div>
+                        </div>
+                    </li>
+                `;
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        }
+        
+        function displayRecommendations(weakAreas) {
+            const container = document.getElementById('recommendations');
+            if (!weakAreas || weakAreas.length === 0) {
+                container.innerHTML = '<p class="no-data">Great job! No weak areas detected.</p>';
+                return;
+            }
+            let html = '<h3>📚 Recommended Focus</h3><ul>';
+            weakAreas.forEach(area => {
+                html += `<li>🔍 Focus on <strong>${area}</strong> – review related topics.</li>`;
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        }
+        
+        // Action buttons
+        window.reviewIncorrect = function() {
+            // Create a quick exam config for incorrect questions only
+            const examId = router.getQueryParam('examId');
+            db.getExamResult(examId).then(results => {
+                const incorrectIds = results.questions.filter(q => !q.correct).map(q => q.id);
+                if (incorrectIds.length === 0) {
+                    ui.showToast('No incorrect questions!', 'success');
+                    return;
+                }
+                app.setExamConfig({
+                    subject: results.subject,
+                    specificQuestions: incorrectIds,
+                    totalQuestions: incorrectIds.length,
+                    mode: 'practice'
+                });
+                router.navigateTo('exam-settings.html');
+            });
+        };
+        
+        window.takeSimilarExam = function() {
+            const examId = router.getQueryParam('examId');
+            db.getExamResult(examId).then(results => {
+                app.setExamConfig({
+                    subject: results.subject,
+                    topics: results.topics, // reuse topics
+                    totalQuestions: results.totalQuestions,
+                    mode: results.mode
+                });
+                router.navigateTo('exam-settings.html');
+            });
+        };
+        
+        window.exportResults = function() {
+            const examId = router.getQueryParam('examId');
+            db.getExamResult(examId).then(results => {
+                const dataStr = JSON.stringify(results, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `exam-results-${examId}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        };
+    </script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
+        </header>
+        
+        <main>
+            <div class="results-header">
+                <h1>Exam Results</h1>
+                <button onclick="router.navigateTo('performance.html')" class="btn-text">View Full Analytics →</button>
+            </div>
+            
+            <!-- Score Summary Card -->
+            <div class="summary-card">
+                <div class="score-circle">
+                    <span id="score-percentage">0%</span>
+                </div>
+                <div class="summary-details">
+                    <p><strong>Correct:</strong> <span id="correct-count">0/0</span></p>
+                    <p><strong>Time:</strong> <span id="time-stats">0s / 0s</span></p>
+                    <p><strong>Grade:</strong> <span id="grade">-</span></p>
+                    <p><strong>Date:</strong> <span id="exam-date"></span></p>
+                    <p><strong>Subject:</strong> <span id="exam-subject"></span></p>
+                    <p><strong>Mode:</strong> <span id="exam-mode"></span></p>
+                </div>
+            </div>
+            
+            <!-- Topic Performance -->
+            <div id="topic-performance" class="topic-section"></div>
+            
+            <!-- Recommendations -->
+            <div id="recommendations" class="recommendations"></div>
+            
+            <!-- Question Review -->
+            <div class="review-section">
+                <h2>Question Review</h2>
+                <div id="review-list" class="review-list"></div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="action-bar">
+                <button onclick="reviewIncorrect()" class="btn-primary">📘 Review Incorrect</button>
+                <button onclick="takeSimilarExam()" class="btn-secondary">↻ Take Similar Exam</button>
+                <button onclick="router.navigateTo('subjects.html')" class="btn-secondary">← Back to Subjects</button>
+                <button onclick="exportResults()" class="btn-outline">📤 Export</button>
+            </div>
+        </main>
+    </div>
+    
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>

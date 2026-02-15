@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configure Exam – Medical Exam Room Pro</title>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/exam-settings.css" media="all">
+    
+    <script defer src="../scripts/utils.js"></script>
+    <script defer src="../scripts/ui.js"></script>
+    <script defer src="../scripts/router.js"></script>
+    <script defer src="../scripts/app.js"></script>
+    <script defer src="../scripts/exam-engine.js"></script>
+    <script defer src="../scripts/questions.js"></script>
+    <script defer src="../scripts/analytics.js"></script>
+    <script defer src="../scripts/subscription.js"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+        }
+    </script>
+    
+    <script defer>
+        (async function initExamSettings() {
+            await app.initializeApp();
+            ui.applyTheme();
+            
+            // Authentication & subscription check (exam-room is restricted, but settings are free)
+            if (!app.checkAuth()) {
+                router.navigateTo('welcome.html');
+                return;
+            }
+            
+            // Load exam config from app state (set in subject-specific.html)
+            let config = app.getExamConfig() || {};
+            
+            // If no config, maybe from quick exam or resume – handle gracefully
+            if (!config.subject) {
+                ui.showToast('No subject selected', 'error');
+                router.navigateTo('subjects.html');
+                return;
+            }
+            
+            // Display subject & topic summary
+            document.getElementById('config-subject').textContent = config.subject.charAt(0).toUpperCase() + config.subject.slice(1);
+            
+            const topics = config.topics || [];
+            document.getElementById('config-topics').textContent = topics.length ? topics.map(t => t.name).join(', ') : 'All topics';
+            
+            // Available questions in selected topics
+            let available = config.totalQuestions;
+            if (!available && topics.length) {
+                available = topics.reduce((sum, t) => sum + (t.questions || 0), 0);
+            }
+            document.getElementById('available-questions').textContent = `${available} questions available`;
+            
+            // Pre-fill settings from config or defaults
+            if (config.mode) document.getElementById('exam-mode').value = config.mode;
+            if (config.questionCount) document.getElementById('question-count').value = config.questionCount;
+            
+            // Populate question count dropdown based on available
+            populateQuestionCounts(available);
+            
+            // Set up event listeners for dynamic updates
+            document.getElementById('exam-mode').addEventListener('change', updateSettingsPreview);
+            document.getElementById('question-count').addEventListener('change', updateSettingsPreview);
+            document.getElementById('difficulty').addEventListener('change', updateSettingsPreview);
+            document.getElementById('timing').addEventListener('change', updateSettingsPreview);
+            
+            // Initial preview update
+            updateSettingsPreview();
+        })();
+        
+        function populateQuestionCounts(available) {
+            const select = document.getElementById('question-count');
+            select.innerHTML = '';
+            
+            const presets = [
+                { value: 10, label: 'Quick Exam (10)' },
+                { value: 25, label: 'Standard (25)' },
+                { value: 50, label: 'Full Exam (50)' },
+                { value: 'custom', label: 'Custom...' }
+            ];
+            
+            presets.forEach(p => {
+                if (p.value !== 'custom' && p.value > available) return;
+                const option = document.createElement('option');
+                option.value = p.value;
+                option.textContent = p.label;
+                select.appendChild(option);
+            });
+            
+            // Add custom option
+            const customOption = document.createElement('option');
+            customOption.value = 'custom';
+            customOption.textContent = 'Custom...';
+            select.appendChild(customOption);
+        }
+        
+        function updateSettingsPreview() {
+            const mode = document.getElementById('exam-mode').value;
+            const qCount = document.getElementById('question-count').value;
+            const difficulty = document.getElementById('difficulty').value;
+            const timing = document.getElementById('timing').value;
+            
+            // Show custom input if custom selected
+            document.getElementById('custom-count-container').style.display = qCount === 'custom' ? 'block' : 'none';
+            
+            // Update preview text
+            let preview = `${mode} exam • ${qCount === 'custom' ? 'Custom' : qCount} questions • ${difficulty} difficulty • ${timing} timing`;
+            document.getElementById('settings-preview').textContent = preview;
+        }
+        
+        function startExam() {
+            // Collect all settings
+            const config = app.getExamConfig() || {};
+            
+            config.mode = document.getElementById('exam-mode').value;
+            
+            let qCount = document.getElementById('question-count').value;
+            if (qCount === 'custom') {
+                qCount = parseInt(document.getElementById('custom-count').value, 10);
+                if (isNaN(qCount) || qCount < 1 || qCount > 100) {
+                    ui.showToast('Question count must be 1–100', 'error');
+                    return;
+                }
+            } else {
+                qCount = parseInt(qCount, 10);
+            }
+            config.questionCount = qCount;
+            
+            config.difficulty = document.getElementById('difficulty').value;
+            config.timingMode = document.getElementById('timing').value;
+            
+            // Advanced settings from dropdown menu
+            config.preventCopyPaste = document.getElementById('prevent-copy').checked;
+            config.autoSave = document.getElementById('auto-save').checked;
+            config.detectTabSwitch = document.getElementById('detect-tab').checked;
+            config.breakAfter = document.getElementById('break-enabled').checked ? 25 : 0;
+            
+            // Validate that enough questions are available
+            const available = parseInt(document.getElementById('available-questions').textContent);
+            if (config.questionCount > available) {
+                ui.showToast(`Only ${available} questions available. Reduce count or select more topics.`, 'warning');
+                return;
+            }
+            
+            // Save config and navigate to exam room
+            app.setExamConfig(config);
+            router.navigateTo('exam-room.html');
+        }
+        
+        function savePreset() {
+            const presetName = prompt('Enter a name for this preset:');
+            if (!presetName) return;
+            
+            const config = collectConfig();
+            const presets = utils.getLocalStorage('examPresets', []);
+            presets.push({ name: presetName, config });
+            utils.setLocalStorage('examPresets', presets);
+            ui.showToast('Preset saved!', 'success');
+        }
+        
+        function collectConfig() {
+            return {
+                mode: document.getElementById('exam-mode').value,
+                questionCount: document.getElementById('question-count').value === 'custom' 
+                    ? parseInt(document.getElementById('custom-count').value, 10)
+                    : parseInt(document.getElementById('question-count').value, 10),
+                difficulty: document.getElementById('difficulty').value,
+                timingMode: document.getElementById('timing').value,
+                preventCopyPaste: document.getElementById('prevent-copy').checked,
+                autoSave: document.getElementById('auto-save').checked,
+                detectTabSwitch: document.getElementById('detect-tab').checked,
+                breakAfter: document.getElementById('break-enabled').checked ? 25 : 0
+            };
+        }
+        
+        window.startExam = startExam;
+        window.savePreset = savePreset;
+        window.updateSettingsPreview = updateSettingsPreview;
+    </script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
+        </header>
+        
+        <div class="top-nav">
+            <button onclick="router.navigateTo('subject-specific.html?subject=' + app.getExamConfig()?.subject)" class="btn-text">← Back to Topics</button>
+            <div class="advanced-menu">
+                <span class="menu-icon">⋮</span>
+                <div class="dropdown-content">
+                    <strong>Advanced Settings</strong>
+                    <hr>
+                    <label><input type="checkbox" id="break-enabled" checked> Break after 25 min (2 min)</label>
+                    <label><input type="checkbox" id="prevent-copy" checked> Prevent copy-paste</label>
+                    <label><input type="checkbox" id="auto-save" checked> Auto-save (30s)</label>
+                    <label><input type="checkbox" id="detect-tab" checked> Detect tab switching</label>
+                </div>
+            </div>
+        </div>
+        
+        <main class="settings-container">
+            <h2>Configure your exam</h2>
+            
+            <div class="info-box">
+                <strong>Subject:</strong> <span id="config-subject"></span> &nbsp;|&nbsp;
+                <strong>Topics:</strong> <span id="config-topics"></span><br>
+                <strong>Available Questions:</strong> <span id="available-questions"></span>
+            </div>
+            
+            <div class="form-group">
+                <label for="exam-mode">Exam Mode</label>
+                <select id="exam-mode">
+                    <option value="practice">Practice Mode (untimed, explanations)</option>
+                    <option value="timed" selected>Timed Exam</option>
+                    <option value="quick">Quick Exam (10q, 5‑8 min)</option>
+                    <option value="standard">Standard Exam (25q, 12‑19 min)</option>
+                    <option value="full">Full Exam (50q, 25‑38 min)</option>
+                    <option value="custom">Custom</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="question-count">Number of Questions</label>
+                <select id="question-count">
+                    <!-- populated by JS -->
+                </select>
+                <div id="custom-count-container" style="display:none; margin-top: 10px;">
+                    <input type="number" id="custom-count" min="1" max="100" placeholder="Enter number (1‑100)">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="difficulty">Difficulty Level</label>
+                <select id="difficulty">
+                    <option value="mixed">Mixed Difficulty</option>
+                    <option value="easy">Easy Only</option>
+                    <option value="medium">Medium Only</option>
+                    <option value="hard">Hard Only</option>
+                    <option value="expert">Expert Only</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="timing">Timer Settings</label>
+                <select id="timing">
+                    <option value="adaptive" selected>Adaptive (21‑54s based on difficulty)</option>
+                    <option value="relaxed">Relaxed (30s fixed)</option>
+                    <option value="strict">Strict (10s fixed)</option>
+                    <option value="none">No Timer</option>
+                </select>
+            </div>
+            
+            <div class="preview-section">
+                <strong>Preview:</strong> <span id="settings-preview"></span>
+            </div>
+            
+            <div class="button-group">
+                <button onclick="savePreset()" class="btn-outline">💾 Save Preset</button>
+                <button onclick="router.navigateTo('subject-specific.html?subject=' + app.getExamConfig()?.subject)" class="btn-outline" style="color:red;">Cancel</button>
+                <button onclick="location.reload()" class="btn-secondary">Reset to Default</button>
+                <button onclick="startExam()" class="btn-primary">Start Exam →</button>
+            </div>
+            
+            <p class="footer-note">All settings configured here are applied to your exam. You can save a preset for future use.</p>
+        </main>
+    </div>
+    
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>

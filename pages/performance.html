@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Performance Analytics – Medical Exam Room Pro</title>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/performance.css" media="all">
+    
+    <!-- Chart library (lightweight) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+    <script type="module" src="../scripts/app.js"></script>
+    <script type="module" src="../scripts/auth.js"></script>
+    <script type="module" src="../scripts/analytics.js"></script>
+    <script type="module" src="../scripts/db.js"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+        }
+    </script>
+    
+    <script type="module">
+    // Import dependencies
+    import * as app from '../scripts/app.js';
+    import * as auth from '../scripts/auth.js';
+    import * as ui from '../scripts/ui.js';
+    import * as router from '../scripts/router.js';
+    import * as analytics from '../scripts/analytics.js';
+    import * as db from '../scripts/db.js';
+    import * as utils from '../scripts/utils.js';
+
+    // Global chart instance
+    let scoreChart = null;
+
+    // Initialize page
+    (async function initPerformance() {
+        ui.applyTheme();
+
+        // Check authentication
+        if (!app.checkAuth()) {
+            router.navigateTo('login.html');
+            return;
+        }
+
+        // Show loading
+        ui.showLoading('Loading analytics...');
+
+        try {
+            // Get user info (for greeting maybe)
+            const user = app.getUser();
+            if (user) {
+                document.getElementById('user-greeting').textContent = `Hello, ${user.name.split(' ')[0]}`;
+            }
+
+            // Fetch all exam results
+            const allResults = await db.getAllExamResults();
+
+            // Calculate analytics
+            const analyticsData = await analytics.calculateAllAnalytics(allResults);
+
+            // Render dashboard
+            renderSummary(analyticsData.summary);
+            renderSubjectMastery(analyticsData.subjectAnalysis);
+            renderTrendChart(analyticsData.trends);
+            renderStudyPatterns(analyticsData.studyPatterns);
+            renderWeakAreas(analyticsData.weakAreas);
+            renderRecommendations(analyticsData.recommendations);
+
+            // Update streak
+            document.getElementById('streak').textContent = analyticsData.studyPatterns?.streak || 0;
+
+        } catch (error) {
+            console.error('Failed to load analytics', error);
+            ui.showToast('Failed to load analytics', 'error');
+        } finally {
+            ui.hideLoading();
+        }
+    })();
+
+    function renderSummary(summary) {
+        if (!summary) return;
+        document.getElementById('total-exams').textContent = summary.totalExams || 0;
+        document.getElementById('total-questions').textContent = summary.totalQuestions || 0;
+        document.getElementById('avg-score').textContent = summary.averageScore ? `${summary.averageScore}%` : '—';
+        document.getElementById('total-time').textContent = summary.totalStudyTime ? `${summary.totalStudyTime}h` : '—';
+        document.getElementById('best-score').textContent = summary.bestScore ? `${summary.bestScore}%` : '—';
+    }
+
+    function renderSubjectMastery(subjectData) {
+        const container = document.getElementById('subject-mastery');
+        if (!container) return;
+        if (!subjectData || subjectData.length === 0) {
+            container.innerHTML = '<p class="no-data">No subject data yet. Take some exams!</p>';
+            return;
+        }
+
+        // Sort by percentage descending
+        subjectData.sort((a, b) => b.percentage - a.percentage);
+
+        let html = '<h3>Subject Mastery</h3><div class="subject-grid">';
+        subjectData.forEach(s => {
+            const masteryClass = s.mastery || 'beginner';
+            html += `
+                <div class="subject-card mastery-${masteryClass}">
+                    <div class="subject-name">${s.subject}</div>
+                    <div class="subject-score">${s.percentage}%</div>
+                    <div class="subject-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${s.percentage}%;"></div>
+                        </div>
+                    </div>
+                    <div class="subject-stats">${s.correct}/${s.questions} · ⏱️ ${s.averageTime}s</div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function renderTrendChart(trends) {
+        const canvas = document.getElementById('score-trend-chart');
+        if (!canvas) return;
+        if (!trends || trends.length < 2) {
+            document.getElementById('trend-chart-container').innerHTML = '<p class="no-data">Not enough data to show trend.</p>';
+            return;
+        }
+
+        const ctx = canvas.getContext('2d');
+        const labels = trends.map(t => utils.formatDate(t.date, 'short'));
+        const scores = trends.map(t => t.score);
+        const times = trends.map(t => t.time);
+
+        // Destroy previous chart if exists
+        if (scoreChart) scoreChart.destroy();
+
+        scoreChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Score %',
+                        data: scores,
+                        borderColor: '#2563eb',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        tension: 0.2,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Study Time (min)',
+                        data: times,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        tension: 0.2,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: { display: true, text: 'Score %' }
+                    },
+                    y1: {
+                        beginAtZero: true,
+                        position: 'right',
+                        title: { display: true, text: 'Time (min)' },
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderStudyPatterns(patterns) {
+        if (!patterns) return;
+        document.getElementById('best-day').textContent = patterns.bestDay || '—';
+        document.getElementById('best-time').textContent = patterns.bestHour ? `${patterns.bestHour}:00` : '—';
+        document.getElementById('avg-session').textContent = patterns.averageSessionTime ? `${patterns.averageSessionTime} min` : '—';
+        document.getElementById('consistency').textContent = patterns.consistency ? `${patterns.consistency}%` : '—';
+    }
+
+    function renderWeakAreas(weakAreas) {
+        const container = document.getElementById('weak-areas-list');
+        if (!container) return;
+        if (!weakAreas || weakAreas.length === 0) {
+            container.innerHTML = '<p class="no-data">No weak areas identified. Keep up the great work!</p>';
+            return;
+        }
+
+        let html = '<ul>';
+        weakAreas.slice(0, 5).forEach(area => {
+            html += `<li><span class="topic">${area.topic}</span> <span class="score">${Math.round(area.score)}%</span> – ${area.priority} priority</li>`;
+        });
+        html += '</ul>';
+        container.innerHTML = html;
+    }
+
+    function renderRecommendations(recs) {
+        const container = document.getElementById('recommendations-list');
+        if (!container) return;
+        if (!recs || recs.length === 0) {
+            container.innerHTML = '<p class="no-data">No recommendations at this time.</p>';
+            return;
+        }
+
+        let html = '<ul>';
+        recs.slice(0, 4).forEach(r => {
+            html += `<li><strong>${r.type.replace('_', ' ')}:</strong> ${r.action || r.message}</li>`;
+        });
+        html += '</ul>';
+        container.innerHTML = html;
+    }
+
+    // Expose studyWeakArea function for onclick
+    window.studyWeakArea = function(topic) {
+        // Expecting topic to be an object with subject and topicId
+        app.setExamConfig({
+            subject: topic.subject,
+            topics: [{ id: topic.topicId, name: topic.topic }],
+            totalQuestions: 10,
+            mode: 'practice',
+            selectionMethod: 'weak_areas'
+        });
+        router.navigateTo('exam-settings.html');
+    };
+</script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <div class="header-right">
+                <span class="streak-badge">🔥 <span id="streak">0</span> day streak</span>
+                <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
+                <button onclick="router.navigateTo('subjects.html')" class="btn-text">Subjects</button>
+            </div>
+        </header>
+        
+        <main>
+            <h1>Performance Analytics</h1>
+            
+            <!-- Summary Cards -->
+            <div class="summary-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Exams Taken</div>
+                    <div class="stat-value" id="total-exams">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Questions</div>
+                    <div class="stat-value" id="total-questions">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg Score</div>
+                    <div class="stat-value" id="avg-score">0%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Study Time</div>
+                    <div class="stat-value" id="total-time">0h</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Best Score</div>
+                    <div class="stat-value" id="best-score">0%</div>
+                </div>
+            </div>
+            
+            <!-- Score Trend Chart -->
+            <div class="chart-container">
+                <h2>Score & Study Time Trend</h2>
+                <div id="trend-chart-container" style="height: 300px;">
+                    <canvas id="score-trend-chart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Subject Mastery -->
+            <div id="subject-mastery" class="subject-mastery"></div>
+            
+            <!-- Two‑column layout for patterns & weak areas -->
+            <div class="two-column">
+                <div class="card">
+                    <h2>📊 Study Habits</h2>
+                    <div class="stats-list">
+                        <p><strong>Best day:</strong> <span id="best-day"></span></p>
+                        <p><strong>Best time:</strong> <span id="best-time"></span></p>
+                        <p><strong>Avg session:</strong> <span id="avg-session"></span></p>
+                        <p><strong>Consistency:</strong> <span id="consistency"></span></p>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>⚠️ Weak Areas</h2>
+                    <div id="weak-areas-list"></div>
+                    <button onclick="router.navigateTo('subject-specific.html?focus=weak')" class="btn-small">Study Weak Areas</button>
+                </div>
+            </div>
+            
+            <!-- Recommendations -->
+            <div class="card recommendations-card">
+                <h2>🎯 Personalized Recommendations</h2>
+                <div id="recommendations-list"></div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button onclick="router.navigateTo('subjects.html')" class="btn-primary">📚 Back to Subjects</button>
+                <button onclick="router.navigateTo('profile.html')" class="btn-secondary">👤 Profile</button>
+            </div>
+        </main>
+    </div>
+    
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>

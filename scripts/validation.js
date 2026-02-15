@@ -1,804 +1,392 @@
-// validation.js - Form validation
-class ValidationManager {
-    constructor() {
-        this.rules = {};
-        this.messages = {};
+// frontend-user/scripts/validation.js
+
+/**
+ * Form Validation Module
+ * Handles all input validation, sanitization, and real-time validation.
+ * Supports Kenyan phone numbers, email, password strength, and custom rules.
+ */
+
+import * as utils from './utils.js';
+import * as ui from './ui.js';
+
+// ==================== EMAIL VALIDATION ====================
+
+/**
+ * Validate email format
+ * @param {string} email
+ * @returns {boolean}
+ */
+export function validateEmail(email) {
+    if (!email || typeof email !== 'string') return false;
+    // RFC 5322 compliant regex (simplified)
+    const re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+    return re.test(email.trim().toLowerCase());
+}
+
+// ==================== KENYAN PHONE VALIDATION ====================
+
+/**
+ * Validate Kenyan phone number
+ * Accepts: 0712345678, 0112345678, 254712345678, 254112345678, +254712345678
+ * @param {string} phone
+ * @returns {boolean}
+ */
+export function validatePhone(phone) {
+    if (!phone || typeof phone !== 'string') return false;
+    
+    // Remove all non-digits
+    const digits = phone.replace(/\D/g, '');
+    
+    // Check valid Kenyan formats
+    // Safaricom, Airtel, Telkom prefixes: 07, 01, 2547, 2541
+    return (
+        (digits.length === 9 && digits.startsWith('7')) ||      // 712345678
+        (digits.length === 10 && digits.startsWith('07')) ||    // 0712345678
+        (digits.length === 10 && digits.startsWith('01')) ||    // 0112345678
+        (digits.length === 12 && digits.startsWith('2547')) ||  // 254712345678
+        (digits.length === 12 && digits.startsWith('2541'))     // 254112345678
+    );
+}
+
+/**
+ * Format Kenyan phone number to 254XXXXXXXXX
+ * @param {string} phone
+ * @returns {string|null} formatted number or null if invalid
+ */
+export function formatKenyanPhone(phone) {
+    if (!phone) return null;
+    
+    const digits = phone.replace(/\D/g, '');
+    
+    // 0712345678 -> 254712345678
+    if (digits.length === 10 && digits.startsWith('07')) {
+        return '254' + digits.substring(1);
+    }
+    // 0112345678 -> 254112345678
+    if (digits.length === 10 && digits.startsWith('01')) {
+        return '254' + digits.substring(1);
+    }
+    // 712345678 -> 254712345678
+    if (digits.length === 9 && digits.startsWith('7')) {
+        return '254' + digits;
+    }
+    // 112345678 -> 254112345678
+    if (digits.length === 9 && digits.startsWith('1')) {
+        return '254' + digits;
+    }
+    // Already 2547... or 2541...
+    if (digits.length === 12 && (digits.startsWith('2547') || digits.startsWith('2541'))) {
+        return digits;
+    }
+    
+    return null;
+}
+
+/**
+ * Validate phone specifically for M-Pesa (must be 2547 or 2541, 12 digits)
+ * @param {string} phone
+ * @returns {boolean}
+ */
+export function validateMPesaNumber(phone) {
+    const formatted = formatKenyanPhone(phone);
+    return formatted !== null && (formatted.startsWith('2547') || formatted.startsWith('2541'));
+}
+
+// ==================== PASSWORD VALIDATION ====================
+
+/**
+ * Check password strength
+ * @param {string} password
+ * @returns {Object} { isValid: boolean, score: number (0-4), errors: string[] }
+ */
+export function validatePassword(password) {
+    const errors = [];
+    
+    if (!password || password.length < 8) {
+        errors.push('Password must be at least 8 characters');
+    }
+    if (!/[A-Z]/.test(password)) {
+        errors.push('Must contain at least one uppercase letter');
+    }
+    if (!/[a-z]/.test(password)) {
+        errors.push('Must contain at least one lowercase letter');
+    }
+    if (!/[0-9]/.test(password)) {
+        errors.push('Must contain at least one number');
+    }
+    
+    // Optional: special characters
+    // if (!/[!@#$%^&*]/.test(password)) {
+    //     errors.push('Must contain at least one special character');
+    // }
+    
+    return {
+        isValid: errors.length === 0,
+        score: 4 - errors.length, // 0-4 scale
+        errors
+    };
+}
+
+/**
+ * Calculate password strength score and return UI-friendly object
+ * @param {string} password
+ * @returns {Object} { score: number, feedback: string }
+ */
+export function checkPasswordStrength(password) {
+    const result = validatePassword(password);
+    let feedback = '';
+    
+    if (result.score === 0) feedback = 'Very weak';
+    else if (result.score === 1) feedback = 'Weak';
+    else if (result.score === 2) feedback = 'Medium';
+    else if (result.score === 3) feedback = 'Strong';
+    else if (result.score === 4) feedback = 'Very strong';
+    
+    return {
+        score: result.score,
+        feedback,
+        errors: result.errors
+    };
+}
+
+// ==================== NAME VALIDATION ====================
+
+/**
+ * Validate person's name
+ * @param {string} name
+ * @param {number} minLength
+ * @returns {boolean}
+ */
+export function validateName(name, minLength = 2) {
+    if (!name || typeof name !== 'string') return false;
+    const trimmed = name.trim();
+    return trimmed.length >= minLength && /^[A-Za-z\s\-']+$/.test(trimmed);
+}
+
+// ==================== AMOUNT VALIDATION ====================
+
+/**
+ * Validate currency amount (KES)
+ * @param {number|string} amount
+ * @param {number} min - minimum allowed
+ * @returns {boolean}
+ */
+export function validateAmount(amount, min = 0) {
+    const num = parseFloat(amount);
+    return !isNaN(num) && num >= min && num <= 150000; // M-Pesa max is 150,000
+}
+
+/**
+ * Validate KES amount (for payments)
+ * @param {number|string} amount
+ * @returns {boolean}
+ */
+export function validateKESAmount(amount) {
+    return validateAmount(amount, 10); // Minimum KES 10
+}
+
+// ==================== FORM VALIDATION ====================
+
+/**
+ * Validate an entire form against a ruleset
+ * @param {Object} formData - { fieldName: value }
+ * @param {Object} rules - { fieldName: { required, email, phone, min, max, pattern, equalTo } }
+ * @returns {Object} { valid: boolean, errors: { fieldName: string[] } }
+ */
+export function validateForm(formData, rules) {
+    const errors = {};
+    let isValid = true;
+    
+    for (const [field, value] of Object.entries(formData)) {
+        const fieldRules = rules[field];
+        if (!fieldRules) continue;
         
-        this.init();
-    }
-
-    // Initialize validation manager
-    init() {
-        this.setupDefaultRules();
-        this.setupDefaultMessages();
+        const fieldErrors = [];
         
-        console.log('Validation manager initialized');
-    }
-
-    // Set up default validation rules
-    setupDefaultRules() {
-        this.rules = {
-            // Email validation
-            email: (value) => {
-                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                return emailRegex.test(value);
-            },
-            
-            // Kenyan phone number validation
-            phone: (value) => {
-                const digits = value.replace(/\D/g, '');
-                return (
-                    (digits.length === 9 && digits.startsWith('7')) ||
-                    (digits.length === 10 && digits.startsWith('07')) ||
-                    (digits.length === 12 && digits.startsWith('254'))
-                );
-            },
-            
-            // Password validation
-            password: (value) => {
-                return value.length >= 8 &&
-                       /[A-Z]/.test(value) && // At least one uppercase
-                       /[a-z]/.test(value) && // At least one lowercase
-                       /\d/.test(value);      // At least one number
-            },
-            
-            // Name validation
-            name: (value) => {
-                return value.length >= 2 &&
-                       /^[a-zA-Z\s]+$/.test(value); // Letters and spaces only
-            },
-            
-            // Required field
-            required: (value) => {
-                return value !== null && value !== undefined && value.toString().trim().length > 0;
-            },
-            
-            // Minimum length
-            minLength: (value, min) => {
-                return value.length >= min;
-            },
-            
-            // Maximum length
-            maxLength: (value, max) => {
-                return value.length <= max;
-            },
-            
-            // Numeric validation
-            numeric: (value) => {
-                return !isNaN(parseFloat(value)) && isFinite(value);
-            },
-            
-            // Integer validation
-            integer: (value) => {
-                return Number.isInteger(Number(value));
-            },
-            
-            // Positive number
-            positive: (value) => {
-                const num = Number(value);
-                return !isNaN(num) && num > 0;
-            },
-            
-            // Date validation
-            date: (value) => {
-                const date = new Date(value);
-                return date instanceof Date && !isNaN(date);
-            },
-            
-            // Future date
-            futureDate: (value) => {
-                const date = new Date(value);
-                const now = new Date();
-                return date > now;
-            },
-            
-            // Past date
-            pastDate: (value) => {
-                const date = new Date(value);
-                const now = new Date();
-                return date < now;
-            },
-            
-            // URL validation
-            url: (value) => {
-                try {
-                    new URL(value);
-                    return true;
-                } catch {
-                    return false;
-                }
-            },
-            
-            // Kenyan ID number validation (simplified)
-            idNumber: (value) => {
-                const digits = value.replace(/\D/g, '');
-                return digits.length === 8;
-            },
-            
-            // Amount validation (KES)
-            amount: (value) => {
-                const amount = Number(value);
-                return !isNaN(amount) && amount >= 50 && amount <= 150000;
-            },
-            
-            // Confirm password
-            confirmPassword: (value, confirmValue) => {
-                return value === confirmValue;
-            },
-            
-            // Custom regex pattern
-            pattern: (value, pattern) => {
-                const regex = new RegExp(pattern);
-                return regex.test(value);
-            },
-            
-            // In array validation
-            inArray: (value, array) => {
-                return array.includes(value);
-            },
-            
-            // Between numbers
-            between: (value, min, max) => {
-                const num = Number(value);
-                return !isNaN(num) && num >= min && num <= max;
-            },
-            
-            // Kenyan postal code
-            postalCode: (value) => {
-                const digits = value.replace(/\D/g, '');
-                return digits.length === 5;
-            }
-        };
-    }
-
-    // Set up default error messages
-    setupDefaultMessages() {
-        this.messages = {
-            email: 'Please enter a valid email address',
-            phone: 'Please enter a valid Kenyan phone number (0712345678)',
-            password: 'Password must be at least 8 characters with uppercase, lowercase, and numbers',
-            name: 'Name must be at least 2 letters (no numbers or special characters)',
-            required: 'This field is required',
-            minLength: (min) => `Must be at least ${min} characters`,
-            maxLength: (max) => `Cannot exceed ${max} characters`,
-            numeric: 'Please enter a valid number',
-            integer: 'Please enter a whole number',
-            positive: 'Please enter a positive number',
-            date: 'Please enter a valid date',
-            futureDate: 'Date must be in the future',
-            pastDate: 'Date must be in the past',
-            url: 'Please enter a valid URL',
-            idNumber: 'Kenyan ID must be 8 digits',
-            amount: 'Amount must be between KES 50 and 150,000',
-            confirmPassword: 'Passwords do not match',
-            pattern: 'Invalid format',
-            inArray: 'Invalid selection',
-            between: (min, max) => `Must be between ${min} and ${max}`,
-            postalCode: 'Postal code must be 5 digits'
-        };
-    }
-
-    // Validate a single field
-    validateField(fieldName, value, rules) {
-        const errors = [];
-        
-        if (!rules || rules.length === 0) {
-            return { isValid: true, errors: [] };
+        // Required check
+        if (fieldRules.required && (!value || value.toString().trim() === '')) {
+            fieldErrors.push(`${field} is required`);
         }
         
-        for (const rule of rules) {
-            const ruleName = typeof rule === 'string' ? rule : rule.name;
-            const ruleParams = typeof rule === 'object' ? rule.params : [];
-            
-            if (!this.rules[ruleName]) {
-                console.warn(`Unknown validation rule: ${ruleName}`);
-                continue;
-            }
-            
-            // Apply rule
-            const isValid = this.rules[ruleName](value, ...ruleParams);
-            
-            if (!isValid) {
-                // Get error message
-                let message = this.messages[ruleName];
-                
-                // Handle parameterized messages
-                if (typeof message === 'function') {
-                    message = message(...ruleParams);
-                }
-                
-                // Use custom message if provided
-                if (typeof rule === 'object' && rule.message) {
-                    message = rule.message;
-                }
-                
-                errors.push({
-                    field: fieldName,
-                    rule: ruleName,
-                    message: message,
-                    value: value
-                });
-            }
+        // Skip other validations if empty and not required
+        if ((!value || value.toString().trim() === '') && !fieldRules.required) {
+            continue;
         }
         
-        return {
-            isValid: errors.length === 0,
-            errors: errors
-        };
-    }
-
-    // Validate form
-    validateForm(formData, validationSchema) {
-        const results = {
-            isValid: true,
-            errors: [],
-            fields: {}
-        };
+        const stringValue = value ? value.toString().trim() : '';
         
-        for (const [fieldName, rules] of Object.entries(validationSchema)) {
-            const value = formData[fieldName];
-            const fieldResult = this.validateField(fieldName, value, rules);
-            
-            results.fields[fieldName] = fieldResult;
-            
-            if (!fieldResult.isValid) {
-                results.isValid = false;
-                results.errors.push(...fieldResult.errors);
-            }
+        // Email validation
+        if (fieldRules.email && !validateEmail(stringValue)) {
+            fieldErrors.push('Invalid email format');
         }
         
-        return results;
-    }
-
-    // Validate registration form
-    validateRegistration(formData) {
-        const schema = {
-            name: ['required', 'name'],
-            email: ['required', 'email'],
-            phone: ['required', 'phone'],
-            password: ['required', 'password'],
-            confirmPassword: [
-                'required',
-                { 
-                    name: 'confirmPassword',
-                    params: [formData.password],
-                    message: 'Passwords do not match'
-                }
-            ],
-            institution: ['required', 'minLength:2'],
-            course: ['required', 'minLength:2'],
-            yearOfStudy: ['required', 'integer', { name: 'between', params: [1, 6] }],
-            agreeTerms: ['required']
-        };
-        
-        return this.validateForm(formData, schema);
-    }
-
-    // Validate login form
-    validateLogin(formData) {
-        const schema = {
-            email: ['required', 'email'],
-            password: ['required']
-        };
-        
-        return this.validateForm(formData, schema);
-    }
-
-    // Validate payment form
-    validatePayment(formData) {
-        const schema = {
-            phoneNumber: ['required', 'phone'],
-            amount: ['required', 'amount'],
-            plan: ['required'],
-            agreeTerms: ['required']
-        };
-        
-        return this.validateForm(formData, schema);
-    }
-
-    // Validate profile update form
-    validateProfile(formData) {
-        const schema = {
-            name: ['required', 'name'],
-            email: ['required', 'email'],
-            phone: ['required', 'phone'],
-            institution: ['required', 'minLength:2'],
-            course: ['required', 'minLength:2'],
-            yearOfStudy: ['required', 'integer', { name: 'between', params: [1, 6] }]
-        };
-        
-        return this.validateForm(formData, schema);
-    }
-
-    // Validate exam settings form
-    validateExamSettings(formData) {
-        const schema = {
-            subjects: ['required'],
-            questionCount: ['required', 'integer', { name: 'between', params: [1, 200] }],
-            examType: ['required'],
-            difficulty: ['required']
-        };
-        
-        return this.validateForm(formData, schema);
-    }
-
-    // Validate subscription change form
-    validateSubscriptionChange(formData) {
-        const schema = {
-            newPlan: ['required'],
-            confirmChange: ['required']
-        };
-        
-        return this.validateForm(formData, schema);
-    }
-
-    // Validate password change form
-    validatePasswordChange(formData) {
-        const schema = {
-            currentPassword: ['required'],
-            newPassword: ['required', 'password'],
-            confirmPassword: [
-                'required',
-                { 
-                    name: 'confirmPassword',
-                    params: [formData.newPassword],
-                    message: 'Passwords do not match'
-                }
-            ]
-        };
-        
-        return this.validateForm(formData, schema);
-    }
-
-    // Validate contact form
-    validateContact(formData) {
-        const schema = {
-            name: ['required', 'name'],
-            email: ['required', 'email'],
-            subject: ['required', 'minLength:3'],
-            message: ['required', 'minLength:10', 'maxLength:1000']
-        };
-        
-        return this.validateForm(formData, schema);
-    }
-
-    // Validate feedback form
-    validateFeedback(formData) {
-        const schema = {
-            rating: ['required', 'integer', { name: 'between', params: [1, 5] }],
-            comments: ['maxLength:500'],
-            category: ['required']
-        };
-        
-        return this.validateForm(formData, schema);
-    }
-
-    // Sanitize input
-    sanitize(input, type = 'text') {
-        if (input === null || input === undefined) {
-            return '';
+        // Phone validation
+        if (fieldRules.phone && !validatePhone(stringValue)) {
+            fieldErrors.push('Invalid Kenyan phone number');
         }
         
-        let sanitized = input.toString().trim();
-        
-        switch (type) {
-            case 'email':
-                sanitized = sanitized.toLowerCase();
-                break;
-                
-            case 'phone':
-                sanitized = sanitized.replace(/\D/g, '');
-                break;
-                
-            case 'number':
-                sanitized = sanitized.replace(/[^\d.-]/g, '');
-                break;
-                
-            case 'text':
-                // Basic XSS prevention
-                sanitized = sanitized
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#x27;')
-                    .replace(/\//g, '&#x2F;');
-                break;
-                
-            case 'html':
-                // Allow safe HTML (very basic for Phase 1)
-                sanitized = sanitized.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-                break;
+        // Min length
+        if (fieldRules.min && stringValue.length < fieldRules.min) {
+            fieldErrors.push(`Minimum length is ${fieldRules.min} characters`);
         }
         
-        return sanitized;
-    }
-
-    // Sanitize form data
-    sanitizeForm(formData, schema = null) {
-        const sanitized = {};
-        
-        for (const [key, value] of Object.entries(formData)) {
-            let type = 'text';
-            
-            // Determine type from schema or field name
-            if (schema && schema[key]) {
-                const rules = schema[key];
-                if (rules.includes('email')) type = 'email';
-                else if (rules.includes('phone')) type = 'phone';
-                else if (rules.includes('numeric') || rules.includes('integer') || rules.includes('amount')) type = 'number';
-            } else if (key.includes('email')) type = 'email';
-            else if (key.includes('phone')) type = 'phone';
-            else if (key.includes('amount') || key.includes('price') || key.includes('number')) type = 'number';
-            
-            sanitized[key] = this.sanitize(value, type);
+        // Max length
+        if (fieldRules.max && stringValue.length > fieldRules.max) {
+            fieldErrors.push(`Maximum length is ${fieldRules.max} characters`);
         }
         
-        return sanitized;
-    }
-
-    // Format phone number for display
-    formatPhoneForDisplay(phone) {
-        const digits = phone.replace(/\D/g, '');
-        
-        if (digits.length === 9 && digits.startsWith('7')) {
-            return `0${digits.slice(0, 2)} ${digits.slice(2, 5)} ${digits.slice(5)}`;
-        } else if (digits.length === 10 && digits.startsWith('07')) {
-            return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
-        } else if (digits.length === 12 && digits.startsWith('254')) {
-            const last9 = digits.slice(-9);
-            return `0${last9.slice(0, 2)} ${last9.slice(2, 5)} ${last9.slice(5)}`;
+        // Pattern
+        if (fieldRules.pattern && !new RegExp(fieldRules.pattern).test(stringValue)) {
+            fieldErrors.push('Invalid format');
         }
         
-        return phone;
-    }
-
-    // Format phone number for storage
-    formatPhoneForStorage(phone) {
-        const digits = phone.replace(/\D/g, '');
-        
-        if (digits.length === 9 && digits.startsWith('7')) {
-            return `254${digits}`;
-        } else if (digits.length === 10 && digits.startsWith('07')) {
-            return `254${digits.slice(1)}`;
-        } else if (digits.length === 12 && digits.startsWith('254')) {
-            return digits;
+        // Equal to (confirmation fields)
+        if (fieldRules.equalTo && formData[fieldRules.equalTo] !== value) {
+            fieldErrors.push('Fields do not match');
         }
         
-        return null;
-    }
-
-    // Validate Kenyan ID number (basic check)
-    validateKenyanId(id) {
-        const digits = id.replace(/\D/g, '');
-        
-        if (digits.length !== 8) {
-            return false;
-        }
-        
-        // Simple checksum validation (simplified)
-        const idNumber = parseInt(digits, 10);
-        return !isNaN(idNumber) && idNumber > 0;
-    }
-
-    // Validate date of birth (must be at least 18 years old)
-    validateDateOfBirth(dob) {
-        const birthDate = new Date(dob);
-        const today = new Date();
-        
-        let age = today.getFullYear() - birthDate.getFullYear();
-        const monthDiff = today.getMonth() - birthDate.getMonth();
-        
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-            age--;
-        }
-        
-        return age >= 18;
-    }
-
-    // Validate credit card number (basic Luhn check)
-    validateCreditCard(cardNumber) {
-        const digits = cardNumber.replace(/\D/g, '');
-        
-        if (digits.length < 13 || digits.length > 19) {
-            return false;
-        }
-        
-        // Luhn algorithm
-        let sum = 0;
-        let isEven = false;
-        
-        for (let i = digits.length - 1; i >= 0; i--) {
-            let digit = parseInt(digits.charAt(i), 10);
-            
-            if (isEven) {
-                digit *= 2;
-                if (digit > 9) {
-                    digit -= 9;
-                }
-            }
-            
-            sum += digit;
-            isEven = !isEven;
-        }
-        
-        return sum % 10 === 0;
-    }
-
-    // Validate expiry date (MM/YY format)
-    validateExpiryDate(expiry) {
-        const match = expiry.match(/^(\d{2})\/(\d{2})$/);
-        
-        if (!match) {
-            return false;
-        }
-        
-        const month = parseInt(match[1], 10);
-        const year = parseInt(match[2], 10);
-        const now = new Date();
-        const currentYear = now.getFullYear() % 100;
-        const currentMonth = now.getMonth() + 1;
-        
-        if (month < 1 || month > 12) {
-            return false;
-        }
-        
-        if (year < currentYear) {
-            return false;
-        }
-        
-        if (year === currentYear && month < currentMonth) {
-            return false;
-        }
-        
-        return true;
-    }
-
-    // Validate CVV
-    validateCVV(cvv) {
-        const digits = cvv.replace(/\D/g, '');
-        return digits.length === 3 || digits.length === 4;
-    }
-
-    // Show validation errors in UI
-    showValidationErrors(formElement, validationResult) {
-        // Clear previous errors
-        this.clearValidationErrors(formElement);
-        
-        if (validationResult.isValid) {
-            return;
-        }
-        
-        // Group errors by field
-        const errorsByField = {};
-        validationResult.errors.forEach(error => {
-            if (!errorsByField[error.field]) {
-                errorsByField[error.field] = [];
-            }
-            errorsByField[error.field].push(error.message);
-        });
-        
-        // Display errors
-        for (const [fieldName, messages] of Object.entries(errorsByField)) {
-            const field = formElement.querySelector(`[name="${fieldName}"]`);
-            if (field) {
-                // Add error class
-                field.classList.add('error');
-                
-                // Create error container
-                const errorContainer = document.createElement('div');
-                errorContainer.className = 'validation-errors';
-                
-                // Add error messages
-                messages.forEach(message => {
-                    const errorElement = document.createElement('div');
-                    errorElement.className = 'validation-error';
-                    errorElement.textContent = message;
-                    errorContainer.appendChild(errorElement);
-                });
-                
-                // Insert after field
-                field.parentNode.appendChild(errorContainer);
-                
-                // Focus first error field
-                if (field === Object.keys(errorsByField)[0]) {
-                    field.focus();
-                }
+        // Custom validator
+        if (fieldRules.validator && typeof fieldRules.validator === 'function') {
+            const customResult = fieldRules.validator(value, formData);
+            if (customResult !== true) {
+                fieldErrors.push(customResult);
             }
         }
         
-        // Scroll to first error
-        const firstErrorField = formElement.querySelector('.error');
-        if (firstErrorField) {
-            firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (fieldErrors.length > 0) {
+            errors[field] = fieldErrors;
+            isValid = false;
         }
     }
+    
+    return { valid: isValid, errors };
+}
 
-    // Clear validation errors from UI
-    clearValidationErrors(formElement) {
-        // Remove error classes
-        formElement.querySelectorAll('.error').forEach(field => {
-            field.classList.remove('error');
-        });
-        
-        // Remove error messages
-        formElement.querySelectorAll('.validation-errors').forEach(container => {
-            container.remove();
-        });
-    }
+/**
+ * Validate a single field
+ * @param {string} field
+ * @param {*} value
+ * @param {Object} rules
+ * @returns {Object} { valid: boolean, errors: string[] }
+ */
+export function validateField(field, value, rules) {
+    const formData = { [field]: value };
+    const fieldRules = { [field]: rules };
+    const result = validateForm(formData, fieldRules);
+    return {
+        valid: !result.errors[field],
+        errors: result.errors[field] || []
+    };
+}
 
-    // Real-time validation on input
-    setupRealTimeValidation(formElement, schema) {
-        const fields = formElement.querySelectorAll('input, select, textarea');
+// ==================== REAL-TIME VALIDATION ====================
+
+/**
+ * Set up live validation on a form
+ * @param {string} formId
+ * @param {Object} rules
+ */
+export function setupLiveValidation(formId, rules) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    
+    const inputs = form.querySelectorAll('input, select, textarea');
+    
+    inputs.forEach(input => {
+        const fieldName = input.name || input.id;
+        if (!fieldName || !rules[fieldName]) return;
         
-        fields.forEach(field => {
-            const fieldName = field.name;
-            const fieldRules = schema[fieldName];
+        input.addEventListener('input', debounce(function() {
+            const value = input.type === 'checkbox' ? input.checked : input.value;
+            const result = validateField(fieldName, value, rules[fieldName]);
             
-            if (!fieldRules) return;
+            // Clear previous errors
+            ui.clearFormError(input.id || fieldName);
             
-            // Validate on blur
-            field.addEventListener('blur', () => {
-                const value = field.value;
-                const result = this.validateField(fieldName, value, fieldRules);
-                
-                this.updateFieldValidationUI(field, result);
-            });
+            // Show new errors
+            if (!result.valid && result.errors.length > 0) {
+                ui.showFormError(input.id || fieldName, result.errors[0]);
+            }
+        }, 300));
+        
+        input.addEventListener('blur', function() {
+            const value = input.type === 'checkbox' ? input.checked : input.value;
+            const result = validateField(fieldName, value, rules[fieldName]);
             
-            // Clear error on focus
-            field.addEventListener('focus', () => {
-                this.clearFieldValidationUI(field);
-            });
-            
-            // Live validation for some fields
-            if (field.type === 'email' || field.type === 'tel') {
-                field.addEventListener('input', () => {
-                    const value = field.value;
-                    const result = this.validateField(fieldName, value, fieldRules);
-                    
-                    this.updateFieldValidationUI(field, result);
-                });
+            ui.clearFormError(input.id || fieldName);
+            if (!result.valid && result.errors.length > 0) {
+                ui.showFormError(input.id || fieldName, result.errors[0]);
             }
         });
-    }
+    });
+}
 
-    // Update field validation UI
-    updateFieldValidationUI(field, validationResult) {
-        this.clearFieldValidationUI(field);
-        
-        if (validationResult.isValid) {
-            field.classList.add('valid');
-            
-            // Add checkmark for visual feedback
-            if (!field.parentNode.querySelector('.valid-icon')) {
-                const validIcon = document.createElement('span');
-                validIcon.className = 'valid-icon';
-                validIcon.textContent = '✓';
-                validIcon.style.cssText = `
-                    position: absolute;
-                    right: 10px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    color: #4CAF50;
-                    font-weight: bold;
-                `;
-                field.parentNode.style.position = 'relative';
-                field.parentNode.appendChild(validIcon);
-            }
-        } else {
-            field.classList.add('error');
-            
-            // Add error message
-            validationResult.errors.forEach(error => {
-                const errorElement = document.createElement('div');
-                errorElement.className = 'validation-error';
-                errorElement.textContent = error.message;
-                errorElement.style.cssText = `
-                    color: #F44336;
-                    font-size: 12px;
-                    margin-top: 4px;
-                `;
-                field.parentNode.appendChild(errorElement);
-            });
-        }
-    }
-
-    // Clear field validation UI
-    clearFieldValidationUI(field) {
-        field.classList.remove('error', 'valid');
-        
-        // Remove valid icon
-        const validIcon = field.parentNode.querySelector('.valid-icon');
-        if (validIcon) {
-            validIcon.remove();
-        }
-        
-        // Remove error messages
-        const errorMessages = field.parentNode.querySelectorAll('.validation-error');
-        errorMessages.forEach(msg => msg.remove());
-    }
-
-    // Validate file upload
-    validateFile(file, options = {}) {
-        const errors = [];
-        const defaultOptions = {
-            maxSize: 5 * 1024 * 1024, // 5MB
-            allowedTypes: ['image/jpeg', 'image/png', 'image/gif', 'application/pdf'],
-            allowedExtensions: ['.jpg', '.jpeg', '.png', '.gif', '.pdf']
+// Simple debounce for live validation
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
         };
-        
-        const config = { ...defaultOptions, ...options };
-        
-        // Check file size
-        if (file.size > config.maxSize) {
-            const maxSizeMB = config.maxSize / (1024 * 1024);
-            errors.push(`File size must be less than ${maxSizeMB}MB`);
-        }
-        
-        // Check file type
-        if (config.allowedTypes.length > 0 && !config.allowedTypes.includes(file.type)) {
-            errors.push(`File type not allowed. Allowed types: ${config.allowedTypes.join(', ')}`);
-        }
-        
-        // Check file extension
-        if (config.allowedExtensions.length > 0) {
-            const extension = '.' + file.name.split('.').pop().toLowerCase();
-            if (!config.allowedExtensions.includes(extension)) {
-                errors.push(`File extension not allowed. Allowed extensions: ${config.allowedExtensions.join(', ')}`);
-            }
-        }
-        
-        return {
-            isValid: errors.length === 0,
-            errors: errors,
-            file: file
-        };
-    }
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
 
-    // Get validation summary
-    getValidationSummary(validationResult) {
-        if (validationResult.isValid) {
-            return {
-                status: 'valid',
-                message: 'All fields are valid',
-                errorCount: 0
-            };
-        }
-        
-        const errorCount = validationResult.errors.length;
-        const fieldCount = Object.keys(validationResult.fields).length;
-        const errorFields = Object.entries(validationResult.fields)
-            .filter(([_, fieldResult]) => !fieldResult.isValid)
-            .map(([fieldName]) => fieldName);
-        
-        return {
-            status: 'invalid',
-            message: `${errorCount} error${errorCount !== 1 ? 's' : ''} in ${errorFields.length} field${errorFields.length !== 1 ? 's' : ''}`,
-            errorCount: errorCount,
-            fieldCount: fieldCount,
-            errorFields: errorFields,
-            firstError: validationResult.errors[0]
-        };
-    }
+/**
+ * Clear all validation errors on a form
+ * @param {string} formId
+ */
+export function clearValidationErrors(formId) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    
+    const inputs = form.querySelectorAll('input, select, textarea');
+    inputs.forEach(input => {
+        ui.clearFormError(input.id || input.name);
+    });
+}
 
-    // Add custom validation rule
-    addRule(ruleName, validator, message) {
-        this.rules[ruleName] = validator;
-        if (message) {
-            this.messages[ruleName] = message;
-        }
-    }
-
-    // Remove validation rule
-    removeRule(ruleName) {
-        delete this.rules[ruleName];
-        delete this.messages[ruleName];
+/**
+ * Show validation summary (usually at top of form)
+ * @param {Object} errors - from validateForm
+ */
+export function showValidationSummary(errors) {
+    const allErrors = Object.values(errors).flat();
+    if (allErrors.length > 0) {
+        ui.showValidationSummary(allErrors);
     }
 }
 
-// Create global instance
-const Validation = new ValidationManager();
+// ==================== CUSTOM KENYAN VALIDATORS ====================
 
-// Export for use in other files
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Validation;
+/**
+ * Validate Kenyan ID number (simplified)
+ * @param {string} id
+ * @returns {boolean}
+ */
+export function validateKenyanID(id) {
+    const digits = id.replace(/\D/g, '');
+    return digits.length >= 7 && digits.length <= 8;
+}
+
+/**
+ * Validate KRA PIN (simplified)
+ * @param {string} pin
+ * @returns {boolean}
+ */
+export function validateKRAPin(pin) {
+    if (!pin || typeof pin !== 'string') return false;
+    return /^[A-Za-z0-9]{11}$/.test(pin.trim().toUpperCase());
+}
+
+/**
+ * Validate M-Pesa transaction code
+ * @param {string} code
+ * @returns {boolean}
+ */
+export function validateMPesaCode(code) {
+    if (!code || typeof code !== 'string') return false;
+    return /^[A-Za-z0-9]{10,12}$/.test(code.trim().toUpperCase());
 }

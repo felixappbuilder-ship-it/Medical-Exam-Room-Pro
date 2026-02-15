@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subjects – Medical Exam Room Pro</title>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/subjects.css" media="all">
+    
+    <!-- Core scripts in correct order -->
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+    <script type="module" src="../scripts/app.js"></script>
+    <script type="module" src="../scripts/validation.js"></script>
+    <script type="module" src="../scripts/security.js"></script>
+    <script type="module" src="../scripts/db.js"></script>
+    <script type="module" src="../scripts/auth.js"></script>
+    <script type="module" src="../scripts/subscription.js"></script>
+    <script type="module" src="../scripts/analytics.js"></script>
+    <script type="module" src="../scripts/sync.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+        }
+    </script>
+    
+   <script type="module">
+    // Import dependencies
+    import * as app from '../scripts/app.js';
+    import * as ui from '../scripts/ui.js';
+    import * as router from '../scripts/router.js';
+    import * as auth from '../scripts/auth.js';
+    import * as subscription from '../scripts/subscription.js';
+    import * as analytics from '../scripts/analytics.js';
+    import * as sync from '../scripts/sync.js';
+    import * as db from '../scripts/db.js';
+    import * as utils from '../scripts/utils.js';
+    import * as security from '../scripts/security.js';
+
+    // ==================== INITIALIZATION ====================
+    (async function initSubjects() {
+        await app.initializeApp();
+        ui.applyTheme();
+
+        // Authentication guard – redirect to welcome if not logged in
+        if (!app.checkAuth()) {
+            router.navigateTo('welcome.html');
+            return;
+        }
+
+        // Get user and subscription from app state
+        const user = app.getUser();
+        const sub = app.getSubscription();
+
+        // Update UI with real user info
+        document.getElementById('user-greeting').textContent = user?.name ? `Hello, ${user.name.split(' ')[0]}` : 'Hello, Doctor';
+
+        // Subscription status display
+        const statusEl = document.getElementById('sub-status');
+        if (sub && sub.isActive) {
+            const remaining = subscription.formatRemainingTime?.(sub.expiryDate) || '—';
+            statusEl.innerHTML = `${sub.plan} • expires ${utils.formatDate(sub.expiryDate)} • <span class="remaining">${remaining}</span>`;
+            // Show upgrade button maybe
+        } else {
+            statusEl.innerHTML = 'No active plan. <a href="#" onclick="event.preventDefault(); router.navigateTo(\'subscription.html\');">Subscribe</a>';
+        }
+
+        // Sync status indicator
+        sync.monitorConnection();
+        document.getElementById('sync-indicator').textContent = navigator.onLine ? 'Online' : 'Offline';
+
+        // Load subject progress from analytics (real data from IndexedDB)
+        const progress = await analytics.getSubjectProgress() || {};
+
+        // Subject definitions (should match those in questions.js)
+        const subjects = [
+            { id: 'anatomy', name: 'Anatomy', icon: '💀', color: '#FF6B6B', questions: 720 },
+            { id: 'physiology', name: 'Physiology', icon: '🧠', color: '#4ECDC4', questions: 1150 },
+            { id: 'biochemistry', name: 'Biochemistry', icon: '🧪', color: '#45B7D1', questions: 810 },
+            { id: 'histology', name: 'Histology', icon: '🔬', color: '#96CEB4', questions: 450 },
+            { id: 'embryology', name: 'Embryology', icon: '🐣', color: '#FFEAA7', questions: 390 },
+            { id: 'pathology', name: 'Pathology', icon: '🩸', color: '#DDA0DD', questions: 540 },
+            { id: 'pharmacology', name: 'Pharmacology', icon: '💊', color: '#FDCB6E', questions: 460 },
+            { id: 'microbiology', name: 'Microbiology', icon: '🦠', color: '#E17055', questions: 430 }
+        ];
+
+        const grid = document.getElementById('subject-grid');
+        grid.innerHTML = subjects.map(sub => {
+            const subProgress = progress[sub.id] || 0;
+            return `
+                <div class="subject-card" style="border-top: 4px solid ${sub.color}">
+                    <div class="subject-icon" style="background: ${sub.color}20">${sub.icon}</div>
+                    <h3>${sub.name}</h3>
+                    <p>${sub.questions} questions</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${subProgress}%; background: ${sub.color}"></div>
+                    </div>
+                    <button onclick="window.studySubject('${sub.id}')" class="btn-study">Study</button>
+                </div>
+            `;
+        }).join('');
+
+        // Quick actions: continue last exam, weak areas
+        const lastExam = await db.getLastExam();
+        if (lastExam) {
+            const continueBtn = document.getElementById('continue-last');
+            continueBtn.style.display = 'inline-block';
+            continueBtn.onclick = () => router.navigateTo(`exam-settings.html?resume=${lastExam.examId}`);
+        }
+
+        const weakAreas = await analytics.identifyWeakAreas();
+        if (weakAreas && weakAreas.length > 0) {
+            const weakBtn = document.getElementById('weak-areas');
+            weakBtn.style.display = 'inline-block';
+            document.getElementById('weak-areas-count').textContent = `Weak: ${weakAreas.slice(0,2).map(w => w.topic).join(', ')}`;
+        }
+
+        // Listen for online/offline changes
+        window.addEventListener('online', () => {
+            document.getElementById('sync-indicator').textContent = 'Online';
+            ui.showToast('Back online', 'success');
+        });
+        window.addEventListener('offline', () => {
+            document.getElementById('sync-indicator').textContent = 'Offline';
+            ui.showToast('You are offline', 'warning');
+        });
+    })();
+
+    // ==================== GLOBAL FUNCTIONS ====================
+    window.studySubject = function(subjectId) {
+        router.navigateTo(`subject-specific.html?subject=${subjectId}`);
+    };
+
+    window.logout = function() {
+        auth.logout();
+        router.navigateTo('welcome.html');
+    };
+</script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <div class="user-controls">
+                <span id="sync-indicator" class="sync-badge">Offline</span>
+                <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
+                <button onclick="logout()" class="btn-text">Logout</button>
+            </div>
+        </header>
+        
+        <div class="welcome-banner">
+            <div>
+                <h2 id="user-greeting">Hello, Doctor</h2>
+                <p id="sub-status" class="subscription-info">Loading...</p>
+            </div>
+            <div class="quick-actions">
+                <button id="continue-last" style="display:none;" class="btn-secondary">▶ Continue Last Exam</button>
+                <button id="weak-areas" style="display:none;" class="btn-secondary" onclick="router.navigateTo('performance.html#weak')">
+                    <span id="weak-areas-count"></span>
+                </button>
+                <button onclick="router.navigateTo('exam-settings.html?quick=10')" class="btn-primary">⚡ Quick Exam (10q)</button>
+            </div>
+        </div>
+        
+        <main>
+            <h1>Your Subjects</h1>
+            <div id="subject-grid" class="subject-grid"></div>
+        </main>
+        
+        <footer>
+            <nav class="bottom-nav">
+                <a href="#" onclick="router.navigateTo('subjects.html');return false;" class="active">Subjects</a>
+                <a href="#" onclick="router.navigateTo('performance.html');return false;">Performance</a>
+                <a href="#" onclick="router.navigateTo('profile.html');return false;">Profile</a>
+            </nav>
+        </footer>
+    </div>
+    
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>

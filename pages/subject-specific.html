@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Topics – Medical Exam Room Pro</title>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/subject-specific.css" media="all">
+    
+    <!-- Core scripts – order is critical -->
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+    <script type="module" src="../scripts/app.js"></script>
+    <script type="module" src="../scripts/validation.js"></script>
+    <script type="module" src="../scripts/security.js"></script>
+    <script type="module" src="../scripts/db.js"></script>        <!-- db must come before auth -->
+    <script type="module" src="../scripts/auth.js"></script>      <!-- auth depends on db -->
+    <script type="module" src="../scripts/subscription.js"></script>
+    <script type="module" src="../scripts/questions.js"></script>
+    <script type="module" src="../scripts/analytics.js"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+        }
+    </script>
+    
+    <script type="module">
+    // Import dependencies
+    import * as app from '../scripts/app.js';
+    import * as auth from '../scripts/auth.js';
+    import * as ui from '../scripts/ui.js';
+    import * as router from '../scripts/router.js';
+    import * as utils from '../scripts/utils.js';
+    import * as questions from '../scripts/questions.js';
+    import * as analytics from '../scripts/analytics.js';
+    import * as db from '../scripts/db.js';
+
+    // State
+    let currentSubject = null;
+    let currentUser = null;
+    let topicsData = [];
+
+    // Initialize page
+    (async function init() {
+        ui.applyTheme();
+
+        // Get subject from URL
+        const subjectId = utils.getQueryParam('subject');
+        if (!subjectId) {
+            ui.showToast('No subject specified', 'error');
+            router.navigateTo('subjects.html');
+            return;
+        }
+        currentSubject = subjectId;
+
+        // Check authentication (for personalized features)
+        currentUser = app.getUser();
+
+        // Hide all subject sections, show selected one
+        document.querySelectorAll('.subject-section').forEach(el => el.style.display = 'none');
+        const targetDiv = document.getElementById(`${subjectId}-topics`);
+        if (!targetDiv) {
+            ui.showToast('Subject not found', 'error');
+            router.navigateTo('subjects.html');
+            return;
+        }
+        targetDiv.style.display = 'block';
+
+        // Load subject metadata
+        const subjectMeta = await questions.getSubjectMeta(subjectId);
+        document.getElementById('subject-name').textContent = subjectMeta.name;
+        document.getElementById('subject-icon').textContent = subjectMeta.icon;
+        document.getElementById('subject-color').style.backgroundColor = subjectMeta.color;
+        document.getElementById('total-questions').textContent = `${subjectMeta.questions} questions available`;
+
+        // Load topics for this subject
+        topicsData = await questions.getTopicsBySubject(subjectId);
+        renderTopicTree(subjectId, topicsData);
+
+        // Load recent / weak topics (if user is logged in)
+        if (currentUser) {
+            const recentTopics = await analytics.getRecentTopics(subjectId, 3);
+            renderRecentTopics(recentTopics);
+        } else {
+            document.getElementById('recent-topics-list').innerHTML = '<p class="no-data">Login to see personalized weak areas.</p>';
+        }
+
+        // Check if there's saved selection in session
+        const savedSelection = sessionStorage.getItem(`topicSelection_${subjectId}`);
+        if (savedSelection) {
+            try {
+                const selectedIds = JSON.parse(savedSelection);
+                restoreSelection(selectedIds);
+            } catch (e) {}
+        }
+
+        // Update selection summary
+        updateSelectionSummary(subjectId);
+    })();
+
+    function renderTopicTree(subjectId, topics) {
+        const container = document.getElementById(`${subjectId}-topics-tree`);
+        if (!container) return;
+
+        let html = '';
+        topics.forEach(topic => {
+            const estimated = Math.ceil(topic.questions * 0.75); // 45 sec per question → minutes
+            html += `
+                <div class="topic-item">
+                    <label>
+                        <input type="checkbox" name="topic" data-subject="${subjectId}" data-topic-id="${topic.id}" data-questions="${topic.questions}" data-estimated="${estimated}">
+                        <span class="topic-name">${topic.name}</span>
+                        <span class="topic-stats">${topic.questions} q · ~${estimated} min</span>
+                    </label>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+
+        // Attach change listeners
+        container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', () => {
+                updateSelectionSummary(subjectId);
+                saveSelection(subjectId);
+            });
+        });
+    }
+
+    function renderRecentTopics(topics) {
+        const container = document.getElementById('recent-topics-list');
+        if (!container) return;
+        if (!topics || topics.length === 0) {
+            container.innerHTML = '<p class="no-data">No recent topics. Start studying!</p>';
+            return;
+        }
+        let html = '';
+        topics.forEach(t => {
+            html += `<div class="recent-topic" onclick="window.quickStudyTopic('${t.subjectId}', '${t.topicId}')">📘 ${t.topicName} – ${t.questions} questions</div>`;
+        });
+        container.innerHTML = html;
+    }
+
+    function updateSelectionSummary(subjectId) {
+        const container = document.getElementById(`${subjectId}-topics-tree`);
+        if (!container) return;
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+        const totalSelected = checkboxes.length;
+        const totalTopics = container.querySelectorAll('input[type="checkbox"]').length;
+        let totalQuestions = 0;
+        let totalMinutes = 0;
+        checkboxes.forEach(cb => {
+            totalQuestions += parseInt(cb.dataset.questions);
+            totalMinutes += parseInt(cb.dataset.estimated);
+        });
+
+        document.getElementById('selected-count').textContent = `${totalSelected} of ${totalTopics} topics selected`;
+        document.getElementById('selected-questions').textContent = `${totalQuestions} questions selected`;
+        const hours = Math.floor(totalMinutes / 60);
+        const mins = totalMinutes % 60;
+        document.getElementById('estimated-time').textContent = `~${hours}h ${mins}m`;
+
+        // Enable/disable action buttons
+        const studyBtn = document.getElementById('study-selected-btn');
+        const quickBtn = document.getElementById('quick-exam-btn');
+        if (totalSelected === 0) {
+            studyBtn.disabled = true;
+            quickBtn.disabled = true;
+        } else {
+            studyBtn.disabled = false;
+            quickBtn.disabled = false;
+        }
+    }
+
+    function saveSelection(subjectId) {
+        const container = document.getElementById(`${subjectId}-topics-tree`);
+        if (!container) return;
+        const selected = [];
+        container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+            selected.push(cb.dataset.topicId);
+        });
+        sessionStorage.setItem(`topicSelection_${subjectId}`, JSON.stringify(selected));
+    }
+
+    function restoreSelection(selectedIds) {
+        if (!currentSubject) return;
+        const container = document.getElementById(`${currentSubject}-topics-tree`);
+        if (!container) return;
+        container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            if (selectedIds.includes(cb.dataset.topicId)) {
+                cb.checked = true;
+            }
+        });
+    }
+
+    // Global functions for onclick
+    window.selectAllTopics = function(subjectId) {
+        const container = document.getElementById(`${subjectId}-topics-tree`);
+        if (!container) return;
+        container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+        updateSelectionSummary(subjectId);
+        saveSelection(subjectId);
+    };
+
+    window.clearAllTopics = function(subjectId) {
+        const container = document.getElementById(`${subjectId}-topics-tree`);
+        if (!container) return;
+        container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+        updateSelectionSummary(subjectId);
+        saveSelection(subjectId);
+    };
+
+    window.studySelectedTopics = function(subjectId) {
+        const container = document.getElementById(`${subjectId}-topics-tree`);
+        const selected = [];
+        container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+            selected.push({
+                id: cb.dataset.topicId,
+                name: cb.parentElement.querySelector('.topic-name').textContent,
+                questions: parseInt(cb.dataset.questions),
+                estimated: parseInt(cb.dataset.estimated)
+            });
+        });
+        if (selected.length === 0) {
+            ui.showToast('Please select at least one topic', 'warning');
+            return;
+        }
+
+        // Save to app state
+        app.setExamConfig({
+            subject: subjectId,
+            topics: selected,
+            totalQuestions: selected.reduce((sum, t) => sum + t.questions, 0),
+            mode: 'study'
+        });
+
+        router.navigateTo('exam-settings.html');
+    };
+
+    window.quickExamSelected = function(subjectId) {
+        const container = document.getElementById(`${subjectId}-topics-tree`);
+        const selected = [];
+        container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+            selected.push({
+                id: cb.dataset.topicId,
+                name: cb.parentElement.querySelector('.topic-name').textContent,
+                questions: parseInt(cb.dataset.questions),
+                estimated: parseInt(cb.dataset.estimated)
+            });
+        });
+        if (selected.length === 0) {
+            ui.showToast('Please select at least one topic', 'warning');
+            return;
+        }
+
+        app.setExamConfig({
+            subject: subjectId,
+            topics: selected,
+            totalQuestions: 10,
+            mode: 'quick'
+        });
+
+        router.navigateTo('exam-settings.html');
+    };
+
+    window.quickStudyTopic = function(subjectId, topicId) {
+        // Find topic details
+        const topic = topicsData.find(t => t.id === topicId);
+        if (!topic) return;
+
+        app.setExamConfig({
+            subject: subjectId,
+            topics: [topic],
+            totalQuestions: 10,
+            mode: 'quick'
+        });
+        router.navigateTo('exam-settings.html');
+    };
+
+    // Helper to get current subject (used by buttons)
+    window.getCurrentSubject = function() {
+        const visible = document.querySelector('.subject-section[style*="display: block"]');
+        return visible ? visible.dataset.subject : null;
+    };
+</script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
+        </header>
+        
+        <div class="subject-header">
+            <button onclick="router.navigateTo('subjects.html')" class="btn-text">← Back to Subjects</button>
+            <div class="subject-title">
+                <span id="subject-icon" class="subject-icon"></span>
+                <h1 id="subject-name"></h1>
+                <span id="subject-color" class="color-dot"></span>
+            </div>
+            <p id="total-questions" class="total-questions"></p>
+        </div>
+        
+        <!-- 8 subject sections – each hidden by default -->
+        <div id="subject-container">
+            <!-- Anatomy -->
+            <div id="anatomy-topics" class="subject-section" data-subject="anatomy" style="display:none;">
+                <div class="topic-selection">
+                    <div class="selection-actions">
+                        <button onclick="selectAllTopics('anatomy')" class="btn-secondary">Select All</button>
+                        <button onclick="clearAllTopics('anatomy')" class="btn-secondary">Clear All</button>
+                    </div>
+                    <div id="anatomy-topics-tree" class="topic-tree"></div>
+                </div>
+            </div>
+            
+            <!-- Physiology -->
+            <div id="physiology-topics" class="subject-section" data-subject="physiology" style="display:none;">
+                <div class="topic-selection">
+                    <div class="selection-actions">
+                        <button onclick="selectAllTopics('physiology')" class="btn-secondary">Select All</button>
+                        <button onclick="clearAllTopics('physiology')" class="btn-secondary">Clear All</button>
+                    </div>
+                    <div id="physiology-topics-tree" class="topic-tree"></div>
+                </div>
+            </div>
+            
+            <!-- Biochemistry -->
+            <div id="biochemistry-topics" class="subject-section" data-subject="biochemistry" style="display:none;">
+                <div class="topic-selection">
+                    <div class="selection-actions">
+                        <button onclick="selectAllTopics('biochemistry')" class="btn-secondary">Select All</button>
+                        <button onclick="clearAllTopics('biochemistry')" class="btn-secondary">Clear All</button>
+                    </div>
+                    <div id="biochemistry-topics-tree" class="topic-tree"></div>
+                </div>
+            </div>
+            
+            <!-- Histology -->
+            <div id="histology-topics" class="subject-section" data-subject="histology" style="display:none;">
+                <div class="topic-selection">
+                    <div class="selection-actions">
+                        <button onclick="selectAllTopics('histology')" class="btn-secondary">Select All</button>
+                        <button onclick="clearAllTopics('histology')" class="btn-secondary">Clear All</button>
+                    </div>
+                    <div id="histology-topics-tree" class="topic-tree"></div>
+                </div>
+            </div>
+            
+            <!-- Embryology -->
+            <div id="embryology-topics" class="subject-section" data-subject="embryology" style="display:none;">
+                <div class="topic-selection">
+                    <div class="selection-actions">
+                        <button onclick="selectAllTopics('embryology')" class="btn-secondary">Select All</button>
+                        <button onclick="clearAllTopics('embryology')" class="btn-secondary">Clear All</button>
+                    </div>
+                    <div id="embryology-topics-tree" class="topic-tree"></div>
+                </div>
+            </div>
+            
+            <!-- Pathology -->
+            <div id="pathology-topics" class="subject-section" data-subject="pathology" style="display:none;">
+                <div class="topic-selection">
+                    <div class="selection-actions">
+                        <button onclick="selectAllTopics('pathology')" class="btn-secondary">Select All</button>
+                        <button onclick="clearAllTopics('pathology')" class="btn-secondary">Clear All</button>
+                    </div>
+                    <div id="pathology-topics-tree" class="topic-tree"></div>
+                </div>
+            </div>
+            
+            <!-- Pharmacology -->
+            <div id="pharmacology-topics" class="subject-section" data-subject="pharmacology" style="display:none;">
+                <div class="topic-selection">
+                    <div class="selection-actions">
+                        <button onclick="selectAllTopics('pharmacology')" class="btn-secondary">Select All</button>
+                        <button onclick="clearAllTopics('pharmacology')" class="btn-secondary">Clear All</button>
+                    </div>
+                    <div id="pharmacology-topics-tree" class="topic-tree"></div>
+                </div>
+            </div>
+            
+            <!-- Microbiology -->
+            <div id="microbiology-topics" class="subject-section" data-subject="microbiology" style="display:none;">
+                <div class="topic-selection">
+                    <div class="selection-actions">
+                        <button onclick="selectAllTopics('microbiology')" class="btn-secondary">Select All</button>
+                        <button onclick="clearAllTopics('microbiology')" class="btn-secondary">Clear All</button>
+                    </div>
+                    <div id="microbiology-topics-tree" class="topic-tree"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Selection Summary & Action Buttons -->
+        <div class="selection-summary">
+            <div class="summary-stats">
+                <span id="selected-count">0 of 0 topics selected</span>
+                <span id="selected-questions">0 questions selected</span>
+                <span id="estimated-time">~0h 0m</span>
+            </div>
+            <div class="action-buttons">
+                <button id="study-selected-btn" onclick="studySelectedTopics(getCurrentSubject())" class="btn-primary" disabled>Study Selected Topics</button>
+                <button id="quick-exam-btn" onclick="quickExamSelected(getCurrentSubject())" class="btn-secondary" disabled>Quick Exam (10q) on Selected</button>
+            </div>
+        </div>
+        
+        <!-- Recent Topics Section -->
+        <div class="recent-section">
+            <h3>📌 Recent & Weak Topics</h3>
+            <div id="recent-topics-list"></div>
+        </div>
+        
+        <footer>
+            <!-- optional footer -->
+        </footer>
+    </div>
+    
+    <script>
+        function getCurrentSubject() {
+            const visible = document.querySelector('.subject-section[style*="display: block"]');
+            return visible ? visible.dataset.subject : null;
+        }
+    </script>
+    
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>

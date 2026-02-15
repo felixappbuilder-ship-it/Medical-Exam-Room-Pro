@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Plans – Medical Exam Room Pro</title>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/subscription.css" media="all">
+    
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+    <script type="module" src="../scripts/app.js"></script>
+    <script type="module" src="../scripts/subscription.js"></script>
+    <script type="module" src="../scripts/security.js"></script>
+    <script type="module" src="../scripts/db.js"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+        }
+    </script>
+    
+   <script type="module">
+    // Import dependencies
+    import * as app from '../scripts/app.js';
+    import * as ui from '../scripts/ui.js';
+    import * as router from '../scripts/router.js';
+    import * as subscription from '../scripts/subscription.js';
+    import * as utils from '../scripts/utils.js';
+
+    // Initialize page
+    window.addEventListener('load', async function() {
+        ui.applyTheme();
+
+        // Authentication required
+        if (!app.checkAuth()) {
+            ui.showToast('Please log in first', 'warning');
+            router.navigateTo('login.html');
+            return;
+        }
+
+        try {
+            // Load user's current subscription
+            const currentSub = await subscription.getSubscriptionStatus();
+            renderCurrentPlan(currentSub);
+
+            // Load available plans from backend / config
+            const plans = await subscription.getSubscriptionPlans();
+            renderPlanCards(plans);
+
+            // Check trial eligibility (to disable trial card if already used)
+            const trialEligible = await subscription.checkTrialEligibility();
+            if (!trialEligible) {
+                const trialCard = document.querySelector('.trial-card');
+                if (trialCard) trialCard.classList.add('disabled');
+            }
+        } catch (error) {
+            ui.showToast('Failed to load subscription data', 'error');
+            console.error(error);
+        }
+    });
+
+    // Render current subscription plan
+    function renderCurrentPlan(sub) {
+        const el = document.getElementById('current-plan');
+        if (!el) return;
+
+        if (!sub || !sub.isActive) {
+            el.innerHTML = 'No active plan. <a href="#" onclick="router.navigateTo(\'free-trial.html\');return false;">Start free trial</a>';
+            return;
+        }
+
+        const remaining = subscription.formatRemainingTime(sub.expiryDate);
+        el.innerHTML = `
+            <strong>${sub.plan}</strong> · expires ${utils.formatDate(sub.expiryDate)} 
+            <span class="remaining">(${remaining} left)</span>
+        `;
+    }
+
+    // Render plan cards
+    function renderPlanCards(plans) {
+        const container = document.getElementById('plan-cards');
+        if (!container) return;
+
+        container.innerHTML = plans.map(plan => {
+            let cardClass = 'plan-card';
+            if (plan.popular) cardClass += ' popular';
+            if (plan.id === 'trial') cardClass += ' trial-card';
+
+            return `
+                <div class="${cardClass}">
+                    <h3>${plan.name}</h3>
+                    <div class="price">${plan.price === 0 ? 'FREE' : `KES ${plan.price}`}</div>
+                    <div class="duration">${plan.duration}</div>
+                    <ul class="features">
+                        ${plan.features.map(f => `<li>✓ ${f}</li>`).join('')}
+                    </ul>
+                    ${plan.limitations ? `<p class="limitations">${plan.limitations.join(', ')}</p>` : ''}
+                    <button onclick="selectPlan('${plan.id}')" class="btn-${plan.ctaColor || 'primary'}">
+                        ${plan.ctaText || 'Select'}
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Plan selection handler (exposed globally)
+    window.selectPlan = function(planId) {
+        if (planId === 'trial') {
+            router.navigateTo('free-trial.html');
+        } else {
+            // Store selected plan in app state and go to payment
+            app.setSelectedPlan(planId);
+            router.navigateTo('payment.html');
+        }
+    };
+</script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
+        </header>
+        
+        <main>
+            <h1>Subscription Plans</h1>
+            <div id="current-plan" class="current-plan-banner"></div>
+            
+            <div id="plan-cards" class="plan-grid"></div>
+            
+            <div class="payment-info">
+                <p>💳 M‑Pesa only. After payment, access is granted instantly.</p>
+                <p>🔒 Time manipulation locks your account – never change device time.</p>
+            </div>
+            
+            <button onclick="router.navigateTo('subjects.html')" class="btn-text">← Back to Subjects</button>
+        </main>
+    </div>
+    
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>

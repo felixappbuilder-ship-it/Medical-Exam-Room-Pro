@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile – Medical Exam Room Pro</title>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/profile.css" media="all">
+    
+    <script defer src="../scripts/utils.js"></script>
+    <script defer src="../scripts/ui.js"></script>
+    <script defer src="../scripts/router.js"></script>
+    <script defer src="../scripts/app.js"></script>
+    <script defer src="../scripts/auth.js"></script>
+    <script defer src="../scripts/subscription.js"></script>
+    <script defer src="../scripts/security.js"></script>
+    <script defer src="../scripts/db.js"></script>
+    <script defer src="../scripts/sync.js"></script>
+    <script defer src="../scripts/validation.js"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+        }
+    </script>
+    
+    <script defer>
+        (async function initProfile() {
+            await app.initializeApp();
+            ui.applyTheme();
+            
+            // Authentication check
+            if (!app.checkAuth()) {
+                router.navigateTo('login.html');
+                return;
+            }
+            
+            // Load user data from app state
+            const user = app.getUser();
+            const subscription = app.getSubscription();
+            
+            // Populate profile fields
+            document.getElementById('full-name').value = user?.name || '';
+            document.getElementById('email').value = user?.email || '';
+            document.getElementById('phone').value = user?.phone || '';
+            document.getElementById('institution').value = user?.institution || '';
+            document.getElementById('year-of-study').value = user?.yearOfStudy || '';
+            
+            // Subscription info
+            const subEl = document.getElementById('subscription-info');
+            if (subscription?.isActive) {
+                const remaining = subscription.calculateRemainingTime?.() || '';
+                subEl.innerHTML = `
+                    <p><strong>Plan:</strong> ${subscription.plan}</p>
+                    <p><strong>Expires:</strong> ${utils.formatDate(subscription.expiryDate)} (${remaining} left)</p>
+                    <p><strong>Auto-renew:</strong> ${subscription.autoRenew ? 'On' : 'Off'}</p>
+                    <button onclick="router.navigateTo('subscription.html')" class="btn-small">Change Plan</button>
+                `;
+            } else {
+                subEl.innerHTML = '<p>No active subscription. <a href="#" onclick="router.navigateTo(\'subscription.html\');return false;">Subscribe now</a></p>';
+            }
+            
+            // Load devices
+            await loadDevices();
+            
+            // Load preferences
+            loadPreferences(user?.preferences);
+            
+            // Load statistics
+            loadStatistics();
+        })();
+        
+        // ----- PROFILE UPDATE -----
+        async function saveProfile(event) {
+            event.preventDefault();
+            
+            const updates = {
+                name: document.getElementById('full-name').value.trim(),
+                email: document.getElementById('email').value.trim(),
+                phone: document.getElementById('phone').value.trim(),
+                institution: document.getElementById('institution').value.trim(),
+                yearOfStudy: parseInt(document.getElementById('year-of-study').value) || null
+            };
+            
+            // Validate
+            const validationResult = validation.validateForm(updates, {
+                name: { required: true, min: 2 },
+                email: { required: true, email: true },
+                phone: { required: true, phone: 'KE' }
+            });
+            if (!validationResult.valid) {
+                ui.showValidationSummary(validationResult.errors);
+                return;
+            }
+            
+            ui.showLoading('Updating profile...');
+            try {
+                await auth.updateProfile(updates);
+                ui.hideLoading();
+                ui.showToast('Profile updated successfully', 'success');
+                // Update local user in app state
+                app.setUser({ ...app.getUser(), ...updates });
+            } catch (error) {
+                ui.hideLoading();
+                ui.showToast(error.message || 'Update failed', 'error');
+            }
+        }
+        
+        // ----- PASSWORD CHANGE -----
+        async function changePassword() {
+            const currentPwd = document.getElementById('current-password').value;
+            const newPwd = document.getElementById('new-password').value;
+            const confirmPwd = document.getElementById('confirm-password').value;
+            
+            if (!currentPwd || !newPwd || !confirmPwd) {
+                ui.showToast('All password fields are required', 'error');
+                return;
+            }
+            
+            if (newPwd !== confirmPwd) {
+                ui.showToast('New passwords do not match', 'error');
+                return;
+            }
+            
+            if (!validation.validatePassword(newPwd)) {
+                ui.showToast('Password must be 8+ chars, include uppercase, lowercase, number', 'error');
+                return;
+            }
+            
+            const confirmed = await ui.showConfirmationDialog(
+                'Change Password',
+                'You will be logged out from all other devices. Continue?',
+                'warning'
+            );
+            if (!confirmed) return;
+            
+            ui.showLoading('Changing password...');
+            try {
+                await auth.changePassword({ currentPassword: currentPwd, newPassword: newPwd });
+                ui.hideLoading();
+                ui.showToast('Password changed successfully', 'success');
+                // Clear password fields
+                document.getElementById('current-password').value = '';
+                document.getElementById('new-password').value = '';
+                document.getElementById('confirm-password').value = '';
+            } catch (error) {
+                ui.hideLoading();
+                ui.showToast(error.message || 'Password change failed', 'error');
+            }
+        }
+        
+        // ----- DEVICE MANAGEMENT -----
+        async function loadDevices() {
+            const container = document.getElementById('devices-list');
+            try {
+                const devices = await security.getUserDevices();
+                if (!devices || devices.length === 0) {
+                    container.innerHTML = '<p class="no-data">No other devices.</p>';
+                    return;
+                }
+                let html = '';
+                devices.forEach(dev => {
+                    html += `
+                        <div class="device-item ${dev.current ? 'current-device' : ''}">
+                            <span class="device-icon">${dev.platform.includes('Android') ? '📱' : '💻'}</span>
+                            <span class="device-name">${dev.platform}</span>
+                            <span class="device-last">Last used: ${utils.formatDate(dev.lastUsed)}</span>
+                            ${dev.current ? '<span class="badge">Current</span>' : ''}
+                            ${!dev.current ? `<button onclick="logoutDevice('${dev.fingerprint}')" class="btn-small">Logout</button>` : ''}
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+            } catch (error) {
+                container.innerHTML = '<p class="error">Failed to load devices.</p>';
+            }
+        }
+        
+        async function logoutDevice(fingerprint) {
+            if (await ui.showConfirmationDialog('Logout Device', 'Logout this device?')) {
+                try {
+                    await security.logoutDevice(fingerprint);
+                    ui.showToast('Device logged out', 'success');
+                    loadDevices();
+                } catch (error) {
+                    ui.showToast('Failed to logout device', 'error');
+                }
+            }
+        }
+        
+        async function logoutAllDevices() {
+            if (await ui.showConfirmationDialog('Logout All Devices', 'Logout from all other devices? (you will stay logged in here)')) {
+                try {
+                    await security.logoutAllOtherDevices();
+                    ui.showToast('All other devices logged out', 'success');
+                    loadDevices();
+                } catch (error) {
+                    ui.showToast('Operation failed', 'error');
+                }
+            }
+        }
+        
+        // ----- PREFERENCES -----
+        function loadPreferences(prefs = {}) {
+            document.getElementById('theme-select').value = prefs.theme || 'auto';
+            document.getElementById('notifications').checked = prefs.notifications?.examReminders ?? true;
+            document.getElementById('sync-mobile').checked = prefs.dataUsage?.syncOnMobile ?? false;
+            document.getElementById('cache-size').value = prefs.dataUsage?.cacheSize || '1gb';
+        }
+        
+        async function savePreferences() {
+            const preferences = {
+                theme: document.getElementById('theme-select').value,
+                notifications: {
+                    examReminders: document.getElementById('notifications').checked,
+                    subscriptionExpiry: true,
+                    newFeatures: false
+                },
+                dataUsage: {
+                    syncOnMobile: document.getElementById('sync-mobile').checked,
+                    downloadImages: 'wifi_only',
+                    cacheSize: document.getElementById('cache-size').value
+                }
+            };
+            
+            try {
+                await auth.updatePreferences(preferences);
+                // Apply theme immediately
+                ui.setTheme(preferences.theme);
+                ui.showToast('Preferences saved', 'success');
+            } catch (error) {
+                ui.showToast('Failed to save preferences', 'error');
+            }
+        }
+        
+        // ----- STATISTICS -----
+        async function loadStatistics() {
+            const stats = await db.getUserStatistics() || {};
+            document.getElementById('total-exams').textContent = stats.totalExams || 0;
+            document.getElementById('total-questions').textContent = stats.totalQuestions || 0;
+            document.getElementById('avg-score').textContent = stats.averageScore ? `${Math.round(stats.averageScore)}%` : '—';
+            document.getElementById('study-time').textContent = stats.totalStudyTime ? `${Math.round(stats.totalStudyTime / 60)}h` : '—';
+        }
+        
+        // ----- DATA EXPORT -----
+        async function exportData() {
+            const confirmed = await ui.showConfirmationDialog(
+                'Export Data',
+                'This may take a few minutes. A JSON file will be downloaded. Continue?',
+                'info'
+            );
+            if (!confirmed) return;
+            
+            ui.showLoading('Preparing export...');
+            try {
+                await auth.exportData();
+                // The actual download is handled by auth.exportData() which triggers a file download
+                ui.hideLoading();
+                ui.showToast('Export started', 'success');
+            } catch (error) {
+                ui.hideLoading();
+                ui.showToast('Export failed', 'error');
+            }
+        }
+        
+        // ----- ACCOUNT DELETION -----
+        async function deleteAccount() {
+            const confirmText = prompt('Type "DELETE" to confirm permanent account deletion:');
+            if (confirmText !== 'DELETE') {
+                ui.showToast('Deletion cancelled', 'info');
+                return;
+            }
+            
+            const password = prompt('Enter your password to confirm:');
+            if (!password) return;
+            
+            ui.showLoading('Deleting account...');
+            try {
+                await auth.deleteAccount(password);
+                ui.hideLoading();
+                ui.showToast('Account deleted. Redirecting...', 'info');
+                auth.logout();
+                router.navigateTo('index.html');
+            } catch (error) {
+                ui.hideLoading();
+                ui.showToast(error.message || 'Deletion failed', 'error');
+            }
+        }
+        
+        // ----- LOGOUT -----
+        function logout() {
+            auth.logout();
+            router.navigateTo('welcome.html');
+        }
+        
+        // Expose functions globally
+        window.saveProfile = saveProfile;
+        window.changePassword = changePassword;
+        window.logoutDevice = logoutDevice;
+        window.logoutAllDevices = logoutAllDevices;
+        window.savePreferences = savePreferences;
+        window.exportData = exportData;
+        window.deleteAccount = deleteAccount;
+        window.logout = logout;
+    </script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <div>
+                <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
+                <button onclick="logout()" class="btn-text">Logout</button>
+            </div>
+        </header>
+        
+        <main>
+            <h1>My Profile</h1>
+            
+            <!-- Profile Tabs -->
+            <div class="tabs">
+                <button class="tab-button active" onclick="ui.switchTab('profile-tab')">👤 Profile</button>
+                <button class="tab-button" onclick="ui.switchTab('security-tab')">🔐 Security</button>
+                <button class="tab-button" onclick="ui.switchTab('devices-tab')">📱 Devices</button>
+                <button class="tab-button" onclick="ui.switchTab('preferences-tab')">⚙️ Preferences</button>
+                <button class="tab-button" onclick="ui.switchTab('stats-tab')">📊 Stats</button>
+            </div>
+            
+            <!-- Profile Tab -->
+            <div id="profile-tab" class="tab-content active">
+                <form onsubmit="saveProfile(event)" class="profile-form">
+                    <div class="form-group">
+                        <label for="full-name">Full name</label>
+                        <input type="text" id="full-name" name="full-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email address</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="phone">Phone number (M‑Pesa)</label>
+                        <input type="tel" id="phone" name="phone" required>
+                        <small>Format: 07XX or 2547XX</small>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="institution">Institution</label>
+                            <input type="text" id="institution" name="institution" placeholder="e.g., University of Nairobi">
+                        </div>
+                        <div class="form-group half">
+                            <label for="year-of-study">Year of study</label>
+                            <select id="year-of-study">
+                                <option value="">-- Select --</option>
+                                <option value="1">1st year</option>
+                                <option value="2">2nd year</option>
+                                <option value="3">3rd year</option>
+                                <option value="4">4th year</option>
+                                <option value="5">5th year</option>
+                                <option value="6">6th year</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary">Save Changes</button>
+                </form>
+                
+                <div class="subscription-card">
+                    <h3>Subscription</h3>
+                    <div id="subscription-info"></div>
+                </div>
+            </div>
+            
+            <!-- Security Tab (Change Password) -->
+            <div id="security-tab" class="tab-content">
+                <h3>Change Password</h3>
+                <div class="form-group">
+                    <label for="current-password">Current password</label>
+                    <input type="password" id="current-password" autocomplete="current-password">
+                </div>
+                <div class="form-group">
+                    <label for="new-password">New password</label>
+                    <input type="password" id="new-password" autocomplete="new-password">
+                    <small>8+ chars, upper, lower, number</small>
+                </div>
+                <div class="form-group">
+                    <label for="confirm-password">Confirm new password</label>
+                    <input type="password" id="confirm-password" autocomplete="new-password">
+                </div>
+                <button onclick="changePassword()" class="btn-primary">Update Password</button>
+                
+                <hr>
+                <h3>Data & Privacy</h3>
+                <button onclick="exportData()" class="btn-secondary">📤 Export My Data</button>
+                <button onclick="deleteAccount()" class="btn-danger" style="background: #dc2626; color: white;">🗑️ Delete Account</button>
+            </div>
+            
+            <!-- Devices Tab -->
+            <div id="devices-tab" class="tab-content">
+                <div class="devices-header">
+                    <h3>Your Devices</h3>
+                    <button onclick="logoutAllDevices()" class="btn-small">Logout all others</button>
+                </div>
+                <div id="devices-list" class="devices-list"></div>
+                <p class="note">Device fingerprint: <code id="device-fingerprint"></code></p>
+                <script>document.getElementById('device-fingerprint').textContent = security.getDeviceFingerprint() || '—';</script>
+            </div>
+            
+            <!-- Preferences Tab -->
+            <div id="preferences-tab" class="tab-content">
+                <h3>Appearance</h3>
+                <div class="form-group">
+                    <label for="theme-select">Theme</label>
+                    <select id="theme-select">
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                        <option value="auto">Auto (follow system)</option>
+                    </select>
+                </div>
+                
+                <h3>Notifications</h3>
+                <div class="form-group checkbox">
+                    <label>
+                        <input type="checkbox" id="notifications"> Exam reminders
+                    </label>
+                </div>
+                
+                <h3>Data Usage</h3>
+                <div class="form-group checkbox">
+                    <label>
+                        <input type="checkbox" id="sync-mobile"> Sync on mobile data
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="cache-size">Cache size</label>
+                    <select id="cache-size">
+                        <option value="500mb">500 MB</option>
+                        <option value="1gb">1 GB</option>
+                        <option value="2gb">2 GB</option>
+                        <option value="unlimited">Unlimited</option>
+                    </select>
+                </div>
+                
+                <button onclick="savePreferences()" class="btn-primary">Save Preferences</button>
+            </div>
+            
+            <!-- Statistics Tab -->
+            <div id="stats-tab" class="tab-content">
+                <h3>Your Learning Statistics</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">Exams taken</span>
+                        <span class="stat-value" id="total-exams">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Questions answered</span>
+                        <span class="stat-value" id="total-questions">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Average score</span>
+                        <span class="stat-value" id="avg-score">—</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total study time</span>
+                        <span class="stat-value" id="study-time">0h</span>
+                    </div>
+                </div>
+                <button onclick="router.navigateTo('performance.html')" class="btn-secondary">View Detailed Analytics →</button>
+            </div>
+        </main>
+        
+        <footer>
+            <button onclick="router.navigateTo('subjects.html')" class="btn-text">← Back to Subjects</button>
+        </footer>
+    </div>
+    
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>

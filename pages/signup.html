@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up – Medical Exam Room Pro</title>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/signup.css" media="all">
+    
+    <!-- Core modules -->
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+    <script type="module" src="../scripts/app.js"></script>
+    <script type="module" src="../scripts/auth.js"></script>
+    <script type="module" src="../scripts/validation.js"></script>
+    <script type="module" src="../scripts/security.js"></script>
+    <script type="module" src="../scripts/db.js"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+        }
+    </script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <button onclick="window.ui?.toggleTheme()" class="btn-outline">🌓</button>
+        </header>
+        
+        <main class="form-container">
+            <h1>Create your account</h1>
+            <p class="step-indicator" id="step-indicator">Step 1 of 3: Personal Information</p>
+            
+            <!-- Step 1: Personal Information -->
+            <div id="step1" class="step active">
+                <form id="step1-form">
+                    <div class="form-group">
+                        <label for="fullName">Full name</label>
+                        <input type="text" id="fullName" name="fullName" placeholder="e.g., John Mwangi" required>
+                        <div class="error-message" data-for="fullName"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="email">Email address</label>
+                        <input type="email" id="email" name="email" placeholder="student@example.com" required>
+                        <div class="error-message" data-for="email"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="phone">Phone number (M‑Pesa)</label>
+                        <input type="tel" id="phone" name="phone" placeholder="e.g., 0712345678" required>
+                        <div class="error-message" data-for="phone"></div>
+                        <small>Format: 07XXXXXXXX or 2547XXXXXXXX</small>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="password">Password</label>
+                            <input type="password" id="password" name="password" placeholder="••••••••" required>
+                            <button type="button" onclick="window.ui?.togglePasswordVisibility('password')" class="reveal-btn">👁️</button>
+                            <div class="error-message" data-for="password"></div>
+                        </div>
+                        <div class="form-group half">
+                            <label for="confirmPassword">Confirm password</label>
+                            <input type="password" id="confirmPassword" name="confirmPassword" placeholder="••••••••" required>
+                            <button type="button" onclick="window.ui?.togglePasswordVisibility('confirmPassword')" class="reveal-btn">👁️</button>
+                            <div class="error-message" data-for="confirmPassword"></div>
+                        </div>
+                    </div>
+                    <div id="password-strength" class="strength-meter"></div>
+                    
+                    <div class="form-group checkbox">
+                        <label>
+                            <input type="checkbox" id="terms" name="terms" required>
+                            I agree to the <a href="#" target="_blank">Terms of Service</a> and <a href="#" target="_blank">Privacy Policy</a>
+                        </label>
+                        <div class="error-message" data-for="terms"></div>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button type="button" onclick="window.router?.navigateTo('welcome.html')" class="btn-secondary">Cancel</button>
+                        <button type="button" onclick="window.goToStep2()" class="btn-primary">Next →</button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Step 2: Security Questions -->
+            <div id="step2" class="step" style="display:none;">
+                <form id="step2-form">
+                    <p class="instruction">Set up security questions for account recovery. These will be used if you forget your password.</p>
+                    
+                    <div class="form-group">
+                        <label for="sq1">Question 1: What is your place of birth?</label>
+                        <input type="text" id="sq1" name="sq1" placeholder="e.g., Nakuru" required>
+                        <div class="error-message" data-for="sq1"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="sq2">Question 2: What was the name of your primary school?</label>
+                        <input type="text" id="sq2" name="sq2" placeholder="e.g., Bethel Academy" required>
+                        <div class="error-message" data-for="sq2"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="sq3">Question 3: What is your mother's maiden name?</label>
+                        <input type="text" id="sq3" name="sq3" placeholder="e.g., Wanjiku" required>
+                        <div class="error-message" data-for="sq3"></div>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button type="button" onclick="window.goToStep1()" class="btn-secondary">← Back</button>
+                        <button type="button" onclick="window.goToStep3()" class="btn-primary">Next →</button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Step 3: Success & Redirect -->
+            <div id="step3" class="step" style="display:none; text-align: center;">
+                <div class="success-icon">✅</div>
+                <h2>Account created successfully!</h2>
+                <p>Your account has been created. You will be redirected to start your free trial in <span id="countdown">3</span> seconds.</p>
+                <button onclick="window.router?.navigateTo('free-trial.html')" class="btn-primary">Go to Free Trial now</button>
+            </div>
+        </main>
+        
+        <footer>
+            <button onclick="window.router?.navigateTo('welcome.html')" class="btn-text">← Back to Welcome</button>
+        </footer>
+    </div>
+    
+   <script type="module">
+    // Import dependencies
+    import * as app from '../scripts/app.js';
+    import * as auth from '../scripts/auth.js';
+    import * as ui from '../scripts/ui.js';
+    import * as router from '../scripts/router.js';
+    import * as validation from '../scripts/validation.js';
+    import * as security from '../scripts/security.js';
+    import * as utils from '../scripts/utils.js';
+    import * as db from '../scripts/db.js';
+
+    // State to hold form data across steps
+    let formData = {
+        name: '',
+        email: '',
+        phone: '',
+        password: '',
+        confirmPassword: '',
+        terms: false,
+        securityQuestions: [
+            { question: 'What is your place of birth?', answer: '' },
+            { question: 'What was the name of your primary school?', answer: '' },
+            { question: 'What is your mother\'s maiden name?', answer: '' }
+        ]
+    };
+
+    // Initialize page
+    window.addEventListener('load', async function() {
+        ui.applyTheme();
+
+        // Redirect if already logged in
+        if (app.checkAuth()) {
+            router.navigateTo('subjects.html');
+            return;
+        }
+
+        // Setup live validation for step 1
+        validation.setupLiveValidation('step1-form', {
+            fullName: { required: true, min: 2, pattern: '^[A-Za-z ]+$' },
+            email: { required: true, email: true },
+            phone: { required: true, phone: 'KE' },
+            password: { required: true, password: true },
+            confirmPassword: { required: true, equalTo: 'password' },
+            terms: { required: true }
+        });
+
+        // Password strength meter
+        const pwdField = document.getElementById('password');
+        pwdField.addEventListener('input', function() {
+            const strength = validation.checkPasswordStrength(this.value);
+            ui.updatePasswordStrength(strength);
+        });
+
+        // Load any saved data from session (if returning from step2)
+        const saved = sessionStorage.getItem('signupData');
+        if (saved) {
+            try {
+                formData = JSON.parse(saved);
+                // Populate fields
+                document.getElementById('fullName').value = formData.name || '';
+                document.getElementById('email').value = formData.email || '';
+                document.getElementById('phone').value = formData.phone || '';
+                document.getElementById('password').value = formData.password || '';
+                document.getElementById('confirmPassword').value = formData.confirmPassword || '';
+                document.getElementById('terms').checked = formData.terms || false;
+                document.getElementById('sq1').value = formData.securityQuestions[0]?.answer || '';
+                document.getElementById('sq2').value = formData.securityQuestions[1]?.answer || '';
+                document.getElementById('sq3').value = formData.securityQuestions[2]?.answer || '';
+            } catch (e) {}
+        }
+    });
+
+    // Step navigation functions
+    window.goToStep2 = function() {
+        // Validate step 1 fields
+        const step1Data = {
+            fullName: document.getElementById('fullName').value.trim(),
+            email: document.getElementById('email').value.trim(),
+            phone: document.getElementById('phone').value.trim(),
+            password: document.getElementById('password').value,
+            confirmPassword: document.getElementById('confirmPassword').value,
+            terms: document.getElementById('terms').checked
+        };
+
+        const rules = {
+            fullName: { required: true, min: 2 },
+            email: { required: true, email: true },
+            phone: { required: true, phone: 'KE' },
+            password: { required: true, password: true },
+            confirmPassword: { required: true, equalTo: 'password' },
+            terms: { required: true }
+        };
+
+        const result = validation.validateForm(step1Data, rules);
+        if (!result.valid) {
+            validation.showValidationSummary(result.errors);
+            return;
+        }
+
+        // Save to formData
+        formData.name = step1Data.fullName;
+        formData.email = step1Data.email;
+        formData.phone = validation.formatKenyanPhone(step1Data.phone) || step1Data.phone;
+        formData.password = step1Data.password;
+        formData.confirmPassword = step1Data.confirmPassword;
+        formData.terms = step1Data.terms;
+
+        // Show step 2
+        document.getElementById('step1').style.display = 'none';
+        document.getElementById('step2').style.display = 'block';
+        document.getElementById('step-indicator').textContent = 'Step 2 of 3: Security Questions';
+
+        // Save progress to session
+        sessionStorage.setItem('signupData', JSON.stringify(formData));
+    };
+
+    window.goToStep1 = function() {
+        // Save security answers from step 2
+        formData.securityQuestions[0].answer = document.getElementById('sq1').value.trim();
+        formData.securityQuestions[1].answer = document.getElementById('sq2').value.trim();
+        formData.securityQuestions[2].answer = document.getElementById('sq3').value.trim();
+
+        // Validate they are not empty
+        if (!formData.securityQuestions[0].answer || !formData.securityQuestions[1].answer || !formData.securityQuestions[2].answer) {
+            ui.showToast('Please answer all security questions', 'error');
+            return;
+        }
+
+        document.getElementById('step2').style.display = 'none';
+        document.getElementById('step1').style.display = 'block';
+        document.getElementById('step-indicator').textContent = 'Step 1 of 3: Personal Information';
+
+        sessionStorage.setItem('signupData', JSON.stringify(formData));
+    };
+
+    window.goToStep3 = async function() {
+        // Save security answers
+        formData.securityQuestions[0].answer = document.getElementById('sq1').value.trim();
+        formData.securityQuestions[1].answer = document.getElementById('sq2').value.trim();
+        formData.securityQuestions[2].answer = document.getElementById('sq3').value.trim();
+
+        if (!formData.securityQuestions[0].answer || !formData.securityQuestions[1].answer || !formData.securityQuestions[2].answer) {
+            ui.showToast('Please answer all security questions', 'error');
+            return;
+        }
+
+        ui.showLoading('Creating account...');
+
+        try {
+            const deviceFingerprint = security.generateDeviceFingerprint();
+            const deviceInfo = {
+                platform: navigator.platform,
+                userAgent: navigator.userAgent,
+                screen: `${screen.width}x${screen.height}`,
+                timezone: new Date().getTimezoneOffset()
+            };
+
+            // Prepare user data for registration
+            const userData = {
+                name: formData.name,
+                email: formData.email,
+                phone: formData.phone,
+                password: formData.password,
+                securityQuestions: formData.securityQuestions,
+                deviceFingerprint,
+                deviceInfo
+            };
+
+            // Register via auth module
+            const user = await auth.register(userData, deviceInfo);
+
+            // Double-check that user is now authenticated
+            if (!app.checkAuth()) {
+                console.warn('Auth check failed after registration, but token should be set. Forcing reload.');
+                // Force a reload to ensure app state is fresh
+                window.location.href = '/pages/free-trial.html';
+                return;
+            }
+
+            ui.hideLoading();
+
+            // Show success step
+            document.getElementById('step2').style.display = 'none';
+            document.getElementById('step3').style.display = 'block';
+            document.getElementById('step-indicator').style.display = 'none';
+
+            // Clear session storage
+            sessionStorage.removeItem('signupData');
+
+            // Start countdown to free-trial
+            let countdown = 3;
+            const countdownEl = document.getElementById('countdown');
+            const interval = setInterval(() => {
+                countdown--;
+                countdownEl.textContent = countdown;
+                if (countdown <= 0) {
+                    clearInterval(interval);
+                    router.navigateTo('free-trial.html');
+                }
+            }, 1000);
+
+        } catch (error) {
+            ui.hideLoading();
+            ui.showToast(error.message || 'Registration failed', 'error');
+        }
+    };
+
+    // Expose functions globally for onclick
+    window.goToStep2 = goToStep2;
+    window.goToStep1 = goToStep1;
+    window.goToStep3 = goToStep3;
+</script>
+    
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>
