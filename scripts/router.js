@@ -11,6 +11,7 @@ import * as ui from './ui.js';
 import * as utils from './utils.js';
 
 // ==================== DETECT BASE PATH ====================
+<<<<<<< HEAD
 const BASE_PATH = (() => {
     const path = window.location.pathname;
     // Look for the last occurrence of '/pages/' to determine the base
@@ -31,6 +32,27 @@ const BASE_PATH = (() => {
 console.log('[Router] Base path detected:', BASE_PATH);
 
 // ==================== ROUTE PERMISSIONS ====================
+=======
+// Use import.meta.url to get the script's full URL, then extract the base path up to '/scripts/'
+const scriptUrl = import.meta.url;
+let basePath = '';
+try {
+    const url = new URL(scriptUrl);
+    const pathParts = url.pathname.split('/');
+    // Remove the last two parts: 'scripts' and 'router.js'
+    pathParts.pop(); // remove 'router.js'
+    pathParts.pop(); // remove 'scripts'
+    basePath = pathParts.join('/');
+    if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
+    // If basePath is empty, leave it as empty string
+} catch (e) {
+    console.warn('[Router] Could not parse base path from script URL, falling back to empty');
+    basePath = '';
+}
+console.log('[Router] Base path detected:', basePath);
+
+// ==================== ROUTE PERMISSION DEFINITIONS ====================
+>>>>>>> main
 const ROUTES = {
     public: [
         'index.html',
@@ -48,7 +70,7 @@ const ROUTES = {
         'free-trial.html',
         'payment.html',
         'exam-settings.html',
-        'exam-room.html',      // also requires subscription
+        'exam-room.html',
         'results.html',
         'performance.html',
         'profile.html'
@@ -114,7 +136,11 @@ function isAllowed(targetPage, currentPage) {
     return true;
 }
 
+<<<<<<< HEAD
 // ==================== URL BUILDING (with base path) ====================
+=======
+// ==================== URL BUILDING ====================
+>>>>>>> main
 function buildUrl(target) {
     // Split target into path and hash (preserve hash)
     const [pathAndQuery, hash] = target.split('#');
@@ -127,16 +153,28 @@ function buildUrl(target) {
     // Trim any leading/trailing slashes from base
     const cleanBase = base.replace(/^\/+|\/+$/g, '');
 
+<<<<<<< HEAD
     // If it's already an absolute path (starts with /), prepend BASE_PATH
     if (base.startsWith('/')) {
         return BASE_PATH + base + queryPart + hashPart;
+=======
+    // If it's already an absolute path (starts with /), prepend basePath
+    if (base.startsWith('/')) {
+        return basePath + base + queryPart + hashPart;
+>>>>>>> main
     }
 
     // Map to correct location
     if (cleanBase === 'index.html') {
+<<<<<<< HEAD
         return BASE_PATH + '/index.html' + queryPart + hashPart;
     } else {
         return BASE_PATH + `/pages/${cleanBase}` + queryPart + hashPart;
+=======
+        return basePath + '/index.html' + queryPart + hashPart;
+    } else {
+        return basePath + `/pages/${cleanBase}` + queryPart + hashPart;
+>>>>>>> main
     }
 }
 
@@ -187,8 +225,13 @@ export function getCurrentPage() {
     const path = window.location.pathname;
     // Remove base path to get relative path
     let relativePath = path;
+<<<<<<< HEAD
     if (BASE_PATH && path.startsWith(BASE_PATH)) {
         relativePath = path.substring(BASE_PATH.length);
+=======
+    if (basePath && path.startsWith(basePath)) {
+        relativePath = path.substring(basePath.length);
+>>>>>>> main
     }
     if (relativePath === '/' || relativePath === '/index.html') return 'index.html';
     const parts = relativePath.split('/');
