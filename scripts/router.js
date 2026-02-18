@@ -1,22 +1,35 @@
 // frontend-user/scripts/router.js
 
 /**
- * Full-featured Client-Side Router
+ * Full-featured Client-Side Router – GitHub Pages compatible
  * Handles navigation from all buttons in every HTML page.
- * Supports:
- *   - Simple page names: 'welcome.html'
- *   - Query parameters: 'subject-specific.html?subject=anatomy'
- *   - Hash fragments: 'performance.html#weak'
- *   - Already absolute paths (ignores them, but unlikely to be used)
- * Enforces authentication and subscription checks (exam-room only).
- * Provides global window.router.navigateTo for onclick handlers.
+ * Automatically detects the base path (e.g., /repository-name) and uses it for all navigation.
  */
 
 import * as app from './app.js';
 import * as ui from './ui.js';
 import * as utils from './utils.js';
 
-// Route permission definitions
+// ==================== DETECT BASE PATH ====================
+// Use import.meta.url to get the script's full URL, then extract the base path up to '/scripts/'
+const scriptUrl = import.meta.url;
+let basePath = '';
+try {
+    const url = new URL(scriptUrl);
+    const pathParts = url.pathname.split('/');
+    // Remove the last two parts: 'scripts' and 'router.js'
+    pathParts.pop(); // remove 'router.js'
+    pathParts.pop(); // remove 'scripts'
+    basePath = pathParts.join('/');
+    if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
+    // If basePath is empty, leave it as empty string
+} catch (e) {
+    console.warn('[Router] Could not parse base path from script URL, falling back to empty');
+    basePath = '';
+}
+console.log('[Router] Base path detected:', basePath);
+
+// ==================== ROUTE PERMISSION DEFINITIONS ====================
 const ROUTES = {
     public: [
         'index.html',
@@ -24,7 +37,8 @@ const ROUTES = {
         'login.html',
         'signup.html',
         'forgot-password.html',
-        'locked.html'
+        'locked.html',
+        'shared-exam.html'
     ],
     protected: [
         'subjects.html',
@@ -33,7 +47,7 @@ const ROUTES = {
         'free-trial.html',
         'payment.html',
         'exam-settings.html',
-        'exam-room.html',      // also requires subscription
+        'exam-room.html',
         'results.html',
         'performance.html',
         'profile.html'
@@ -66,42 +80,7 @@ const FLOW = {
     'forgot-password.html': ['login.html']
 };
 
-/**
- * Normalise and build absolute URL from a navigation target.
- * @param {string} target - e.g., 'welcome.html', 'subject-specific.html?subject=anatomy', 'performance.html#weak'
- * @returns {string} absolute path (e.g., '/pages/welcome.html', '/pages/subject-specific.html?subject=anatomy')
- */
-function buildUrl(target) {
-    // Split target into path and hash (preserve hash for later)
-    const [pathAndQuery, hash] = target.split('#');
-    let hashPart = hash ? `#${hash}` : '';
-
-    // Split path into base and query
-    const [base, query] = pathAndQuery.split('?');
-    let queryPart = query ? `?${query}` : '';
-
-    // Trim any leading/trailing slashes from base
-    const cleanBase = base.replace(/^\/+|\/+$/g, '');
-
-    // If it's already an absolute path (starts with /), assume it's correct
-    if (base.startsWith('/')) {
-        return base + queryPart + hashPart;
-    }
-
-    // Otherwise, map to correct location
-    if (cleanBase === 'index.html') {
-        return '/index.html' + queryPart + hashPart;
-    } else {
-        return `/pages/${cleanBase}` + queryPart + hashPart;
-    }
-}
-
-/**
- * Check if navigation is allowed.
- * @param {string} targetPage - base filename (without query/hash)
- * @param {string} currentPage - current filename
- * @returns {boolean}
- */
+// ==================== PERMISSION CHECK ====================
 function isAllowed(targetPage, currentPage) {
     // Public pages always allowed
     if (ROUTES.public.includes(targetPage)) return true;
@@ -134,6 +113,34 @@ function isAllowed(targetPage, currentPage) {
     return true;
 }
 
+// ==================== URL BUILDING ====================
+function buildUrl(target) {
+    // Split target into path and hash (preserve hash)
+    const [pathAndQuery, hash] = target.split('#');
+    const hashPart = hash ? `#${hash}` : '';
+
+    // Split path into base and query
+    const [base, query] = pathAndQuery.split('?');
+    const queryPart = query ? `?${query}` : '';
+
+    // Trim any leading/trailing slashes from base
+    const cleanBase = base.replace(/^\/+|\/+$/g, '');
+
+    // If it's already an absolute path (starts with /), prepend basePath
+    if (base.startsWith('/')) {
+        return basePath + base + queryPart + hashPart;
+    }
+
+    // Map to correct location
+    if (cleanBase === 'index.html') {
+        return basePath + '/index.html' + queryPart + hashPart;
+    } else {
+        return basePath + `/pages/${cleanBase}` + queryPart + hashPart;
+    }
+}
+
+// ==================== PUBLIC API ====================
+
 /**
  * Navigate to a page.
  * @param {string} page - as used in onclick handlers (may include query/hash)
@@ -144,7 +151,6 @@ export function navigateTo(page, data = {}) {
 
     // Extract base filename for permission checks (strip query/hash)
     const base = page.split('?')[0].split('#')[0];
-
     const current = getCurrentPage();
 
     if (!isAllowed(base, current)) {
@@ -167,7 +173,6 @@ export function navigateTo(page, data = {}) {
     overlay.style.display = 'block';
     overlay.style.opacity = '1';
 
-    // Small delay to allow overlay to show
     setTimeout(() => {
         window.location.href = targetUrl;
     }, 50);
@@ -179,8 +184,13 @@ export function navigateTo(page, data = {}) {
  */
 export function getCurrentPage() {
     const path = window.location.pathname;
-    if (path === '/' || path === '/index.html') return 'index.html';
-    const parts = path.split('/');
+    // Remove base path to get relative path
+    let relativePath = path;
+    if (basePath && path.startsWith(basePath)) {
+        relativePath = path.substring(basePath.length);
+    }
+    if (relativePath === '/' || relativePath === '/index.html') return 'index.html';
+    const parts = relativePath.split('/');
     const filename = parts[parts.length - 1];
     return filename || 'index.html';
 }
