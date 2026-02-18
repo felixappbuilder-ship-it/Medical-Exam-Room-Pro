@@ -26,10 +26,10 @@
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('../service-worker.js').catch(() => {});
         }
-    </script>
+    </script>   
     
-    <script type="module">
-    // Import dependencies
+   <script type="module">
+    // ==================== IMPORTS ====================
     import * as app from '../scripts/app.js';
     import * as auth from '../scripts/auth.js';
     import * as ui from '../scripts/ui.js';
@@ -39,16 +39,21 @@
     import * as analytics from '../scripts/analytics.js';
     import * as db from '../scripts/db.js';
 
-    // State
+    // ==================== STATE ====================
     let currentSubject = null;
     let currentUser = null;
     let topicsData = [];
 
-    // Initialize page
+    // ==================== INITIALIZATION ====================
     (async function init() {
+        console.log('[SubjectSpecific] Initializing...');
+        
+        // 1. Load app state (user, etc.)
+        await app.initializeApp();
         ui.applyTheme();
-
-        // Get subject from URL
+        currentUser = app.getUser();
+        
+        // 2. Get subject from URL
         const subjectId = utils.getQueryParam('subject');
         if (!subjectId) {
             ui.showToast('No subject specified', 'error');
@@ -57,10 +62,7 @@
         }
         currentSubject = subjectId;
 
-        // Check authentication (for personalized features)
-        currentUser = app.getUser();
-
-        // Hide all subject sections, show selected one
+        // 3. Show the correct subject section
         document.querySelectorAll('.subject-section').forEach(el => el.style.display = 'none');
         const targetDiv = document.getElementById(`${subjectId}-topics`);
         if (!targetDiv) {
@@ -70,18 +72,18 @@
         }
         targetDiv.style.display = 'block';
 
-        // Load subject metadata
+        // 4. Load subject metadata
         const subjectMeta = await questions.getSubjectMeta(subjectId);
         document.getElementById('subject-name').textContent = subjectMeta.name;
         document.getElementById('subject-icon').textContent = subjectMeta.icon;
         document.getElementById('subject-color').style.backgroundColor = subjectMeta.color;
         document.getElementById('total-questions').textContent = `${subjectMeta.questions} questions available`;
 
-        // Load topics for this subject
+        // 5. Load topics for this subject
         topicsData = await questions.getTopicsBySubject(subjectId);
         renderTopicTree(subjectId, topicsData);
 
-        // Load recent / weak topics (if user is logged in)
+        // 6. Load recent / weak topics if user is logged in
         if (currentUser) {
             const recentTopics = await analytics.getRecentTopics(subjectId, 3);
             renderRecentTopics(recentTopics);
@@ -89,7 +91,7 @@
             document.getElementById('recent-topics-list').innerHTML = '<p class="no-data">Login to see personalized weak areas.</p>';
         }
 
-        // Check if there's saved selection in session
+        // 7. Restore any previously saved selection from session
         const savedSelection = sessionStorage.getItem(`topicSelection_${subjectId}`);
         if (savedSelection) {
             try {
@@ -98,10 +100,11 @@
             } catch (e) {}
         }
 
-        // Update selection summary
+        // 8. Update selection summary
         updateSelectionSummary(subjectId);
     })();
 
+    // ==================== RENDERING ====================
     function renderTopicTree(subjectId, topics) {
         const container = document.getElementById(`${subjectId}-topics-tree`);
         if (!container) return;
@@ -121,7 +124,7 @@
         });
         container.innerHTML = html;
 
-        // Attach change listeners
+        // Attach change listeners to update summary and save selection
         container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
             cb.addEventListener('change', () => {
                 updateSelectionSummary(subjectId);
@@ -196,7 +199,7 @@
         });
     }
 
-    // Global functions for onclick
+    // ==================== GLOBAL ACTIONS (exposed for onclick) ====================
     window.selectAllTopics = function(subjectId) {
         const container = document.getElementById(`${subjectId}-topics-tree`);
         if (!container) return;
@@ -229,7 +232,6 @@
             return;
         }
 
-        // Save to app state
         app.setExamConfig({
             subject: subjectId,
             topics: selected,
@@ -267,7 +269,6 @@
     };
 
     window.quickStudyTopic = function(subjectId, topicId) {
-        // Find topic details
         const topic = topicsData.find(t => t.id === topicId);
         if (!topic) return;
 
@@ -280,7 +281,6 @@
         router.navigateTo('exam-settings.html');
     };
 
-    // Helper to get current subject (used by buttons)
     window.getCurrentSubject = function() {
         const visible = document.querySelector('.subject-section[style*="display: block"]');
         return visible ? visible.dataset.subject : null;

@@ -1,8 +1,9 @@
 // frontend-user/scripts/auth.js
 
 /**
- * Authentication Handler – OFFLINE VERSION
- * Stores users in IndexedDB with localStorage fallback.
+ * Authentication Handler – OFFLINE SINGLE-USER VERSION
+ * Manages login, registration, password reset, profile updates.
+ * Uses db.js for persistence and app.js for state.
  */
 
 import * as app from './app.js';
@@ -45,75 +46,62 @@ export async function refreshToken() {
     return true;
 }
 
-// ==================== HELPER ====================
+// ==================== LOGIN ====================
 
-async function findUser(identifier) {
-    const users = await db.getAllUsers();
-    console.log('[Auth] All users:', users);
-    return users.find(u => 
-        u.email.toLowerCase() === identifier.toLowerCase() || 
-        u.phone === identifier
-    );
-}
-
-// ==================== AUTH FUNCTIONS ====================
-
+/**
+ * Login – compare credentials against the single stored user.
+ */
 export async function login(identifier, password, deviceInfo) {
     console.log('[Auth] Login attempt:', identifier);
-    await new Promise(r => setTimeout(r, 500)); // simulate network
+    await new Promise(r => setTimeout(r, 500));
 
-    const users = await db.getAllUsers();
-    console.log('[Auth] Users in DB:', users);
-
-    const user = users.find(u => 
-        (u.email.toLowerCase() === identifier.toLowerCase() || u.phone === identifier) && 
-        u.password === password
-    );
-
+    const user = await db.getUser();
     if (!user) {
-        console.warn('[Auth] Invalid credentials for', identifier);
-        const error = new Error('Invalid credentials');
-        error.code = 'INVALID_CREDENTIALS';
-        throw error;
+        throw new Error('No user registered. Please sign up first.');
     }
 
-    // Check if account is locked
+    // Check identifier (email or phone)
+    const identifierMatch = user.email === identifier || user.phone === identifier;
+    if (!identifierMatch || user.password !== password) {
+        throw new Error('Invalid credentials');
+    }
+
+    // Check lock status
     const lockStatus = await db.getLockStatus();
     if (lockStatus?.locked) {
-        console.warn('[Auth] Account locked:', user.id);
         const error = new Error('Account is locked');
         error.code = 'ACCOUNT_LOCKED';
         throw error;
     }
 
-    // Simulate tokens
+    // Set tokens
     setToken('simulated-token-' + Date.now());
     setRefreshToken('simulated-refresh-' + Date.now());
+
+    // Set device fingerprint
     security.setDeviceFingerprint(deviceInfo.deviceFingerprint);
 
-    // Set user in app state
-    app.setUser(user);
-    console.log('[Auth] Login successful:', user.email);
+    // Update app state (this also saves to DB)
+    await app.setUser(user);
 
+    console.log('[Auth] Login successful:', user.email);
     return user;
 }
 
+// ==================== REGISTER ====================
+
+/**
+ * Register – delete any existing user and create new one.
+ */
 export async function register(userData) {
     console.log('[Auth] Register attempt:', userData.email);
     await new Promise(r => setTimeout(r, 500));
 
-    const users = await db.getAllUsers();
-    const exists = users.some(u => 
-        u.email.toLowerCase() === userData.email.toLowerCase() || 
-        u.phone === userData.phone
-    );
-    if (exists) {
-        console.warn('[Auth] User already exists:', userData.email);
-        throw new Error('User already exists with that email or phone');
-    }
+    // Delete any existing user
+    await db.deleteAllUsers();
 
     const newUser = {
-        id: 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        id: 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
         name: userData.name,
         email: userData.email.toLowerCase(),
         phone: userData.phone,
@@ -130,27 +118,87 @@ export async function register(userData) {
         }
     };
 
-    await db.saveUser(newUser);
-    console.log('[Auth] User saved to DB:', newUser.id);
+    // Save to DB (via app.setUser which also updates memory)
+    await app.setUser(newUser);
 
-    // Simulate tokens
+    // Set tokens
     setToken('simulated-token-' + Date.now());
     setRefreshToken('simulated-refresh-' + Date.now());
 
-    app.setUser(newUser);
-    console.log('[Auth] Registration successful:', newUser.email);
+    // Set device fingerprint
+    security.setDeviceFingerprint(userData.deviceFingerprint);
 
+    console.log('[Auth] Registration successful:', newUser.email);
     return newUser;
 }
 
-export function logout() {
+// ==================== LOGOUT ====================
+
+export async function logout() {
     clearToken();
-    app.clearUser();
+    await app.clearUser();   // clears memory and DB
     app.clearSubscription();
     app.clearExamConfig();
     app.clearExamState();
     ui.showToast('Logged out', 'info');
 }
+
+// ==================== PASSWORD RESET ====================
+
+export async function getSecurityQuestions(identifier) {
+    await new Promise(r => setTimeout(r, 300));
+    const user = await db.getUser();
+    if (!user) throw new Error('User not found');
+    if (user.email !== identifier && user.phone !== identifier) {
+        throw new Error('User not found');
+    }
+    return user.securityQuestions.map(q => q.question);
+}
+
+export async function verifySecurityAnswers(identifier, answers) {
+    await new Promise(r => setTimeout(r, 300));
+    const user = await db.getUser();
+    if (!user) throw new Error('User not found');
+    if (user.email !== identifier && user.phone !== identifier) {
+        throw new Error('User not found');
+    }
+
+    const normalizedAnswers = answers.map(a => a.trim().toLowerCase());
+    const allCorrect = user.securityQuestions.every((q, i) =>
+        q.answer === normalizedAnswers[i]
+    );
+
+    if (!allCorrect) {
+        throw new Error('Answers do not match');
+    }
+
+    const resetToken = 'reset-' + Date.now() + '-' + Math.random().toString(36);
+    sessionStorage.setItem('resetToken', resetToken);
+    return resetToken;
+}
+
+export async function resetPassword(identifier, newPassword) {
+    const resetToken = sessionStorage.getItem('resetToken');
+    if (!resetToken) throw new Error('No reset token. Please restart the process.');
+
+    await new Promise(r => setTimeout(r, 300));
+    const user = await db.getUser();
+    if (!user) throw new Error('User not found');
+    if (user.email !== identifier && user.phone !== identifier) {
+        throw new Error('User not found');
+    }
+
+    user.password = newPassword;
+    await db.saveUser(user);   // update DB
+    // Also update memory if this user is currently logged in
+    const currentUser = app.getUser();
+    if (currentUser && (currentUser.email === identifier || currentUser.phone === identifier)) {
+        app.setUser(user);
+    }
+    sessionStorage.removeItem('resetToken');
+}
+
+// ==================== PROFILE MANAGEMENT ====================
 
 export async function updateProfile(updates) {
     const user = app.getUser();
@@ -158,7 +206,7 @@ export async function updateProfile(updates) {
 
     Object.assign(user, updates);
     await db.saveUser(user);
-    app.setUser(user);
+    app.setUser(user);   // update memory
     return user;
 }
 
@@ -170,45 +218,8 @@ export async function changePassword({ currentPassword, newPassword }) {
     }
     user.password = newPassword;
     await db.saveUser(user);
-    setToken('simulated-token-' + Date.now());
-}
-
-export async function getSecurityQuestions(identifier) {
-    await new Promise(r => setTimeout(r, 300));
-    const user = await findUser(identifier);
-    if (!user) throw new Error('User not found');
-    return user.securityQuestions.map(q => q.question);
-}
-
-export async function verifySecurityAnswers(identifier, answers) {
-    await new Promise(r => setTimeout(r, 300));
-    const user = await findUser(identifier);
-    if (!user) throw new Error('User not found');
-
-    const normalizedAnswers = answers.map(a => a.trim().toLowerCase());
-    const allCorrect = user.securityQuestions.every((q, i) => 
-        q.answer === normalizedAnswers[i]
-    );
-
-    if (!allCorrect) {
-        throw new Error('Answers do not match');
-    }
-
-    const resetToken = 'reset-' + Date.now();
-    sessionStorage.setItem('resetToken', resetToken);
-    return resetToken;
-}
-
-export async function resetPassword(identifier, newPassword) {
-    const resetToken = sessionStorage.getItem('resetToken');
-    if (!resetToken) throw new Error('No reset token');
-
-    const user = await findUser(identifier);
-    if (!user) throw new Error('User not found');
-
-    user.password = newPassword;
-    await db.saveUser(user);
-    sessionStorage.removeItem('resetToken');
+    app.setUser(user);
+    setToken('simulated-token-' + Date.now()); // refresh token
 }
 
 export async function updatePreferences(preferences) {
@@ -223,11 +234,16 @@ export async function exportData() {
     const user = app.getUser();
     if (!user) throw new Error('Not authenticated');
 
+    const exams = await db.getAllExamResults();
+    const analytics = await db.getUserStatistics?.() || {};
+    const securityLogs = await db.getSecurityViolations?.() || [];
+
     const data = {
         user,
-        exams: await db.getAllExamResults(),
-        analytics: await db.getUserStatistics(),
-        securityLogs: await db.getSecurityViolations?.() || []
+        exams,
+        analytics,
+        securityLogs,
+        exportedAt: new Date().toISOString()
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -245,14 +261,14 @@ export async function deleteAccount(password) {
     if (user.password !== password) {
         throw new Error('Password incorrect');
     }
-    await db.deleteUser();
-    logout();
+    await db.deleteAllUsers();
+    await logout();  // clears tokens and app state
 }
 
 // ==================== SESSION MANAGEMENT ====================
 
 let sessionTimeout;
-const SESSION_DURATION = 2 * 60 * 60 * 1000;
+const SESSION_DURATION = 2 * 60 * 60 * 1000; // 2 hours
 
 export function startSession() {
     if (sessionTimeout) clearTimeout(sessionTimeout);
@@ -269,3 +285,24 @@ export function extendSession() {
         startSession();
     }
 }
+
+// ==================== EXPOSE GLOBALLY ====================
+
+window.auth = {
+    login,
+    register,
+    logout,
+    getSecurityQuestions,
+    verifySecurityAnswers,
+    resetPassword,
+    updateProfile,
+    changePassword,
+    updatePreferences,
+    exportData,
+    deleteAccount,
+    startSession,
+    extendSession,
+    getToken,
+    isTokenValid,
+    refreshToken
+};

@@ -23,64 +23,66 @@
         }
     </script>
     
-   <script type="module">
+  <script type="module">
     // Import dependencies
     import * as app from '../scripts/app.js';
+    import * as auth from '../scripts/auth.js';
     import * as ui from '../scripts/ui.js';
     import * as router from '../scripts/router.js';
     import * as subscription from '../scripts/subscription.js';
     import * as utils from '../scripts/utils.js';
+    import * as validation from '../scripts/validation.js';
+    import * as security from '../scripts/security.js';
+    import * as db from '../scripts/db.js';
 
-    // Initialize page
-    window.addEventListener('load', async function() {
+    (async function initSubscription() {
+        console.log('[Subscription] Initializing...');
+        await app.initializeApp();
         ui.applyTheme();
 
-        // Authentication required
+        // Authentication check
         if (!app.checkAuth()) {
-            ui.showToast('Please log in first', 'warning');
+            ui.showToast('Please log in to view subscriptions', 'warning');
             router.navigateTo('login.html');
             return;
         }
 
-        try {
-            // Load user's current subscription
-            const currentSub = await subscription.getSubscriptionStatus();
-            renderCurrentPlan(currentSub);
+        // Get current user and subscription
+        const user = app.getUser();
+        const currentSub = app.getSubscription();
 
-            // Load available plans from backend / config
-            const plans = await subscription.getSubscriptionPlans();
-            renderPlanCards(plans);
+        // Display current plan info
+        renderCurrentPlan(currentSub);
 
-            // Check trial eligibility (to disable trial card if already used)
-            const trialEligible = await subscription.checkTrialEligibility();
+        // Load available plans from subscription module
+        const plans = await subscription.getSubscriptionPlans();
+        renderPlanCards(plans);
+
+        // Check trial eligibility and update UI
+        const trialEligible = await subscription.checkTrialEligibility();
+        const trialCard = document.querySelector('.trial-card');
+        if (trialCard) {
             if (!trialEligible) {
-                const trialCard = document.querySelector('.trial-card');
-                if (trialCard) trialCard.classList.add('disabled');
+                trialCard.classList.add('disabled');
+                trialCard.querySelector('button')?.setAttribute('disabled', 'true');
             }
-        } catch (error) {
-            ui.showToast('Failed to load subscription data', 'error');
-            console.error(error);
         }
-    });
+    })();
 
-    // Render current subscription plan
     function renderCurrentPlan(sub) {
         const el = document.getElementById('current-plan');
         if (!el) return;
-
         if (!sub || !sub.isActive) {
             el.innerHTML = 'No active plan. <a href="#" onclick="router.navigateTo(\'free-trial.html\');return false;">Start free trial</a>';
             return;
         }
-
-        const remaining = subscription.formatRemainingTime(sub.expiryDate);
+        const remaining = subscription.formatRemainingTime?.(sub.expiryDate) || '';
         el.innerHTML = `
             <strong>${sub.plan}</strong> · expires ${utils.formatDate(sub.expiryDate)} 
             <span class="remaining">(${remaining} left)</span>
         `;
     }
 
-    // Render plan cards
     function renderPlanCards(plans) {
         const container = document.getElementById('plan-cards');
         if (!container) return;
@@ -107,12 +109,10 @@
         }).join('');
     }
 
-    // Plan selection handler (exposed globally)
     window.selectPlan = function(planId) {
         if (planId === 'trial') {
             router.navigateTo('free-trial.html');
         } else {
-            // Store selected plan in app state and go to payment
             app.setSelectedPlan(planId);
             router.navigateTo('payment.html');
         }

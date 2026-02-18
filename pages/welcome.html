@@ -1,45 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Welcome – Medical Exam Room Pro</title>
-    
+
     <link rel="manifest" href="../manifest.json">
     <link rel="stylesheet" href="../css/common.css" media="all">
     <link rel="stylesheet" href="../css/welcome.css" media="all">
-    
+
     <script type="module" src="../scripts/utils.js"></script>
     <script type="module" src="../scripts/ui.js"></script>
     <script type="module" src="../scripts/router.js"></script>
     <script type="module" src="../scripts/app.js"></script>
     <script type="module" src="../scripts/db.js"></script>
     <script type="module" src="../scripts/auth.js"></script>
-    
+
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+            navigator.serviceWorker.register('../service-worker.js').catch(() => { });
         }
     </script>
-    
-    <script defer>
-        (function initWelcome() {
-            window.addEventListener('load', function() {
-                ui.applyTheme();
-                
-                // If already authenticated, redirect to subjects
-                if (window.app?.checkAuth?.()) {
-                    router.navigateTo('subjects.html');
-                    return;
-                }
-                
-                // Show "Continue as Guest" only if allowed (always true for browsing subjects)
-                // Guest can see subjects but cannot enter exam room without sub.
-                // No mock data – just UI controls.
-            });
+
+    <script type="module">
+        // Import dependencies
+        import * as app from '../scripts/app.js';
+        import * as ui from '../scripts/ui.js';
+        import * as router from '../scripts/router.js';
+
+        // Initialize page
+        (async function () {
+            await app.initializeApp();  // restore user from storage
+            ui.applyTheme();
+
+            // If already logged in, go directly to subjects
+            if (app.checkAuth()) {
+                router.navigateTo('subjects.html');
+            }
         })();
     </script>
 </head>
+
 <body>
     <div class="page-container">
         <header>
@@ -49,25 +51,26 @@
             </div>
             <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
         </header>
-        
+
         <main class="welcome-card">
             <h2>Welcome back, future doctor 👋</h2>
             <p>Access your 5,000+ question bank, track progress, and simulate exams.</p>
-            
+
             <div class="action-buttons">
                 <button onclick="router.navigateTo('login.html')" class="btn-primary">Login</button>
                 <button onclick="router.navigateTo('signup.html')" class="btn-secondary">Create Account</button>
                 <button onclick="router.navigateTo('subjects.html')" class="btn-link">Continue as Guest</button>
             </div>
-            
+
             <p class="guest-note">Guest mode: browse subjects, see question counts. Subscribe to take exams.</p>
         </main>
-        
+
         <footer>
             <button onclick="router.navigateTo('../index.html')" class="btn-text">← Back to Home</button>
         </footer>
     </div>
-    
+
     <script data-lazy data-src="../scripts/offline.js"></script>
 </body>
+
 </html>

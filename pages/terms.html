@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service – Medical Exam Room Pro</title>
+    
+    <!-- Redirect fix for direct access -->
+    <script>
+        (function() {
+            var path = window.location.pathname;
+            if (!path.startsWith('/pages/') && path !== '/' && path !== '/index.html') {
+                var filename = path.substring(path.lastIndexOf('/') + 1);
+                if (filename && filename !== 'index.html') {
+                    window.location.replace('/pages/' + filename);
+                }
+            }
+        })();
+    </script>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/terms.css" media="all">
+    
+    <!-- Modules needed: ui for theme, router for navigation (but we'll use router via window) -->
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <button onclick="window.ui?.toggleTheme()" class="btn-outline">🌓</button>
+        </header>
+        
+        <main class="terms-container">
+            <h1>Terms of Service</h1>
+            <p class="last-updated">Last Updated: March 2025</p>
+            
+            <div class="terms-content">
+                <ol>
+                    <li><strong>Acceptance of Terms:</strong> By accessing or using the Medical Exam Room Pro application ("the App"), you agree to be bound by these Terms of Service. If you do not agree, you may not use the App.</li>
+                    
+                    <li><strong>Eligibility:</strong> You must be at least 18 years old or have parental consent to use the App. You represent that you are a medical student or a healthcare professional using the App for educational purposes.</li>
+                    
+                    <li><strong>Account Registration:</strong> You must provide accurate and complete information during registration. You are responsible for maintaining the confidentiality of your login credentials and for all activities under your account.</li>
+                    
+                    <li><strong>Subscription and Payments:</strong> The App offers both free trial and paid subscription plans. All payments are processed via M‑Pesa and are non‑refundable except as required by law. Subscription fees are in Kenyan Shillings (KES).</li>
+                    
+                    <li><strong>Free Trial:</strong> The free trial is available only once per user and device. Any attempt to manipulate device time to extend the trial will result in immediate account lock.</li>
+                    
+                    <li><strong>Content Ownership:</strong> All questions, explanations, and other content within the App are the intellectual property of Medical Exam Room Pro. You may not reproduce, distribute, or create derivative works without explicit permission.</li>
+                    
+                    <li><strong>User Conduct:</strong> You agree not to use the App for any unlawful purpose, to interfere with the App's operation, or to attempt to bypass its security features (including time manipulation).</li>
+                    
+                    <li><strong>Offline Functionality:</strong> The App is designed to work offline. You are responsible for ensuring your device has sufficient storage and that you sync data when online.</li>
+                    
+                    <li><strong>Privacy:</strong> Your use of the App is also governed by our Privacy Policy. We collect device fingerprint and exam data to improve the service and prevent fraud.</li>
+                    
+                    <li><strong>Termination:</strong> We reserve the right to suspend or terminate your account if you violate these terms, including any attempt to cheat the system via time manipulation or other means.</li>
+                    
+                    <li><strong>Disclaimer of Warranties:</strong> The App is provided "as is" without warranties of any kind. We do not guarantee that the App will meet your specific study needs or that it will be error‑free.</li>
+                    
+                    <li><strong>Limitation of Liability:</strong> To the maximum extent permitted by law, Medical Exam Room Pro shall not be liable for any indirect, incidental, or consequential damages arising from your use of the App.</li>
+                </ol>
+            </div>
+            
+            <div class="terms-footer">
+                <p>By continuing to use the App, you acknowledge that you have read, understood, and agree to these Terms of Service.</p>
+                <button onclick="window.router?.navigateTo('signup.html')" class="btn-primary">Back to Sign Up</button>
+                <button onclick="window.router?.navigateTo('welcome.html')" class="btn-secondary">Go to Welcome</button>
+            </div>
+        </main>
+        
+        <footer>
+            <button onclick="window.router?.navigateTo('index.html')" class="btn-text">← Back to Home</button>
+        </footer>
+    </div>
+    
+    <!-- Lazy offline script (optional) -->
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>

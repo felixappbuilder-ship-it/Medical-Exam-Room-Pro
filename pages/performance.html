@@ -3,239 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Performance Analytics – Medical Exam Room Pro</title>
+    <title>Performance – Medical Exam Room Pro</title>
     
     <link rel="manifest" href="../manifest.json">
     <link rel="stylesheet" href="../css/common.css" media="all">
     <link rel="stylesheet" href="../css/performance.css" media="all">
     
-    <!-- Chart library (lightweight) -->
+    <!-- Chart library -->
     <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     
+    <!-- Core modules -->
     <script type="module" src="../scripts/utils.js"></script>
     <script type="module" src="../scripts/ui.js"></script>
     <script type="module" src="../scripts/router.js"></script>
     <script type="module" src="../scripts/app.js"></script>
-    <script type="module" src="../scripts/auth.js"></script>
     <script type="module" src="../scripts/analytics.js"></script>
     <script type="module" src="../scripts/db.js"></script>
+    <script type="module" src="../scripts/sync.js"></script>
     
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('../service-worker.js').catch(() => {});
         }
     </script>
-    
-    <script type="module">
-    // Import dependencies
-    import * as app from '../scripts/app.js';
-    import * as auth from '../scripts/auth.js';
-    import * as ui from '../scripts/ui.js';
-    import * as router from '../scripts/router.js';
-    import * as analytics from '../scripts/analytics.js';
-    import * as db from '../scripts/db.js';
-    import * as utils from '../scripts/utils.js';
-
-    // Global chart instance
-    let scoreChart = null;
-
-    // Initialize page
-    (async function initPerformance() {
-        ui.applyTheme();
-
-        // Check authentication
-        if (!app.checkAuth()) {
-            router.navigateTo('login.html');
-            return;
-        }
-
-        // Show loading
-        ui.showLoading('Loading analytics...');
-
-        try {
-            // Get user info (for greeting maybe)
-            const user = app.getUser();
-            if (user) {
-                document.getElementById('user-greeting').textContent = `Hello, ${user.name.split(' ')[0]}`;
-            }
-
-            // Fetch all exam results
-            const allResults = await db.getAllExamResults();
-
-            // Calculate analytics
-            const analyticsData = await analytics.calculateAllAnalytics(allResults);
-
-            // Render dashboard
-            renderSummary(analyticsData.summary);
-            renderSubjectMastery(analyticsData.subjectAnalysis);
-            renderTrendChart(analyticsData.trends);
-            renderStudyPatterns(analyticsData.studyPatterns);
-            renderWeakAreas(analyticsData.weakAreas);
-            renderRecommendations(analyticsData.recommendations);
-
-            // Update streak
-            document.getElementById('streak').textContent = analyticsData.studyPatterns?.streak || 0;
-
-        } catch (error) {
-            console.error('Failed to load analytics', error);
-            ui.showToast('Failed to load analytics', 'error');
-        } finally {
-            ui.hideLoading();
-        }
-    })();
-
-    function renderSummary(summary) {
-        if (!summary) return;
-        document.getElementById('total-exams').textContent = summary.totalExams || 0;
-        document.getElementById('total-questions').textContent = summary.totalQuestions || 0;
-        document.getElementById('avg-score').textContent = summary.averageScore ? `${summary.averageScore}%` : '—';
-        document.getElementById('total-time').textContent = summary.totalStudyTime ? `${summary.totalStudyTime}h` : '—';
-        document.getElementById('best-score').textContent = summary.bestScore ? `${summary.bestScore}%` : '—';
-    }
-
-    function renderSubjectMastery(subjectData) {
-        const container = document.getElementById('subject-mastery');
-        if (!container) return;
-        if (!subjectData || subjectData.length === 0) {
-            container.innerHTML = '<p class="no-data">No subject data yet. Take some exams!</p>';
-            return;
-        }
-
-        // Sort by percentage descending
-        subjectData.sort((a, b) => b.percentage - a.percentage);
-
-        let html = '<h3>Subject Mastery</h3><div class="subject-grid">';
-        subjectData.forEach(s => {
-            const masteryClass = s.mastery || 'beginner';
-            html += `
-                <div class="subject-card mastery-${masteryClass}">
-                    <div class="subject-name">${s.subject}</div>
-                    <div class="subject-score">${s.percentage}%</div>
-                    <div class="subject-progress">
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${s.percentage}%;"></div>
-                        </div>
-                    </div>
-                    <div class="subject-stats">${s.correct}/${s.questions} · ⏱️ ${s.averageTime}s</div>
-                </div>
-            `;
-        });
-        html += '</div>';
-        container.innerHTML = html;
-    }
-
-    function renderTrendChart(trends) {
-        const canvas = document.getElementById('score-trend-chart');
-        if (!canvas) return;
-        if (!trends || trends.length < 2) {
-            document.getElementById('trend-chart-container').innerHTML = '<p class="no-data">Not enough data to show trend.</p>';
-            return;
-        }
-
-        const ctx = canvas.getContext('2d');
-        const labels = trends.map(t => utils.formatDate(t.date, 'short'));
-        const scores = trends.map(t => t.score);
-        const times = trends.map(t => t.time);
-
-        // Destroy previous chart if exists
-        if (scoreChart) scoreChart.destroy();
-
-        scoreChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'Score %',
-                        data: scores,
-                        borderColor: '#2563eb',
-                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                        tension: 0.2,
-                        yAxisID: 'y'
-                    },
-                    {
-                        label: 'Study Time (min)',
-                        data: times,
-                        borderColor: '#f59e0b',
-                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                        tension: 0.2,
-                        yAxisID: 'y1'
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        max: 100,
-                        title: { display: true, text: 'Score %' }
-                    },
-                    y1: {
-                        beginAtZero: true,
-                        position: 'right',
-                        title: { display: true, text: 'Time (min)' },
-                        grid: { drawOnChartArea: false }
-                    }
-                }
-            }
-        });
-    }
-
-    function renderStudyPatterns(patterns) {
-        if (!patterns) return;
-        document.getElementById('best-day').textContent = patterns.bestDay || '—';
-        document.getElementById('best-time').textContent = patterns.bestHour ? `${patterns.bestHour}:00` : '—';
-        document.getElementById('avg-session').textContent = patterns.averageSessionTime ? `${patterns.averageSessionTime} min` : '—';
-        document.getElementById('consistency').textContent = patterns.consistency ? `${patterns.consistency}%` : '—';
-    }
-
-    function renderWeakAreas(weakAreas) {
-        const container = document.getElementById('weak-areas-list');
-        if (!container) return;
-        if (!weakAreas || weakAreas.length === 0) {
-            container.innerHTML = '<p class="no-data">No weak areas identified. Keep up the great work!</p>';
-            return;
-        }
-
-        let html = '<ul>';
-        weakAreas.slice(0, 5).forEach(area => {
-            html += `<li><span class="topic">${area.topic}</span> <span class="score">${Math.round(area.score)}%</span> – ${area.priority} priority</li>`;
-        });
-        html += '</ul>';
-        container.innerHTML = html;
-    }
-
-    function renderRecommendations(recs) {
-        const container = document.getElementById('recommendations-list');
-        if (!container) return;
-        if (!recs || recs.length === 0) {
-            container.innerHTML = '<p class="no-data">No recommendations at this time.</p>';
-            return;
-        }
-
-        let html = '<ul>';
-        recs.slice(0, 4).forEach(r => {
-            html += `<li><strong>${r.type.replace('_', ' ')}:</strong> ${r.action || r.message}</li>`;
-        });
-        html += '</ul>';
-        container.innerHTML = html;
-    }
-
-    // Expose studyWeakArea function for onclick
-    window.studyWeakArea = function(topic) {
-        // Expecting topic to be an object with subject and topicId
-        app.setExamConfig({
-            subject: topic.subject,
-            topics: [{ id: topic.topicId, name: topic.topic }],
-            totalQuestions: 10,
-            mode: 'practice',
-            selectionMethod: 'weak_areas'
-        });
-        router.navigateTo('exam-settings.html');
-    };
-</script>
 </head>
 <body>
     <div class="page-container">
@@ -254,63 +44,82 @@
         <main>
             <h1>Performance Analytics</h1>
             
-            <!-- Summary Cards -->
-            <div class="summary-grid">
-                <div class="stat-card">
-                    <div class="stat-label">Exams Taken</div>
-                    <div class="stat-value" id="total-exams">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Questions</div>
-                    <div class="stat-value" id="total-questions">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Avg Score</div>
-                    <div class="stat-value" id="avg-score">0%</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Study Time</div>
-                    <div class="stat-value" id="total-time">0h</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Best Score</div>
-                    <div class="stat-value" id="best-score">0%</div>
-                </div>
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab-button active" onclick="window.switchTab('summary-tab')">📊 Summary</button>
+                <button class="tab-button" onclick="window.switchTab('subjects-tab')">📚 Subjects</button>
+                <button class="tab-button" onclick="window.switchTab('downloaded-tab')">📥 Downloaded</button>
             </div>
             
-            <!-- Score Trend Chart -->
-            <div class="chart-container">
-                <h2>Score & Study Time Trend</h2>
-                <div id="trend-chart-container" style="height: 300px;">
-                    <canvas id="score-trend-chart"></canvas>
-                </div>
-            </div>
-            
-            <!-- Subject Mastery -->
-            <div id="subject-mastery" class="subject-mastery"></div>
-            
-            <!-- Two‑column layout for patterns & weak areas -->
-            <div class="two-column">
-                <div class="card">
-                    <h2>📊 Study Habits</h2>
-                    <div class="stats-list">
-                        <p><strong>Best day:</strong> <span id="best-day"></span></p>
-                        <p><strong>Best time:</strong> <span id="best-time"></span></p>
-                        <p><strong>Avg session:</strong> <span id="avg-session"></span></p>
-                        <p><strong>Consistency:</strong> <span id="consistency"></span></p>
+            <!-- Summary Tab -->
+            <div id="summary-tab" class="tab-content active">
+                <!-- Summary Cards -->
+                <div class="summary-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Exams Taken</div>
+                        <div class="stat-value" id="total-exams">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Questions</div>
+                        <div class="stat-value" id="total-questions">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Avg Score</div>
+                        <div class="stat-value" id="avg-score">0%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Study Time</div>
+                        <div class="stat-value" id="total-time">0h</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Best Score</div>
+                        <div class="stat-value" id="best-score">0%</div>
                     </div>
                 </div>
-                <div class="card">
-                    <h2>⚠️ Weak Areas</h2>
-                    <div id="weak-areas-list"></div>
-                    <button onclick="router.navigateTo('subject-specific.html?focus=weak')" class="btn-small">Study Weak Areas</button>
+                
+                <!-- Score Trend Chart -->
+                <div class="chart-container">
+                    <h2>Score & Study Time Trend</h2>
+                    <div id="trend-chart-container" style="height: 300px;">
+                        <canvas id="score-trend-chart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Two‑column layout for patterns & weak areas -->
+                <div class="two-column">
+                    <div class="card">
+                        <h2>📊 Study Habits</h2>
+                        <div class="stats-list">
+                            <p><strong>Best day:</strong> <span id="best-day"></span></p>
+                            <p><strong>Best time:</strong> <span id="best-time"></span></p>
+                            <p><strong>Avg session:</strong> <span id="avg-session"></span></p>
+                            <p><strong>Consistency:</strong> <span id="consistency"></span></p>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h2>⚠️ Weak Areas</h2>
+                        <div id="weak-areas-list"></div>
+                        <button onclick="router.navigateTo('subject-specific.html?focus=weak')" class="btn-small">Study Weak Areas</button>
+                    </div>
+                </div>
+                
+                <!-- Recommendations -->
+                <div class="card recommendations-card">
+                    <h2>🎯 Personalized Recommendations</h2>
+                    <div id="recommendations-list"></div>
                 </div>
             </div>
             
-            <!-- Recommendations -->
-            <div class="card recommendations-card">
-                <h2>🎯 Personalized Recommendations</h2>
-                <div id="recommendations-list"></div>
+            <!-- Subjects Tab -->
+            <div id="subjects-tab" class="tab-content">
+                <h2>Subject Mastery</h2>
+                <div id="subject-mastery" class="subject-mastery"></div>
+            </div>
+            
+            <!-- Downloaded Tab -->
+            <div id="downloaded-tab" class="tab-content">
+                <h2>Downloaded Exams (last 10)</h2>
+                <div id="downloaded-list" class="downloaded-list"></div>
             </div>
             
             <!-- Action Buttons -->
@@ -320,6 +129,325 @@
             </div>
         </main>
     </div>
+    
+    <!-- Share Modal -->
+    <div id="share-modal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Share Exam</h3>
+                <button class="modal-close" onclick="document.getElementById('share-modal').style.display='none'">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Share this link with others. They can view the exam results without logging in.</p>
+                <div style="display: flex; gap: 0.5rem; margin: 1rem 0;">
+                    <input type="text" id="share-link" readonly style="flex: 1; padding: 0.5rem;">
+                    <button onclick="window.copyShareLink()" class="btn-secondary">Copy</button>
+                </div>
+                <p class="small">Anyone with this link can view your exam results.</p>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module">
+        // ==================== IMPORTS ====================
+        import * as app from '../scripts/app.js';
+        import * as ui from '../scripts/ui.js';
+        import * as router from '../scripts/router.js';
+        import * as utils from '../scripts/utils.js';
+        import * as analytics from '../scripts/analytics.js';
+        import * as db from '../scripts/db.js';
+
+        // ==================== GLOBAL FUNCTIONS ====================
+        window.switchTab = function(tabId) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.querySelectorAll('.tab-button').forEach(b => {
+                if (b.textContent.includes(tabId.replace('-tab', ''))) {
+                    b.classList.add('active');
+                }
+            });
+            if (tabId === 'downloaded-tab') renderDownloadedExams();
+        };
+
+        // ==================== INITIALIZATION ====================
+        (async function initPerformance() {
+            console.log('[Performance] Initializing...');
+            await app.initializeApp();
+            ui.applyTheme();
+
+            if (!app.checkAuth()) {
+                router.navigateTo('login.html');
+                return;
+            }
+
+            ui.showLoading('Loading analytics...');
+
+            try {
+                const allResults = await db.getAllExamResults();
+                const analyticsData = await analytics.calculateAllAnalytics(allResults);
+                
+                renderSummary(analyticsData.summary);
+                renderSubjectMastery(analyticsData.subjectAnalysis);
+                renderTrendChart(analyticsData.trends);
+                renderStudyPatterns(analyticsData.studyPatterns);
+                renderWeakAreas(analyticsData.weakAreas);
+                renderRecommendations(analyticsData.recommendations);
+                
+                document.getElementById('streak').textContent = analyticsData.studyPatterns?.streak || 0;
+            } catch (error) {
+                console.error('[Performance] Analytics error:', error);
+                ui.showToast('Failed to load analytics', 'error');
+            } finally {
+                ui.hideLoading();
+            }
+
+            // Pre-render downloaded exams (will be empty if none)
+            renderDownloadedExams();
+        })();
+
+        // ==================== RENDER FUNCTIONS ====================
+        function renderSummary(summary) {
+            if (!summary) return;
+            document.getElementById('total-exams').textContent = summary.totalExams || 0;
+            document.getElementById('total-questions').textContent = summary.totalQuestions || 0;
+            document.getElementById('avg-score').textContent = summary.averageScore ? `${summary.averageScore}%` : '—';
+            document.getElementById('total-time').textContent = summary.totalStudyTime ? `${summary.totalStudyTime}h` : '—';
+            document.getElementById('best-score').textContent = summary.bestScore ? `${summary.bestScore}%` : '—';
+        }
+
+        function renderSubjectMastery(subjectData) {
+            const container = document.getElementById('subject-mastery');
+            if (!subjectData || subjectData.length === 0) {
+                container.innerHTML = '<p class="no-data">No subject data yet. Take some exams!</p>';
+                return;
+            }
+
+            subjectData.sort((a, b) => b.percentage - a.percentage);
+
+            let html = '<div class="subject-grid">';
+            subjectData.forEach(s => {
+                const masteryClass = s.mastery || 'beginner';
+                html += `
+                    <div class="subject-card mastery-${masteryClass}">
+                        <div class="subject-name">${s.subject}</div>
+                        <div class="subject-score">${s.percentage}%</div>
+                        <div class="subject-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${s.percentage}%;"></div>
+                            </div>
+                        </div>
+                        <div class="subject-stats">${s.correct}/${s.questions} · ⏱️ ${s.averageTime}s</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function renderTrendChart(trends) {
+            if (!trends || trends.length < 2) {
+                document.getElementById('trend-chart-container').innerHTML = '<p class="no-data">Not enough data to show trend.</p>';
+                return;
+            }
+
+            if (typeof Chart === 'undefined') {
+                document.getElementById('trend-chart-container').innerHTML = '<p class="no-data">Chart library not loaded.</p>';
+                return;
+            }
+
+            const ctx = document.getElementById('score-trend-chart').getContext('2d');
+            const labels = trends.map(t => utils.formatDate(t.date, 'short'));
+            const scores = trends.map(t => t.score);
+            const times = trends.map(t => t.time);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Score %',
+                            data: scores,
+                            borderColor: '#2563eb',
+                            backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                            tension: 0.2,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Study Time (min)',
+                            data: times,
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            tension: 0.2,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, max: 100, title: { display: true, text: 'Score %' } },
+                        y1: { beginAtZero: true, position: 'right', title: { display: true, text: 'Time (min)' }, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+
+        function renderStudyPatterns(patterns) {
+            if (!patterns) return;
+            document.getElementById('best-day').textContent = patterns.bestDay || '—';
+            document.getElementById('best-time').textContent = patterns.bestHour !== null ? `${patterns.bestHour}:00` : '—';
+            document.getElementById('avg-session').textContent = patterns.averageSessionTime ? `${patterns.averageSessionTime} min` : '—';
+            document.getElementById('consistency').textContent = patterns.consistency ? `${patterns.consistency}%` : '—';
+        }
+
+        function renderWeakAreas(weakAreas) {
+            const container = document.getElementById('weak-areas-list');
+            if (!weakAreas || weakAreas.length === 0) {
+                container.innerHTML = '<p class="no-data">No weak areas identified. Keep up the great work!</p>';
+                return;
+            }
+
+            let html = '<ul>';
+            weakAreas.slice(0, 5).forEach(area => {
+                html += `<li><span class="topic">${area.topic}</span> <span class="score">${Math.round(area.score)}%</span> – ${area.priority} priority</li>`;
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        }
+
+        function renderRecommendations(recs) {
+            const container = document.getElementById('recommendations-list');
+            if (!recs || recs.length === 0) {
+                container.innerHTML = '<p class="no-data">No recommendations at this time.</p>';
+                return;
+            }
+
+            let html = '<ul>';
+            recs.slice(0, 4).forEach(r => {
+                html += `<li><strong>${r.type.replace('_', ' ')}:</strong> ${r.action}</li>`;
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        }
+
+        // ==================== DOWNLOADED EXAMS ====================
+        async function renderDownloadedExams() {
+            const exams = await db.getDownloadedExams();
+            const container = document.getElementById('downloaded-list');
+            if (!exams || exams.length === 0) {
+                container.innerHTML = '<p class="no-data">No downloaded exams yet. Download exams from results page.</p>';
+                return;
+            }
+            let html = '';
+            exams.forEach(exam => {
+                html += `
+                    <div class="downloaded-item" data-examid="${exam.examId}">
+                        <div class="downloaded-header">
+                            <span class="subject">${exam.subject}</span>
+                            <span class="score">${Math.round(exam.score)}%</span>
+                            <span class="date">${utils.formatDate(exam.date)}</span>
+                        </div>
+                        <div class="downloaded-actions">
+                            <button onclick="window.reviewDownloadedExam('${exam.examId}')" class="btn-small">Review</button>
+                            <button onclick="window.shareDownloadedExam('${exam.examId}')" class="btn-small btn-secondary">Share</button>
+                            <button onclick="window.deleteDownloadedExam('${exam.examId}')" class="btn-small btn-danger">Delete</button>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        window.reviewDownloadedExam = async function(examId) {
+            const exams = await db.getDownloadedExams();
+            const exam = exams.find(e => e.examId === examId);
+            if (!exam) return;
+
+            // Create modal for review
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal review-modal" style="width: 80%; max-width: 800px;">
+                    <div class="modal-header">
+                        <h2>Exam Review: ${exam.subject} - ${Math.round(exam.score)}%</h2>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                        <div class="summary-card" style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                            <div class="score-circle" style="width:80px; height:80px; border-radius:50%; background:conic-gradient(var(--accent) ${exam.score}deg, #eee 0deg); display:flex; align-items:center; justify-content:center; font-weight:bold;">${Math.round(exam.score)}%</div>
+                            <div>
+                                <p>Date: ${utils.formatDate(exam.date)}</p>
+                                <p>Questions: ${exam.data.totalQuestions}</p>
+                                <p>Correct: ${exam.data.correctAnswers}</p>
+                            </div>
+                        </div>
+                        <div id="modal-review-list" class="review-list"></div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Populate questions
+            const list = modal.querySelector('#modal-review-list');
+            list.innerHTML = exam.data.questions.map((q, idx) => {
+                const isCorrect = q.correct;
+                return `
+                    <div class="review-item ${isCorrect ? 'correct' : 'incorrect'}" style="margin-bottom:1rem; padding:0.5rem; border:1px solid var(--border); border-radius:var(--radius);">
+                        <div><strong>Q${idx+1}:</strong> ${q.question}</div>
+                        <div><small>Your answer: ${q.userAnswer || '—'} | Correct: ${q.correctAnswer}</small></div>
+                        <div class="explanation" style="margin-top:0.5rem; font-size:0.9rem;">${q.explanation || ''}</div>
+                    </div>
+                `;
+            }).join('');
+
+            modal.querySelector('.modal-close').onclick = () => modal.remove();
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+        };
+
+        window.shareDownloadedExam = async function(examId) {
+            const exams = await db.getDownloadedExams();
+            const exam = exams.find(e => e.examId === examId);
+            if (!exam) return;
+
+            const shareToken = 'share_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            await db.saveSharedExam(shareToken, exam.data);
+            const shareLink = window.location.origin + '/pages/shared-exam.html?token=' + shareToken;
+
+            document.getElementById('share-link').value = shareLink;
+            document.getElementById('share-modal').style.display = 'flex';
+        };
+
+        window.copyShareLink = function() {
+            const link = document.getElementById('share-link');
+            link.select();
+            document.execCommand('copy');
+            ui.showToast('Link copied to clipboard!', 'success');
+        };
+
+        window.deleteDownloadedExam = async function(examId) {
+            if (!confirm('Delete this downloaded exam?')) return;
+            let exams = await db.getDownloadedExams();
+            exams = exams.filter(e => e.examId !== examId);
+            await db.saveDownloadedExams(exams);
+            renderDownloadedExams();
+            ui.showToast('Exam deleted', 'success');
+        };
+
+        // Also expose review for weak area study (optional)
+        window.studyWeakArea = function(topic) {
+            app.setExamConfig({
+                subject: topic.subject,
+                topics: [{ id: topic.topicId, name: topic.topic }],
+                totalQuestions: 10,
+                mode: 'practice',
+                selectionMethod: 'weak_areas'
+            });
+            router.navigateTo('exam-settings.html');
+        };
+    </script>
     
     <script data-lazy data-src="../scripts/offline.js"></script>
 </body>

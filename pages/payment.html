@@ -1,38 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment – Medical Exam Room Pro</title>
-    
+
     <link rel="manifest" href="../manifest.json">
     <link rel="stylesheet" href="../css/common.css" media="all">
     <link rel="stylesheet" href="../css/payment.css" media="all">
-    
-    <script defer src="../scripts/utils.js"></script>
-    <script defer src="../scripts/ui.js"></script>
-    <script defer src="../scripts/router.js"></script>
-    <script defer src="../scripts/app.js"></script>
-    <script defer src="../scripts/payment.js"></script>
-    <script defer src="../scripts/validation.js"></script>
-    <script defer src="../scripts/subscription.js"></script>
-    
+
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+    <script type="module" src="../scripts/app.js"></script>
+    <script type="module" src="../scripts/payment.js"></script>
+    <script type="module" src="../scripts/validation.js"></script>
+    <script type="module" src="../scripts/subscription.js"></script>
+
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+            navigator.serviceWorker.register('../service-worker.js').catch(() => { });
         }
     </script>
-    
-    <script defer>
+
+    <script type="module">
+        // Import dependencies
+        import * as app from '../scripts/app.js';
+        import * as ui from '../scripts/ui.js';
+        import * as router from '../scripts/router.js';
+        import * as validation from '../scripts/validation.js';
+        import * as utils from '../scripts/utils.js';
+        import * as payment from '../scripts/payment.js';
+        import * as subscription from '../scripts/subscription.js';
+        import * as auth from '../scripts/auth.js'; // optional, for user info
+
         (async function initPayment() {
+            // Initialize app state (load user, etc.)
             await app.initializeApp();
             ui.applyTheme();
-            
+
+            // Check authentication
             if (!app.checkAuth()) {
+                ui.showToast('Please log in first', 'warning');
                 router.navigateTo('login.html');
                 return;
             }
-            
+
             // Get selected plan from app state
             const planId = app.getSelectedPlan();
             if (!planId) {
@@ -40,80 +54,110 @@
                 router.navigateTo('subscription.html');
                 return;
             }
-            
-            // Load plan details
+
+            // Load plan details from subscription module
             const plans = await subscription.getSubscriptionPlans();
             const plan = plans.find(p => p.id === planId);
             if (!plan) {
+                ui.showToast('Plan not found', 'error');
                 router.navigateTo('subscription.html');
                 return;
             }
-            
-            // Update UI with plan info
+
+            // Display plan info
             document.getElementById('plan-name').textContent = plan.name;
             document.getElementById('plan-price').textContent = `KES ${plan.price}`;
             document.getElementById('plan-duration').textContent = plan.duration;
-            
-            // Prefill phone if known from user profile
+
+            // Prefill phone from user profile
             const user = app.getUser();
             if (user?.phone) {
                 document.getElementById('phone').value = user.phone;
             }
-            
+
             // Setup live validation for phone
             validation.setupLiveValidation('payment-form', {
                 phone: { required: true, phone: 'KE' }
             });
         })();
-        
-        async function initiatePayment(event) {
+
+        // Expose initiatePayment globally for onclick
+        window.initiatePayment = async function (event) {
             event.preventDefault();
-            
+
             const phone = document.getElementById('phone').value.trim();
             const planId = app.getSelectedPlan();
-            
+
             // Validate phone
             if (!validation.validatePhone(phone)) {
                 ui.showToast('Enter a valid Kenyan phone (07XX or 2547XX)', 'error');
                 return;
             }
-            
+
             const formattedPhone = validation.formatKenyanPhone(phone);
-            
             ui.showLoading('Initiating payment...');
-            
+
             try {
-                const result = await payment.initiateMPesaPayment(formattedPhone, app.getSelectedPlan());
-                
-                // Store transaction ID for polling
-                app.setCurrentTransaction(result.transactionId);
-                
+                // Call payment initiation (simulated)
+                const result = await payment.initiateMPesaPayment(formattedPhone, planId);
+                const transactionId = result.transactionId;
+
                 ui.hideLoading();
                 ui.showToast('Check your phone for M‑Pesa prompt', 'info');
-                
-                // Start payment status polling
-                startPolling(result.transactionId);
-                
+
+                // Start polling for payment status
+                startPolling(transactionId);
             } catch (error) {
                 ui.hideLoading();
                 ui.showToast(error.message || 'Payment initiation failed', 'error');
             }
-        }
-        
+        };
+
         function startPolling(transactionId) {
             let attempts = 0;
             const maxAttempts = 60; // 5 minutes (poll every 5s)
-            
+
             const interval = setInterval(async () => {
                 attempts++;
                 try {
                     const status = await payment.checkPaymentStatus(transactionId);
-                    
+
                     if (status === 'completed') {
                         clearInterval(interval);
                         ui.showToast('Payment successful! Updating subscription...', 'success');
-                        // Refresh subscription from server
-                        await subscription.refreshSubscription();
+
+                        // Activate the subscription (offline simulation)
+                        const planId = app.getSelectedPlan();
+                        const user = app.getUser();
+                        if (user && planId) {
+                            // Create subscription object
+                            const now = new Date();
+                            let expiryDate;
+                            switch (planId) {
+                                case 'monthly':
+                                    expiryDate = new Date(now.setMonth(now.getMonth() + 1));
+                                    break;
+                                case 'quarterly':
+                                    expiryDate = new Date(now.setMonth(now.getMonth() + 3));
+                                    break;
+                                case 'yearly':
+                                    expiryDate = new Date(now.setFullYear(now.getFullYear() + 1));
+                                    break;
+                                default:
+                                    expiryDate = new Date(now.setHours(now.getHours() + 3)); // trial
+                            }
+                            const subscriptionData = {
+                                userId: user.id,
+                                plan: planId,
+                                isActive: true,
+                                expiryDate: expiryDate.toISOString(),
+                                autoRenew: false
+                            };
+                            await subscription.activatePlan(subscriptionData);
+                            app.setSubscription(subscriptionData);
+                        }
+
+                        // Redirect to subjects
                         router.navigateTo('subjects.html');
                     } else if (status === 'failed') {
                         clearInterval(interval);
@@ -121,35 +165,33 @@
                         document.getElementById('retry-btn').style.display = 'block';
                     }
                     // else pending, continue polling
-                    
+
                     if (attempts >= maxAttempts) {
                         clearInterval(interval);
                         ui.showToast('Payment timeout. Check M‑Pesa or retry.', 'warning');
                         document.getElementById('retry-btn').style.display = 'block';
                     }
                 } catch (err) {
-                    // log error, continue polling
+                    console.warn('Polling error', err);
                 }
             }, 5000);
-            
+
             // Store interval to clear on page unload
             window.__paymentPolling = interval;
         }
-        
-        function retryPayment() {
+
+        window.retryPayment = function () {
             document.getElementById('retry-btn').style.display = 'none';
             initiatePayment(new Event('submit'));
-        }
-        
-        window.initiatePayment = initiatePayment;
-        window.retryPayment = retryPayment;
-        
+        };
+
         // Cleanup on navigation
         window.addEventListener('beforeunload', () => {
             if (window.__paymentPolling) clearInterval(window.__paymentPolling);
         });
     </script>
 </head>
+
 <body>
     <div class="page-container">
         <header>
@@ -159,40 +201,44 @@
             </div>
             <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
         </header>
-        
+
         <main class="payment-container">
             <h2>Complete Payment</h2>
-            
+
             <div class="order-summary">
                 <h3>Order Summary</h3>
                 <p><span>Plan:</span> <span id="plan-name"></span></p>
                 <p><span>Amount:</span> <span id="plan-price" class="amount"></span></p>
                 <p><span>Duration:</span> <span id="plan-duration"></span></p>
             </div>
-            
+
             <form id="payment-form" onsubmit="initiatePayment(event)">
                 <div class="form-group">
                     <label for="phone">M‑Pesa Phone Number</label>
-                    <input type="tel" id="phone" name="phone" placeholder="e.g., 0712345678 or 254712345678" autocomplete="tel" required>
+                    <input type="tel" id="phone" name="phone" placeholder="e.g., 0712345678 or 254712345678"
+                        autocomplete="tel" required>
                     <div class="error-message" data-for="phone"></div>
                     <small>Enter the number registered with M‑Pesa</small>
                 </div>
-                
+
                 <div class="payment-instructions">
                     <p>📱 1. After clicking Pay, check your phone for an M‑Pesa prompt.</p>
                     <p>🔢 2. Enter your M‑Pesa PIN to confirm.</p>
                     <p>⏳ 3. Wait for confirmation – this may take up to 1 minute.</p>
                 </div>
-                
+
                 <button type="submit" class="btn-primary btn-large">💰 Pay Now</button>
-                <button id="retry-btn" type="button" onclick="retryPayment()" class="btn-secondary" style="display:none;">↻ Retry Payment</button>
-                <button type="button" onclick="router.navigateTo('subscription.html')" class="btn-text">← Change Plan</button>
+                <button id="retry-btn" type="button" onclick="retryPayment()" class="btn-secondary"
+                    style="display:none;">↻ Retry Payment</button>
+                <button type="button" onclick="router.navigateTo('subscription.html')" class="btn-text">← Change
+                    Plan</button>
             </form>
-            
+
             <div id="payment-status"></div>
         </main>
     </div>
-    
+
     <script data-lazy data-src="../scripts/offline.js"></script>
 </body>
+
 </html>

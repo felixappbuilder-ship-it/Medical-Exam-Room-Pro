@@ -1,93 +1,123 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Free Trial – Medical Exam Room Pro</title>
-    
+
     <link rel="manifest" href="../manifest.json">
     <link rel="stylesheet" href="../css/common.css" media="all">
     <link rel="stylesheet" href="../css/free-trial.css" media="all">
-    
+
     <script type="module" src="../scripts/utils.js"></script>
     <script type="module" src="../scripts/ui.js"></script>
     <script type="module" src="../scripts/router.js"></script>
     <script type="module" src="../scripts/app.js"></script>
     <script type="module" src="../scripts/subscription.js"></script>
     <script type="module" src="../scripts/security.js"></script>
-    
+
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+            navigator.serviceWorker.register('../service-worker.js').catch(() => { });
         }
     </script>
-    
+
     <script type="module">
-    // Import dependencies
-    import * as app from '../scripts/app.js';
-    import * as auth from '../scripts/auth.js';
-    import * as ui from '../scripts/ui.js';
-    import * as router from '../scripts/router.js';
-    import * as subscription from '../scripts/subscription.js';
-    import * as security from '../scripts/security.js';
-    import * as utils from '../scripts/utils.js';
+        // Import dependencies
+        import * as app from '../scripts/app.js';
+        import * as auth from '../scripts/auth.js';
+        import * as ui from '../scripts/ui.js';
+        import * as router from '../scripts/router.js';
+        import * as security from '../scripts/security.js';
+        import * as subscription from '../scripts/subscription.js';
+        import * as utils from '../scripts/utils.js';
 
-    // Initialize page
-    window.addEventListener('load', async function() {
-        ui.applyTheme();
+        // Initialize page
+        (async function initFreeTrial() {
+            console.log('[FreeTrial] Initializing...');
 
-        // Check authentication (should be logged in after signup)
-        if (!app.checkAuth()) {
-            ui.showToast('Please log in first', 'warning');
-            router.navigateTo('login.html');
-            return;
-        }
+            await app.initializeApp();
+            ui.applyTheme();
 
-        // Check if trial already used on this device
-        const eligible = await subscription.checkTrialEligibility();
-        if (!eligible) {
-            ui.showToast('Free trial already used on this device', 'warning');
-            document.getElementById('trial-actions').innerHTML = `
-                <p>You have already used your free trial.</p>
-                <button onclick="router.navigateTo('subscription.html')" class="btn-primary">View Subscription Plans</button>
-            `;
-            document.getElementById('begin-trial-btn').disabled = true;
-        }
-    });
+            if (!app.checkAuth()) {
+                console.log('[FreeTrial] Not authenticated, redirecting to login');
+                ui.showToast('Please log in to start free trial', 'warning');
+                router.navigateTo('login.html');
+                return;
+            }
 
-    // Begin trial function (exposed globally for onclick)
-    window.beginTrial = async function() {
-        // Security check – time integrity
-        const timeCheck = await security.detectTimeManipulation();
-        if (!timeCheck.valid) {
-            ui.showToast('Time integrity check failed. Cannot activate trial.', 'error');
-            return;
-        }
+            const user = app.getUser();
+            console.log('[FreeTrial] User:', user);
 
-        ui.showLoading('Activating trial...');
+            if (user) {
+                const welcomeEl = document.getElementById('user-welcome');
+                if (welcomeEl) welcomeEl.textContent = `Welcome, ${user.name}!`;
+            }
 
-        try {
-            const deviceFingerprint = security.getDeviceFingerprint();
-            const result = await subscription.startFreeTrial({
-                deviceFingerprint,
-                clientTime: Date.now()
-            });
+            try {
+                const eligible = await subscription.checkTrialEligibility();
+                if (!eligible) {
+                    ui.showToast('Free trial already used on this device', 'warning');
+                    document.getElementById('trial-actions').innerHTML = `
+                    <p>You have already used your free trial.</p>
+                    <button onclick="router.navigateTo('subscription.html')" class="btn-primary">View Subscription Plans</button>
+                `;
+                    document.getElementById('begin-trial-btn').disabled = true;
+                }
+            } catch (error) {
+                console.error('[FreeTrial] Eligibility check failed:', error);
+            }
+        })();
 
-            ui.hideLoading();
-            ui.showToast('Trial activated! 3 hours remaining.', 'success');
+        window.beginTrial = async function () {
+            console.log('[FreeTrial] Starting trial activation...');
 
-            // Update app state
-            app.setSubscription(result.subscription);
+            // ✅ CORRECTED: await the async function
+            const timeCheck = await security.detectTimeManipulation();
+            console.log('[FreeTrial] Time check result:', timeCheck);
 
-            // Redirect to subjects
+            // Allow trial even if time check warns (but not if blocked/locked)
+            if (timeCheck.action === 'block' || timeCheck.action === 'lock') {
+                ui.showToast(timeCheck.message || 'Time integrity check failed. Cannot activate trial.', 'error');
+                return;
+            }
+
+            ui.showLoading('Activating trial...');
+
+            try {
+                const deviceFingerprint = security.getDeviceFingerprint();
+
+                const result = await subscription.startFreeTrial({
+                    deviceFingerprint,
+                    clientTime: Date.now()
+                });
+
+                ui.hideLoading();
+                ui.showToast('Trial activated! 3 hours remaining.', 'success');
+
+                if (result && result.subscription) {
+                    await app.setSubscription(result.subscription);
+                }
+
+                router.navigateTo('subjects.html');
+            } catch (error) {
+                ui.hideLoading();
+                console.error('[FreeTrial] Activation failed:', error);
+                ui.showToast(error.message || 'Failed to start trial', 'error');
+            }
+        };
+
+        window.goToSubscription = function () {
+            router.navigateTo('subscription.html');
+        };
+
+        window.goToSubjects = function () {
             router.navigateTo('subjects.html');
-        } catch (error) {
-            ui.hideLoading();
-            ui.showToast(error.message || 'Failed to start trial', 'error');
-        }
-    };
-</script>
+        };
+    </script>
 </head>
+
 <body>
     <div class="page-container">
         <header>
@@ -97,16 +127,16 @@
             </div>
             <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
         </header>
-        
+
         <main class="trial-container">
             <h1>✨ 3‑Hour Free Trial</h1>
-            
+
             <div class="trial-card highlight">
                 <div class="trial-icon">⏳</div>
                 <div class="trial-duration">3:00:00</div>
                 <p>Full access to all 5,000+ questions and exam modes.</p>
             </div>
-            
+
             <div class="features-list">
                 <h3>What you get:</h3>
                 <ul>
@@ -122,20 +152,23 @@
                     <li>🛡️ Time manipulation = permanent lock</li>
                 </ul>
             </div>
-            
+
             <div class="warning-box">
-                ⚠️ <strong>Important:</strong> Do not change your device time during the trial. 
+                ⚠️ <strong>Important:</strong> Do not change your device time during the trial.
                 This will be detected and your account will be locked immediately.
             </div>
-            
+
             <div id="trial-actions" class="trial-actions">
-                <button id="begin-trial-btn" onclick="beginTrial()" class="btn-primary btn-large">🚀 Begin Free Trial</button>
-                <button onclick="router.navigateTo('subscription.html')" class="btn-secondary">View Subscription Plans</button>
+                <button id="begin-trial-btn" onclick="beginTrial()" class="btn-primary btn-large">🚀 Begin Free
+                    Trial</button>
+                <button onclick="router.navigateTo('subscription.html')" class="btn-secondary">View Subscription
+                    Plans</button>
                 <button onclick="router.navigateTo('subjects.html')" class="btn-text">← Back to Subjects</button>
             </div>
         </main>
     </div>
-    
+
     <script data-lazy data-src="../scripts/offline.js"></script>
 </body>
+
 </html>

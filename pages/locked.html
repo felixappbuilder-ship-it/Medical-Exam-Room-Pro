@@ -1,45 +1,78 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Account Locked – Medical Exam Room Pro</title>
-    
+
     <link rel="manifest" href="../manifest.json">
     <link rel="stylesheet" href="../css/common.css" media="all">
     <link rel="stylesheet" href="../css/locked.css" media="all">
-    
-    <script defer src="../scripts/utils.js"></script>
-    <script defer src="../scripts/ui.js"></script>
-    <script defer src="../scripts/router.js"></script>
-    <script defer src="../scripts/security.js"></script>
-    <script defer src="../scripts/db.js"></script>
-    
+
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+    <script type="module" src="../scripts/security.js"></script>
+    <script type="module" src="../scripts/db.js"></script>
+
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+            navigator.serviceWorker.register('../service-worker.js').catch(() => { });
         }
     </script>
-    
-    <script defer>
-        (function initLocked() {
+
+    <script type="module">
+        import * as utils from '../scripts/utils.js';
+        import * as ui from '../scripts/ui.js';
+        import * as router from '../scripts/router.js';
+        import * as security from '../scripts/security.js';
+        import * as db from '../scripts/db.js';
+        import * as auth from '../scripts/auth.js';
+
+        (async function initLocked() {
             ui.applyTheme();
-            
-            // Get lock details from URL or localStorage
+
+            // Get lock details from URL or from stored lock status
             const params = new URLSearchParams(window.location.search);
-            const reason = params.get('reason') || security.getLockReason() || 'time_manipulation';
-            const timestamp = params.get('timestamp') || security.getLockTimestamp() || Date.now();
-            const duration = params.get('duration') || 'Permanent';
-            
+            let reason = params.get('reason');
+            let timestamp = params.get('timestamp');
+            let duration = params.get('duration');
+
+            // If not in URL, try to get from lock status in database
+            if (!reason) {
+                const lockStatus = await db.getLockStatus();
+                if (lockStatus && lockStatus.locked) {
+                    reason = lockStatus.reason;
+                    timestamp = lockStatus.timestamp;
+                    duration = lockStatus.duration || 'Permanent';
+                }
+            }
+
+            // Fallback defaults
+            if (!reason) reason = 'time_manipulation';
+            if (!timestamp) timestamp = Date.now();
+            if (!duration) duration = 'Permanent';
+
             // Display lock info
-            document.getElementById('lock-reason').textContent = getReasonDescription(reason);
-            document.getElementById('lock-timestamp').textContent = `Locked on: ${utils.formatDate(new Date(parseInt(timestamp)))} at ${utils.formatTime(parseInt(timestamp))}`;
-            document.getElementById('lock-duration').textContent = duration;
-            
-            // Set device fingerprint for support
-            document.getElementById('device-fp').textContent = security.getDeviceFingerprint() || 'Not available';
+            const reasonEl = document.getElementById('lock-reason');
+            if (reasonEl) reasonEl.textContent = getReasonDescription(reason);
+
+            const timestampEl = document.getElementById('lock-timestamp');
+            if (timestampEl) {
+                timestampEl.textContent = `Locked on: ${utils.formatDate(new Date(parseInt(timestamp)))} at ${utils.formatTime(parseInt(timestamp))}`;
+            }
+
+            const durationEl = document.getElementById('lock-duration');
+            if (durationEl) durationEl.textContent = duration;
+
+            // Display device fingerprint
+            const fpEl = document.getElementById('device-fp');
+            if (fpEl) {
+                fpEl.textContent = security.getDeviceFingerprint() || 'Not available';
+            }
         })();
-        
+
         function getReasonDescription(code) {
             const reasons = {
                 'time_manipulation': 'Time manipulation detected. Changing device time to extend trial/subscription is strictly prohibited.',
@@ -51,12 +84,12 @@
             };
             return reasons[code] || 'Security violation detected. Your account has been locked.';
         }
-        
-        function contactSupport() {
+
+        window.contactSupport = function () {
             const fingerprint = security.getDeviceFingerprint() || '';
-            const reason = document.getElementById('lock-reason').textContent;
-            const timestamp = document.getElementById('lock-timestamp').textContent;
-            
+            const reason = document.getElementById('lock-reason')?.textContent || '';
+            const timestamp = document.getElementById('lock-timestamp')?.textContent || '';
+
             const subject = encodeURIComponent('Account Lock - Medical Exam Room Pro');
             const body = encodeURIComponent(
                 `My account is locked. Please help.\n\n` +
@@ -70,58 +103,58 @@
                 `Please unlock my account.`
             );
             window.location.href = `mailto:felixappbuilder@gmail.com?subject=${subject}&body=${body}`;
-        }
-        
-        function callSupport() {
+        };
+
+        window.callSupport = function () {
             window.location.href = 'tel:+254746834527';
-        }
-        
-        async function clearLocalData() {
+        };
+
+        window.clearLocalData = async function () {
             const confirmed = await ui.showConfirmationDialog(
                 'Clear Local Data',
                 'WARNING: This will delete all local data including exam progress and saved questions. Only do this if instructed by support. Continue?',
                 'critical'
             );
             if (!confirmed) return;
-            
+
             ui.showLoading('Clearing data...');
             try {
                 await db.clearDatabase();
                 localStorage.clear();
                 sessionStorage.clear();
+                await auth.logout(); // ensure tokens are gone
                 ui.hideLoading();
-                alert('Local data cleared. The app will now reload.');
+                ui.showToast('Local data cleared. Redirecting...', 'success');
                 router.navigateTo('index.html');
             } catch (error) {
                 ui.hideLoading();
-                alert('Failed to clear data: ' + error.message);
+                ui.showToast('Failed to clear data: ' + error.message, 'error');
             }
-        }
-        
-        window.contactSupport = contactSupport;
-        window.callSupport = callSupport;
-        window.clearLocalData = clearLocalData;
+        };
     </script>
 </head>
+
 <body>
     <div class="locked-container">
         <div class="lock-card">
             <div class="lock-icon">🔒</div>
             <h1>Account Locked</h1>
-            
+
             <div class="reason-box">
                 <p id="lock-reason" class="reason"></p>
             </div>
-            
+
             <div class="lock-details">
                 <p id="lock-timestamp"></p>
                 <p><strong>Lock duration:</strong> <span id="lock-duration"></span></p>
                 <p><strong>Device fingerprint:</strong> <code id="device-fp"></code></p>
             </div>
-            
+
             <div class="prevention-tips">
                 <h3>❓ Why did this happen?</h3>
-                <p>Medical Exam Room Pro has a zero‑tolerance policy against time manipulation. Changing your device's date or time to extend a trial or subscription is automatically detected and results in an immediate, permanent lock.</p>
+                <p>Medical Exam Room Pro has a zero‑tolerance policy against time manipulation. Changing your device's
+                    date or time to extend a trial or subscription is automatically detected and results in an
+                    immediate, permanent lock.</p>
                 <p>To prevent this in future:</p>
                 <ul>
                     <li>Keep your device time set to automatic</li>
@@ -129,7 +162,7 @@
                     <li>Use the app exactly as intended</li>
                 </ul>
             </div>
-            
+
             <div class="support-section">
                 <h3>📞 Need help?</h3>
                 <p>Contact support to request account unlock:</p>
@@ -139,19 +172,20 @@
                 </div>
                 <p class="small">Include your device fingerprint and the reason shown above.</p>
             </div>
-            
+
             <hr>
-            
+
             <div class="danger-zone">
                 <h3>⚠️ Clear Local Data</h3>
                 <p>Only use this if instructed by support. This will remove all locally stored exams and settings.</p>
                 <button onclick="clearLocalData()" class="btn-danger">🗑️ Clear Local Data</button>
             </div>
-            
+
             <button onclick="router.navigateTo('index.html')" class="btn-text">← Return to Home</button>
         </div>
     </div>
-    
+
     <script data-lazy data-src="../scripts/offline.js"></script>
 </body>
+
 </html>

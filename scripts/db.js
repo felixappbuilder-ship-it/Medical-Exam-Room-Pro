@@ -1,26 +1,21 @@
 // frontend-user/scripts/db.js
 
 /**
- * IndexedDB Database Manager – OFFLINE VERSION
- * Provides offline storage for user data, exam results, questions, sync queue,
- * security logs, lock status, analytics, and settings.
+ * IndexedDB Database Manager – OFFLINE SINGLE-USER VERSION
+ * Provides persistent storage for user, exams, subscriptions, sync queue,
+ * security logs, lock status, analytics, settings, questions, downloaded exams,
+ * shared exams, and seen questions (for repetition prevention).
  * Falls back to localStorage when IndexedDB fails.
  */
 
 import * as utils from './utils.js';
 
 const DB_NAME = 'MedExamDB';
-const DB_VERSION = 3; // Increment version to ensure schema updates
+const DB_VERSION = 4;
 
 let db = null;
 let dbInitPromise = null;
 
-// ==================== INITIALIZATION ====================
-
-/**
- * Initialize the database connection.
- * @returns {Promise<IDBDatabase>}
- */
 export function initDatabase() {
     if (db) return Promise.resolve(db);
     if (dbInitPromise) return dbInitPromise;
@@ -29,74 +24,52 @@ export function initDatabase() {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onerror = (event) => {
-            console.error('IndexedDB error:', event.target.error);
+            console.error('[DB] IndexedDB error:', event.target.error);
             reject(event.target.error);
         };
 
         request.onsuccess = (event) => {
             db = event.target.result;
-            console.log('IndexedDB opened successfully');
+            console.log('[DB] Opened successfully');
             resolve(db);
         };
 
         request.onupgradeneeded = (event) => {
             const db = event.target.result;
-            const oldVersion = event.oldVersion;
+            console.log('[DB] Upgrading schema to version', DB_VERSION);
 
-            console.log(`Upgrading DB from version ${oldVersion} to ${DB_VERSION}`);
-
-            // Create object stores if they don't exist
             if (!db.objectStoreNames.contains('users')) {
                 const userStore = db.createObjectStore('users', { keyPath: 'id' });
                 userStore.createIndex('by_email', 'email', { unique: true });
                 userStore.createIndex('by_phone', 'phone', { unique: true });
-                console.log('Created users store');
             }
-
             if (!db.objectStoreNames.contains('subscriptions')) {
-                const subStore = db.createObjectStore('subscriptions', { keyPath: 'userId' });
-                subStore.createIndex('by_expiry', 'expiryDate', { unique: false });
-                console.log('Created subscriptions store');
+                db.createObjectStore('subscriptions', { keyPath: 'userId' });
             }
-
             if (!db.objectStoreNames.contains('exams')) {
                 const examStore = db.createObjectStore('exams', { keyPath: 'examId' });
                 examStore.createIndex('by_date', 'date', { unique: false });
-                examStore.createIndex('by_subject', 'subject', { unique: false });
-                console.log('Created exams store');
             }
-
             if (!db.objectStoreNames.contains('questions')) {
                 const qStore = db.createObjectStore('questions', { keyPath: 'id' });
                 qStore.createIndex('by_subject', 'subject', { unique: false });
                 qStore.createIndex('by_topic', 'topic', { unique: false });
-                qStore.createIndex('by_difficulty', 'difficulty', { unique: false });
-                console.log('Created questions store');
             }
-
             if (!db.objectStoreNames.contains('syncQueue')) {
-                const queueStore = db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
-                queueStore.createIndex('by_user', 'userId', { unique: false });
-                queueStore.createIndex('by_type', 'type', { unique: false });
-                queueStore.createIndex('by_timestamp', 'timestamp', { unique: false });
-                console.log('Created syncQueue store');
+                db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
             }
-
             if (!db.objectStoreNames.contains('security')) {
-                const secStore = db.createObjectStore('security', { keyPath: 'id' });
-                // We'll store violations, logs, lock status as separate records with fixed ids
-                console.log('Created security store');
+                db.createObjectStore('security', { keyPath: 'id' });
             }
-
             if (!db.objectStoreNames.contains('analytics')) {
-                const analStore = db.createObjectStore('analytics', { keyPath: 'id' });
-                analStore.createIndex('by_timestamp', 'timestamp', { unique: false });
-                console.log('Created analytics store');
+                db.createObjectStore('analytics', { keyPath: 'id' });
             }
-
             if (!db.objectStoreNames.contains('settings')) {
                 db.createObjectStore('settings', { keyPath: 'key' });
-                console.log('Created settings store');
+            }
+            if (!db.objectStoreNames.contains('sharedExams')) {
+                const shareStore = db.createObjectStore('sharedExams', { keyPath: 'token' });
+                shareStore.createIndex('by_expiry', 'expiry', { unique: false });
             }
         };
     });
@@ -104,55 +77,33 @@ export function initDatabase() {
     return dbInitPromise;
 }
 
-// ==================== HELPER: GET STORE ====================
-
-/**
- * Get a transaction and object store.
- * @param {string} storeName
- * @param {string} mode - 'readonly' or 'readwrite'
- * @returns {Promise<IDBObjectStore>}
- */
 async function getStore(storeName, mode = 'readonly') {
     const database = await initDatabase();
-    const tx = database.transaction(storeName, mode);
-    return tx.objectStore(storeName);
+    return database.transaction(storeName, mode).objectStore(storeName);
 }
 
 // ==================== USER OPERATIONS ====================
 
-/**
- * Save user data.
- * @param {Object} user
- * @returns {Promise<void>}
- */
 export async function saveUser(user) {
-    if (!user || !user.id) {
-        console.warn('saveUser: invalid user', user);
-        return;
-    }
+    if (!user || !user.id) return;
     try {
         const store = await getStore('users', 'readwrite');
+        await new Promise((resolve, reject) => {
+            const clearReq = store.clear();
+            clearReq.onsuccess = resolve;
+            clearReq.onerror = () => reject(clearReq.error);
+        });
         return new Promise((resolve, reject) => {
             const request = store.put(user);
-            request.onsuccess = () => {
-                console.log('User saved:', user.id);
-                resolve();
-            };
-            request.onerror = (err) => {
-                console.error('saveUser error:', err);
-                reject(err);
-            };
+            request.onsuccess = () => resolve();
+            request.onerror = (err) => reject(err);
         });
     } catch (e) {
-        console.warn('IndexedDB saveUser failed, using localStorage fallback', e);
+        console.warn('[DB] saveUser failed, using localStorage fallback', e);
         utils.setLocalStorage('user', user);
     }
 }
 
-/**
- * Get the current user (first user in store, assuming single user).
- * @returns {Promise<Object|null>}
- */
 export async function getUser() {
     try {
         const store = await getStore('users', 'readonly');
@@ -162,72 +113,43 @@ export async function getUser() {
                 const users = request.result;
                 resolve(users.length > 0 ? users[0] : null);
             };
-            request.onerror = (err) => {
-                console.error('getUser error:', err);
-                reject(err);
-            };
+            request.onerror = (err) => reject(err);
         });
     } catch (e) {
-        console.warn('getUser failed, using localStorage fallback', e);
+        console.warn('[DB] getUser failed, using localStorage fallback', e);
         return utils.getLocalStorage('user', null);
     }
 }
 
-/**
- * Get all users (for login/registration checks).
- * @returns {Promise<Array>}
- */
 export async function getAllUsers() {
     try {
         const store = await getStore('users', 'readonly');
         return new Promise((resolve, reject) => {
             const request = store.getAll();
-            request.onsuccess = () => {
-                console.log('getAllUsers success, count:', request.result.length);
-                resolve(request.result || []);
-            };
-            request.onerror = (err) => {
-                console.error('getAllUsers error:', err);
-                reject(err);
-            };
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = (err) => reject(err);
         });
     } catch (e) {
-        console.warn('getAllUsers failed, using localStorage fallback', e);
         const user = utils.getLocalStorage('user', null);
         return user ? [user] : [];
     }
 }
 
-/**
- * Delete user data.
- * @returns {Promise<void>}
- */
-export async function deleteUser() {
+export async function deleteAllUsers() {
     try {
         const store = await getStore('users', 'readwrite');
         return new Promise((resolve, reject) => {
             const request = store.clear();
-            request.onsuccess = () => {
-                console.log('All users deleted');
-                resolve();
-            };
-            request.onerror = (err) => {
-                console.error('deleteUser error:', err);
-                reject(err);
-            };
+            request.onsuccess = () => resolve();
+            request.onerror = (err) => reject(err);
         });
     } catch (e) {
-        console.warn('deleteUser failed, using localStorage fallback', e);
         utils.removeLocalStorage('user');
     }
 }
 
 // ==================== SUBSCRIPTION OPERATIONS ====================
 
-/**
- * Save subscription.
- * @param {Object} subscription
- */
 export async function saveSubscription(subscription) {
     if (!subscription || !subscription.userId) return;
     try {
@@ -242,10 +164,6 @@ export async function saveSubscription(subscription) {
     }
 }
 
-/**
- * Get subscription.
- * @returns {Promise<Object|null>}
- */
 export async function getSubscription() {
     try {
         const store = await getStore('subscriptions', 'readonly');
@@ -262,9 +180,6 @@ export async function getSubscription() {
     }
 }
 
-/**
- * Delete subscription.
- */
 export async function deleteSubscription() {
     try {
         const store = await getStore('subscriptions', 'readwrite');
@@ -280,10 +195,6 @@ export async function deleteSubscription() {
 
 // ==================== EXAM RESULTS ====================
 
-/**
- * Save exam result.
- * @param {Object} result
- */
 export async function saveExamResult(result) {
     if (!result || !result.examId) return;
     try {
@@ -298,10 +209,6 @@ export async function saveExamResult(result) {
     }
 }
 
-/**
- * Get all exam results.
- * @returns {Promise<Array>}
- */
 export async function getAllExamResults() {
     try {
         const store = await getStore('exams', 'readonly');
@@ -316,10 +223,6 @@ export async function getAllExamResults() {
     }
 }
 
-/**
- * Get exam result by ID.
- * @param {string} examId
- */
 export async function getExamResult(examId) {
     try {
         const store = await getStore('exams', 'readonly');
@@ -330,13 +233,10 @@ export async function getExamResult(examId) {
         });
     } catch (e) {
         const last = utils.getLocalStorage('lastExam', null);
-        return last && last.examId === examId ? last : null;
+        return last?.examId === examId ? last : null;
     }
 }
 
-/**
- * Get last exam (by date).
- */
 export async function getLastExam() {
     try {
         const store = await getStore('exams', 'readonly');
@@ -354,10 +254,6 @@ export async function getLastExam() {
     }
 }
 
-/**
- * Delete exam result.
- * @param {string} examId
- */
 export async function deleteExamResult(examId) {
     try {
         const store = await getStore('exams', 'readwrite');
@@ -371,9 +267,6 @@ export async function deleteExamResult(examId) {
     }
 }
 
-/**
- * Clear all exam results.
- */
 export async function clearExamResults() {
     try {
         const store = await getStore('exams', 'readwrite');
@@ -387,13 +280,40 @@ export async function clearExamResults() {
     }
 }
 
+// ==================== EXAM PROGRESS ====================
+
+export async function saveExamProgress(progress) {
+    if (!progress || !progress.examId) return;
+    try {
+        const store = await getStore('exams', 'readwrite');
+        const key = `progress_${progress.examId}`;
+        return new Promise((resolve, reject) => {
+            const request = store.put({ ...progress, examId: key });
+            request.onsuccess = () => resolve();
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        console.warn('saveExamProgress failed', e);
+        utils.setLocalStorage(`exam_progress_${progress.examId}`, progress);
+    }
+}
+
+export async function getExamProgress(examId) {
+    try {
+        const store = await getStore('exams', 'readonly');
+        const key = `progress_${examId}`;
+        return new Promise((resolve, reject) => {
+            const request = store.get(key);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        return utils.getLocalStorage(`exam_progress_${examId}`, null);
+    }
+}
+
 // ==================== SYNC QUEUE ====================
 
-/**
- * Add item to sync queue.
- * @param {string} type - 'exam_results', 'profile_update', 'security_log', etc.
- * @param {Object} data
- */
 export async function addToSyncQueue(type, data) {
     const user = await getUser().catch(() => null);
     const item = {
@@ -411,14 +331,10 @@ export async function addToSyncQueue(type, data) {
             request.onerror = (err) => reject(err);
         });
     } catch (e) {
-        console.warn('Failed to add to sync queue', e);
+        console.warn('[DB] addToSyncQueue failed', e);
     }
 }
 
-/**
- * Get all pending sync items.
- * @returns {Promise<Array>}
- */
 export async function getSyncQueue() {
     try {
         const store = await getStore('syncQueue', 'readonly');
@@ -432,10 +348,6 @@ export async function getSyncQueue() {
     }
 }
 
-/**
- * Remove item from sync queue by id.
- * @param {number} id
- */
 export async function removeFromSyncQueue(id) {
     try {
         const store = await getStore('syncQueue', 'readwrite');
@@ -449,9 +361,6 @@ export async function removeFromSyncQueue(id) {
     }
 }
 
-/**
- * Clear sync queue.
- */
 export async function clearSyncQueue() {
     try {
         const store = await getStore('syncQueue', 'readwrite');
@@ -467,15 +376,10 @@ export async function clearSyncQueue() {
 
 // ==================== SECURITY VIOLATIONS ====================
 
-/**
- * Save security violations array.
- * @param {Array} violations
- */
 export async function saveSecurityViolations(violations) {
     try {
         const store = await getStore('security', 'readwrite');
         return new Promise((resolve, reject) => {
-            // Store under fixed id 'violations'
             const request = store.put({ id: 'violations', data: violations, updatedAt: Date.now() });
             request.onsuccess = () => resolve();
             request.onerror = (err) => reject(err);
@@ -485,10 +389,6 @@ export async function saveSecurityViolations(violations) {
     }
 }
 
-/**
- * Get security violations.
- * @returns {Promise<Array>}
- */
 export async function getSecurityViolations() {
     try {
         const store = await getStore('security', 'readonly');
@@ -502,10 +402,6 @@ export async function getSecurityViolations() {
     }
 }
 
-/**
- * Add a single security log entry.
- * @param {Object} logEntry
- */
 export async function addSecurityLog(logEntry) {
     const entry = {
         ...logEntry,
@@ -528,10 +424,6 @@ export async function addSecurityLog(logEntry) {
 
 // ==================== LOCK STATUS ====================
 
-/**
- * Save lock status.
- * @param {Object} lockStatus - { locked, reason, timestamp, details }
- */
 export async function saveLockStatus(lockStatus) {
     try {
         const store = await getStore('security', 'readwrite');
@@ -545,10 +437,6 @@ export async function saveLockStatus(lockStatus) {
     }
 }
 
-/**
- * Get lock status.
- * @returns {Promise<Object|null>}
- */
 export async function getLockStatus() {
     try {
         const store = await getStore('security', 'readonly');
@@ -564,10 +452,6 @@ export async function getLockStatus() {
 
 // ==================== ANALYTICS ====================
 
-/**
- * Save user statistics.
- * @param {Object} stats
- */
 export async function saveUserStatistics(stats) {
     try {
         const store = await getStore('analytics', 'readwrite');
@@ -581,10 +465,6 @@ export async function saveUserStatistics(stats) {
     }
 }
 
-/**
- * Get user statistics.
- * @returns {Promise<Object|null>}
- */
 export async function getUserStatistics() {
     try {
         const store = await getStore('analytics', 'readonly');
@@ -600,11 +480,6 @@ export async function getUserStatistics() {
 
 // ==================== SETTINGS ====================
 
-/**
- * Save a setting.
- * @param {string} key
- * @param {*} value
- */
 export async function saveSetting(key, value) {
     try {
         const store = await getStore('settings', 'readwrite');
@@ -618,12 +493,6 @@ export async function saveSetting(key, value) {
     }
 }
 
-/**
- * Get a setting.
- * @param {string} key
- * @param {*} defaultValue
- * @returns {Promise<*>}
- */
 export async function getSetting(key, defaultValue = null) {
     try {
         const store = await getStore('settings', 'readonly');
@@ -637,11 +506,220 @@ export async function getSetting(key, defaultValue = null) {
     }
 }
 
+// ==================== QUESTIONS ====================
+
+export async function saveQuestions(questions) {
+    if (!questions || !questions.length) return;
+    try {
+        const store = await getStore('questions', 'readwrite');
+        const tx = store.transaction;
+        return new Promise((resolve, reject) => {
+            let completed = 0;
+            questions.forEach(q => {
+                const request = store.put(q);
+                request.onsuccess = () => {
+                    completed++;
+                    if (completed === questions.length) resolve();
+                };
+                request.onerror = (err) => reject(err);
+            });
+        });
+    } catch (e) {
+        console.warn('[DB] saveQuestions failed', e);
+    }
+}
+
+export async function getQuestions(query = {}) {
+    try {
+        const store = await getStore('questions', 'readonly');
+        return new Promise((resolve, reject) => {
+            const request = store.getAll();
+            request.onsuccess = () => {
+                let results = request.result;
+                if (query.subject) results = results.filter(q => q.subject === query.subject);
+                if (query.topic) results = results.filter(q => q.topic === query.topic);
+                if (query.difficulty !== undefined) results = results.filter(q => q.difficulty === query.difficulty);
+                if (query.limit) results = results.slice(0, query.limit);
+                resolve(results);
+            };
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        return [];
+    }
+}
+
+export async function getQuestionById(id) {
+    try {
+        const store = await getStore('questions', 'readonly');
+        return new Promise((resolve, reject) => {
+            const request = store.get(id);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        return null;
+    }
+}
+
+export async function getAllQuestions() {
+    try {
+        const store = await getStore('questions', 'readonly');
+        return new Promise((resolve, reject) => {
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        return [];
+    }
+}
+
+// ==================== DOWNLOADED EXAMS ====================
+
+export async function getDownloadedExams() {
+    try {
+        const store = await getStore('analytics', 'readonly');
+        return new Promise((resolve, reject) => {
+            const request = store.get('downloadedExams');
+            request.onsuccess = () => resolve(request.result?.data || []);
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        return utils.getLocalStorage('downloadedExams', []);
+    }
+}
+
+export async function saveDownloadedExams(exams) {
+    try {
+        const store = await getStore('analytics', 'readwrite');
+        return new Promise((resolve, reject) => {
+            const request = store.put({ id: 'downloadedExams', data: exams, updatedAt: Date.now() });
+            request.onsuccess = () => resolve();
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        utils.setLocalStorage('downloadedExams', exams);
+    }
+}
+
+// ==================== SHARED EXAMS ====================
+
+export async function saveSharedExam(token, examData, expiryHours = 24) {
+    const expiry = Date.now() + expiryHours * 60 * 60 * 1000;
+    try {
+        const store = await getStore('sharedExams', 'readwrite');
+        return new Promise((resolve, reject) => {
+            const request = store.put({ token, examData, expiry });
+            request.onsuccess = () => resolve();
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        console.warn('saveSharedExam failed', e);
+    }
+}
+
+export async function getSharedExam(token) {
+    try {
+        const store = await getStore('sharedExams', 'readonly');
+        return new Promise((resolve, reject) => {
+            const request = store.get(token);
+            request.onsuccess = () => {
+                const entry = request.result;
+                if (entry && entry.expiry > Date.now()) {
+                    resolve(entry.examData);
+                } else if (entry) {
+                    store.delete(token);
+                    resolve(null);
+                } else {
+                    resolve(null);
+                }
+            };
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        return null;
+    }
+}
+
+export async function cleanupSharedExams() {
+    try {
+        const store = await getStore('sharedExams', 'readwrite');
+        const now = Date.now();
+        const index = store.index('by_expiry');
+        return new Promise((resolve, reject) => {
+            const request = index.openCursor(IDBKeyRange.upperBound(now));
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    cursor.delete();
+                    cursor.continue();
+                } else {
+                    resolve();
+                }
+            };
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        // ignore
+    }
+}
+
+// ==================== SEEN QUESTIONS ====================
+
+export async function getSeenQuestions(subject, topic = null) {
+    const key = topic ? `seen_${subject}_${topic}` : `seen_${subject}`;
+    try {
+        const store = await getStore('analytics', 'readonly');
+        return new Promise((resolve, reject) => {
+            const request = store.get(key);
+            request.onsuccess = () => {
+                const data = request.result;
+                resolve(new Set(data?.ids || []));
+            };
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        return new Set();
+    }
+}
+
+export async function addSeenQuestions(subject, questionIds, topic = null) {
+    const key = topic ? `seen_${subject}_${topic}` : `seen_${subject}`;
+    try {
+        const store = await getStore('analytics', 'readwrite');
+        return new Promise((resolve, reject) => {
+            const getReq = store.get(key);
+            getReq.onsuccess = () => {
+                const existing = getReq.result?.ids || [];
+                const newSet = [...new Set([...existing, ...questionIds])];
+                const putReq = store.put({ id: key, ids: newSet, updatedAt: Date.now() });
+                putReq.onsuccess = () => resolve();
+                putReq.onerror = (err) => reject(err);
+            };
+            getReq.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        console.warn('Failed to add seen questions', e);
+    }
+}
+
+export async function clearSeenQuestions(subject, topic = null) {
+    const key = topic ? `seen_${subject}_${topic}` : `seen_${subject}`;
+    try {
+        const store = await getStore('analytics', 'readwrite');
+        return new Promise((resolve, reject) => {
+            const request = store.delete(key);
+            request.onsuccess = () => resolve();
+            request.onerror = (err) => reject(err);
+        });
+    } catch (e) {
+        // ignore
+    }
+}
+
 // ==================== CLEAR DATABASE ====================
 
-/**
- * Clear all data (dangerous!).
- */
 export async function clearDatabase() {
     try {
         const database = await initDatabase();
@@ -660,5 +738,5 @@ export async function clearDatabase() {
     }
 }
 
-// Initialize on module load (optional, but good practice)
-initDatabase().catch(err => console.warn('DB init failed, will use fallbacks', err));
+// Auto‑initialize
+initDatabase().catch(err => console.warn('[DB] Init failed, fallback to localStorage', err));

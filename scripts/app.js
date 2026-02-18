@@ -1,9 +1,9 @@
 // frontend-user/scripts/app.js
 
 /**
- * Application State Manager
- * Maintains global state: user, subscription, exam config, settings.
- * Used on all pages that need state.
+ * Application State Manager – SINGLE USER
+ * Maintains in‑memory state and syncs with IndexedDB via db.js.
+ * Must be initialized on every page with await app.initializeApp().
  */
 
 import * as utils from './utils.js';
@@ -11,67 +11,99 @@ import * as db from './db.js';
 
 // ==================== GLOBAL STATE ====================
 
-let currentUser = null;
-let subscriptionStatus = null;
-let examState = null;
-let appSettings = {
+let currentUser = null;               // in‑memory user object
+let subscriptionStatus = null;        // current subscription (if any)
+let examState = null;                 // active exam state (for resume)
+let appSettings = {                    // user preferences
     theme: 'auto',
     notifications: true,
     sound: true
 };
-let selectedPlan = null;
-let currentTransaction = null;
-let examConfig = null;
+let selectedPlan = null;               // for payment flow
+let currentTransaction = null;         // for payment polling
+let examConfig = null;                 // exam settings before start
 
 // ==================== INITIALIZATION ====================
 
 /**
- * Initialize app: load user and subscription from storage
+ * Load user, subscription and settings from persistent storage.
+ * Must be called and awaited on every page that needs user state.
  */
 export async function initializeApp() {
-    // Load user from IndexedDB (or localStorage as fallback)
-    currentUser = await db.getUser() || utils.getLocalStorage('user', null);
-    subscriptionStatus = await db.getSubscription() || utils.getLocalStorage('subscription', null);
-    appSettings = utils.getLocalStorage('appSettings', appSettings);
-    
-    // If user is present but token expired? We'll handle in auth.js
+    console.log('[App] Initializing...');
+    try {
+        // Try IndexedDB first, fallback to localStorage
+        currentUser = await db.getUser() || utils.getLocalStorage('user', null);
+        console.log('[App] Loaded user:', currentUser);
+
+        subscriptionStatus = await db.getSubscription() || utils.getLocalStorage('subscription', null);
+        appSettings = utils.getLocalStorage('appSettings', appSettings);
+    } catch (e) {
+        console.warn('[App] Initialization error, using localStorage fallback', e);
+        currentUser = utils.getLocalStorage('user', null);
+        subscriptionStatus = utils.getLocalStorage('subscription', null);
+    }
+}
+
+// ==================== AUTHENTICATION CHECK ====================
+
+/**
+ * Check if user is authenticated (token exists and user object is in memory).
+ * Token is stored in localStorage as a simple flag.
+ */
+export function checkAuth() {
+    const token = utils.getLocalStorage('accessToken');
+    const hasUser = !!currentUser;
+    console.log('[App] checkAuth: token exists?', !!token, 'user exists?', hasUser);
+    return !!token && hasUser;
+}
+
+// ==================== USER MANAGEMENT ====================
+
+/**
+ * Set the current user in memory and persist to storage.
+ * This overwrites any existing user.
+ */
+export async function setUser(user) {
+    if (!user || !user.id) {
+        console.warn('[App] setUser called with invalid user', user);
+        return;
+    }
+    currentUser = user;
+    // Save to IndexedDB (async)
+    await db.saveUser(user).catch(() => {
+        utils.setLocalStorage('user', user);
+    });
+    console.log('[App] User set and saved:', user.id);
 }
 
 /**
- * Check if user is authenticated (has valid token)
- * @returns {boolean}
+ * Get the current user from memory.
  */
-export function checkAuth() {
-    // Token existence check (actual validation will be done by backend)
-    const token = utils.getLocalStorage('accessToken');
-    return !!token && !!currentUser;
-}
-
-// ==================== USER ====================
-
-export function setUser(user) {
-    currentUser = user;
-    db.saveUser(user).catch(() => {
-        // fallback to localStorage
-        utils.setLocalStorage('user', user);
-    });
-}
-
 export function getUser() {
     return currentUser;
 }
 
-export function clearUser() {
+/**
+ * Clear the current user from memory and delete from storage.
+ */
+export async function clearUser() {
     currentUser = null;
-    db.deleteUser().catch(() => {});
-    utils.removeLocalStorage('user');
+    // Delete from IndexedDB
+    await db.deleteAllUsers().catch(() => {
+        utils.removeLocalStorage('user');
+    });
+    // Remove token flags
+    utils.removeLocalStorage('accessToken');
+    utils.removeLocalStorage('refreshToken');
+    console.log('[App] User cleared');
 }
 
-// ==================== SUBSCRIPTION ====================
+// ==================== SUBSCRIPTION MANAGEMENT ====================
 
-export function setSubscription(subscription) {
+export async function setSubscription(subscription) {
     subscriptionStatus = subscription;
-    db.saveSubscription(subscription).catch(() => {
+    await db.saveSubscription(subscription).catch(() => {
         utils.setLocalStorage('subscription', subscription);
     });
 }
@@ -88,13 +120,14 @@ export function hasActiveSubscription() {
     return expiry > now;
 }
 
-export function clearSubscription() {
+export async function clearSubscription() {
     subscriptionStatus = null;
-    db.deleteSubscription().catch(() => {});
-    utils.removeLocalStorage('subscription');
+    await db.deleteSubscription().catch(() => {
+        utils.removeLocalStorage('subscription');
+    });
 }
 
-// ==================== EXAM STATE ====================
+// ==================== EXAM STATE (for exam-room) ====================
 
 export function setExamState(state) {
     examState = state;
@@ -112,8 +145,11 @@ export function clearExamState() {
 
 export function setExamConfig(config) {
     examConfig = config;
-    // Also store in session for resume
-    sessionStorage.setItem('examConfig', JSON.stringify(config));
+    if (config) {
+        sessionStorage.setItem('examConfig', JSON.stringify(config));
+    } else {
+        sessionStorage.removeItem('examConfig');
+    }
 }
 
 export function getExamConfig() {
@@ -122,7 +158,9 @@ export function getExamConfig() {
         if (saved) {
             try {
                 examConfig = JSON.parse(saved);
-            } catch {}
+            } catch {
+                examConfig = null;
+            }
         }
     }
     return examConfig;
@@ -145,7 +183,6 @@ export function getAppSetting(key) {
 }
 
 export function toggleTheme() {
-    // Will be handled by ui.js, but we update setting
     const newTheme = appSettings.theme === 'dark' ? 'light' : 'dark';
     setAppSetting('theme', newTheme);
     return newTheme;
@@ -171,7 +208,7 @@ export function getCurrentTransaction() {
     return currentTransaction;
 }
 
-// ==================== EVENT BUS (simple) ====================
+// ==================== EVENT BUS ====================
 
 const eventListeners = {};
 
@@ -195,5 +232,33 @@ export const events = {
 // ==================== CLEANUP ====================
 
 export function cleanupApp() {
-    // Nothing heavy now
+    // Nothing heavy
 }
+
+// ==================== EXPOSE GLOBALLY ====================
+
+window.app = {
+    initializeApp,
+    checkAuth,
+    setUser,
+    getUser,
+    clearUser,
+    setSubscription,
+    getSubscription,
+    hasActiveSubscription,
+    clearSubscription,
+    setExamState,
+    getExamState,
+    clearExamState,
+    setExamConfig,
+    getExamConfig,
+    clearExamConfig,
+    setAppSetting,
+    getAppSetting,
+    toggleTheme,
+    setSelectedPlan,
+    getSelectedPlan,
+    setCurrentTransaction,
+    getCurrentTransaction,
+    events
+};

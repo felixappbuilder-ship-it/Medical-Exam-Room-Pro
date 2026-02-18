@@ -1,219 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exam Results – Medical Exam Room Pro</title>
-    
+
     <link rel="manifest" href="../manifest.json">
     <link rel="stylesheet" href="../css/common.css" media="all">
     <link rel="stylesheet" href="../css/results.css" media="all">
-    
-    <script defer src="../scripts/utils.js"></script>
-    <script defer src="../scripts/ui.js"></script>
-    <script defer src="../scripts/router.js"></script>
-    <script defer src="../scripts/app.js"></script>
-    <script defer src="../scripts/analytics.js"></script>
-    <script defer src="../scripts/db.js"></script>
-    <script defer src="../scripts/sync.js"></script>
-    
+
+    <!-- Core modules -->
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+    <script type="module" src="../scripts/app.js"></script>
+    <script type="module" src="../scripts/analytics.js"></script>
+    <script type="module" src="../scripts/db.js"></script>
+    <script type="module" src="../scripts/sync.js"></script>
+
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+            navigator.serviceWorker.register('../service-worker.js').catch(() => { });
         }
-    </script>
-    
-    <script defer>
-        (async function initResults() {
-            await app.initializeApp();
-            ui.applyTheme();
-            
-            // Auth check (no subscription required)
-            if (!app.checkAuth()) {
-                router.navigateTo('login.html');
-                return;
-            }
-            
-            // Get exam ID from URL (passed from exam-room)
-            const examId = router.getQueryParam('examId');
-            if (!examId) {
-                ui.showToast('No exam specified', 'error');
-                router.navigateTo('subjects.html');
-                return;
-            }
-            
-            // Load exam results from IndexedDB (real data)
-            let results = await db.getExamResult(examId);
-            if (!results) {
-                // Try to fetch from backend if online
-                if (navigator.onLine) {
-                    results = await sync.fetchExamResult(examId);
-                    if (results) await db.saveExamResult(results);
-                }
-            }
-            if (!results) {
-                ui.showToast('Exam results not found', 'error');
-                router.navigateTo('subjects.html');
-                return;
-            }
-            
-            // Display summary
-            displaySummary(results);
-            
-            // Render question-by-question review
-            renderReviewList(results.questions);
-            
-            // Render topic performance chart
-            renderTopicPerformance(results.topicPerformance);
-            
-            // Sync results to backend (background)
-            if (navigator.onLine) {
-                sync.syncExamResults().catch(() => {});
-            }
-            
-            // Weak areas recommendation
-            displayRecommendations(results.weakAreas);
-        })();
-        
-        function displaySummary(results) {
-            document.getElementById('score-percentage').textContent = `${Math.round(results.scorePercentage)}%`;
-            document.getElementById('correct-count').textContent = `${results.correctAnswers}/${results.totalQuestions}`;
-            
-            const timeAlloc = results.timeAllocated || (results.totalQuestions * 30); // fallback
-            const timeSpent = results.timeSpent;
-            const timePercent = Math.round((timeSpent / timeAlloc) * 100);
-            document.getElementById('time-stats').textContent = `${utils.formatTime(timeSpent)} / ${utils.formatTime(timeAlloc)} (${timePercent}%)`;
-            
-            let grade = 'F';
-            if (results.scorePercentage >= 80) grade = 'A';
-            else if (results.scorePercentage >= 70) grade = 'B';
-            else if (results.scorePercentage >= 60) grade = 'C';
-            else if (results.scorePercentage >= 50) grade = 'D';
-            document.getElementById('grade').textContent = grade;
-            
-            document.getElementById('exam-date').textContent = utils.formatDate(results.date);
-            document.getElementById('exam-subject').textContent = results.subject || 'General';
-            document.getElementById('exam-mode').textContent = results.mode || 'Timed';
-        }
-        
-        function renderReviewList(questions) {
-            const container = document.getElementById('review-list');
-            container.innerHTML = questions.map((q, idx) => {
-                const isCorrect = q.correct;
-                const statusClass = isCorrect ? 'correct' : 'incorrect';
-                const statusIcon = isCorrect ? '✅' : '❌';
-                return `
-                    <div class="review-item ${statusClass}">
-                        <div class="review-header">
-                            <span class="q-num">Q${idx + 1}</span>
-                            <span class="status">${statusIcon}</span>
-                            <span class="topic-tag">${q.topic}</span>
-                            <span class="time-spent">⏱️ ${q.timeSpent}s</span>
-                        </div>
-                        <div class="review-question">${q.question}</div>
-                        <div class="review-answers">
-                            <div><strong>Your answer:</strong> ${q.userAnswer || '—'}</div>
-                            <div><strong>Correct answer:</strong> ${q.correctAnswer}</div>
-                        </div>
-                        <div class="review-explanation">
-                            <strong>Explanation:</strong> ${q.explanation}
-                        </div>
-                        ${q.flagged ? '<span class="flagged-badge">🏴 Flagged</span>' : ''}
-                    </div>
-                `;
-            }).join('');
-        }
-        
-        function renderTopicPerformance(topicData) {
-            const container = document.getElementById('topic-performance');
-            if (!topicData || topicData.length === 0) {
-                container.innerHTML = '<p class="no-data">No topic data available.</p>';
-                return;
-            }
-            
-            // Sort by percentage ascending (worst first)
-            topicData.sort((a, b) => a.percentage - b.percentage);
-            
-            let html = '<h3>Topic Performance</h3><ul class="topic-list">';
-            topicData.forEach(t => {
-                const color = t.percentage >= 70 ? 'green' : (t.percentage >= 50 ? 'orange' : 'red');
-                html += `
-                    <li>
-                        <span class="topic-name">${t.topic}</span>
-                        <span class="topic-score" style="color: ${color};">${Math.round(t.percentage)}%</span>
-                        <span class="topic-count">${t.correct}/${t.questions}</span>
-                        <div class="topic-bar">
-                            <div class="bar-fill" style="width: ${t.percentage}%; background: ${color};"></div>
-                        </div>
-                    </li>
-                `;
-            });
-            html += '</ul>';
-            container.innerHTML = html;
-        }
-        
-        function displayRecommendations(weakAreas) {
-            const container = document.getElementById('recommendations');
-            if (!weakAreas || weakAreas.length === 0) {
-                container.innerHTML = '<p class="no-data">Great job! No weak areas detected.</p>';
-                return;
-            }
-            let html = '<h3>📚 Recommended Focus</h3><ul>';
-            weakAreas.forEach(area => {
-                html += `<li>🔍 Focus on <strong>${area}</strong> – review related topics.</li>`;
-            });
-            html += '</ul>';
-            container.innerHTML = html;
-        }
-        
-        // Action buttons
-        window.reviewIncorrect = function() {
-            // Create a quick exam config for incorrect questions only
-            const examId = router.getQueryParam('examId');
-            db.getExamResult(examId).then(results => {
-                const incorrectIds = results.questions.filter(q => !q.correct).map(q => q.id);
-                if (incorrectIds.length === 0) {
-                    ui.showToast('No incorrect questions!', 'success');
-                    return;
-                }
-                app.setExamConfig({
-                    subject: results.subject,
-                    specificQuestions: incorrectIds,
-                    totalQuestions: incorrectIds.length,
-                    mode: 'practice'
-                });
-                router.navigateTo('exam-settings.html');
-            });
-        };
-        
-        window.takeSimilarExam = function() {
-            const examId = router.getQueryParam('examId');
-            db.getExamResult(examId).then(results => {
-                app.setExamConfig({
-                    subject: results.subject,
-                    topics: results.topics, // reuse topics
-                    totalQuestions: results.totalQuestions,
-                    mode: results.mode
-                });
-                router.navigateTo('exam-settings.html');
-            });
-        };
-        
-        window.exportResults = function() {
-            const examId = router.getQueryParam('examId');
-            db.getExamResult(examId).then(results => {
-                const dataStr = JSON.stringify(results, null, 2);
-                const blob = new Blob([dataStr], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `exam-results-${examId}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-            });
-        };
     </script>
 </head>
+
 <body>
     <div class="page-container">
         <header>
@@ -223,13 +35,13 @@
             </div>
             <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
         </header>
-        
+
         <main>
             <div class="results-header">
                 <h1>Exam Results</h1>
                 <button onclick="router.navigateTo('performance.html')" class="btn-text">View Full Analytics →</button>
             </div>
-            
+
             <!-- Score Summary Card -->
             <div class="summary-card">
                 <div class="score-circle">
@@ -244,29 +56,403 @@
                     <p><strong>Mode:</strong> <span id="exam-mode"></span></p>
                 </div>
             </div>
-            
+
             <!-- Topic Performance -->
             <div id="topic-performance" class="topic-section"></div>
-            
+
             <!-- Recommendations -->
             <div id="recommendations" class="recommendations"></div>
-            
+
             <!-- Question Review -->
             <div class="review-section">
                 <h2>Question Review</h2>
                 <div id="review-list" class="review-list"></div>
             </div>
-            
+
             <!-- Action Buttons -->
             <div class="action-bar">
-                <button onclick="reviewIncorrect()" class="btn-primary">📘 Review Incorrect</button>
-                <button onclick="takeSimilarExam()" class="btn-secondary">↻ Take Similar Exam</button>
+
+                <button onclick="window.reviewIncorrect()" class="btn-primary">📘 Review Incorrect</button>
+                <button onclick="window.takeSimilarExam()" class="btn-secondary">↻ Take Similar Exam</button>
+                <button onclick="window.exportResults()" class="btn-outline">📤 Export</button>
+                <button onclick="window.downloadExam()" class="btn-outline">📥 Download</button>
                 <button onclick="router.navigateTo('subjects.html')" class="btn-secondary">← Back to Subjects</button>
-                <button onclick="exportResults()" class="btn-outline">📤 Export</button>
             </div>
         </main>
     </div>
-    
+
+    <!-- Share Modal (optional, but we'll keep for consistency) -->
+    <div id="share-modal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Share Exam</h3>
+                <button class="modal-close"
+                    onclick="document.getElementById('share-modal').style.display='none'">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Share this link with others. They can view the exam results without logging in.</p>
+                <div style="display: flex; gap: 0.5rem; margin: 1rem 0;">
+                    <input type="text" id="share-link" readonly style="flex: 1; padding: 0.5rem;">
+                    <button onclick="window.copyShareLink()" class="btn-secondary">Copy</button>
+                </div>
+                <p class="small">Anyone with this link can view your exam results.</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // ==================== IMPORTS ====================
+        import * as app from '../scripts/app.js';
+        import * as ui from '../scripts/ui.js';
+        import * as router from '../scripts/router.js';
+        import * as utils from '../scripts/utils.js';
+        import * as db from '../scripts/db.js';
+        import * as sync from '../scripts/sync.js';
+
+        // ==================== MODULE‑LEVEL VARIABLES ====================
+        let currentExamId = null;  // Stores the exam ID loaded by initResults
+
+        // ==================== GLOBAL FUNCTIONS ====================
+        window.copyShareLink = function () {
+            const link = document.getElementById('share-link');
+            link.select();
+            document.execCommand('copy');
+            ui.showToast('Link copied to clipboard!', 'success');
+        };
+
+        // ==================== INITIALIZATION ====================
+        (async function initResults() {
+            console.log('[Results] Initializing...');
+            await app.initializeApp();
+            ui.applyTheme();
+
+            if (!app.checkAuth()) {
+                ui.showToast('Please log in to view results', 'warning');
+                router.navigateTo('login.html');
+                return;
+            }
+
+            // Try to get examId from URL or navigation data
+            let examId = new URLSearchParams(window.location.search).get('examId');
+            if (!examId) {
+                const navData = router.getNavData();
+                if (navData && navData.examId) examId = navData.examId;
+            }
+
+            if (!examId) {
+                ui.showToast('No exam ID provided', 'error');
+                setTimeout(() => router.navigateTo('subjects.html'), 2000);
+                return;
+            }
+
+            // Store the exam ID for later use by action handlers
+            currentExamId = examId;
+            console.log('[Results] Loading exam ID:', currentExamId);
+            ui.showLoading('Loading results...');
+
+            try {
+                let results = await db.getExamResult(currentExamId);
+                console.log('[Results] Retrieved from DB:', results);
+
+                if (!results) {
+                    const lastExam = utils.getLocalStorage('lastExam', null);
+                    if (lastExam && lastExam.examId === currentExamId) {
+                        results = lastExam;
+                        console.log('[Results] Using localStorage fallback');
+                    }
+                }
+
+                if (!results) {
+                    ui.hideLoading();
+                    document.querySelector('main').innerHTML = `
+                    <div class="error-state" style="text-align: center; padding: 3rem;">
+                        <h2>Results Not Found</h2>
+                        <p>We couldn't find the exam results. This may happen if the exam wasn't saved properly.</p>
+                        <button onclick="router.navigateTo('subjects.html')" class="btn-primary">Back to Subjects</button>
+                    </div>
+                `;
+                    return;
+                }
+
+                displaySummary(results);
+                renderReviewList(results.questions);
+                renderTopicPerformance(results.topics || []);
+                displayRecommendations(results.weakAreas || []);
+
+                if (navigator.onLine) {
+                    sync.syncExamResults().catch(() => { });
+                }
+
+            } catch (error) {
+                console.error('[Results] Error loading results:', error);
+                ui.showToast('Failed to load results: ' + error.message, 'error');
+            } finally {
+                ui.hideLoading();
+            }
+        })();
+
+        // ==================== DISPLAY FUNCTIONS ====================
+        function displaySummary(results) {
+            document.getElementById('score-percentage').textContent = `${Math.round(results.scorePercentage)}%`;
+            document.getElementById('correct-count').textContent = `${results.correctAnswers}/${results.totalQuestions}`;
+
+            const timeAlloc = results.timeAllocated || (results.totalQuestions * 30);
+            const timeSpent = results.timeSpent;
+            const timePercent = Math.round((timeSpent / timeAlloc) * 100);
+            document.getElementById('time-stats').textContent = `${utils.formatTime(timeSpent)} / ${utils.formatTime(timeAlloc)} (${timePercent}%)`;
+
+            let grade = 'F';
+            if (results.scorePercentage >= 80) grade = 'A';
+            else if (results.scorePercentage >= 70) grade = 'B';
+            else if (results.scorePercentage >= 60) grade = 'C';
+            else if (results.scorePercentage >= 50) grade = 'D';
+            document.getElementById('grade').textContent = grade;
+
+            document.getElementById('exam-date').textContent = utils.formatDate(results.date);
+            document.getElementById('exam-subject').textContent = results.subject || 'General';
+            document.getElementById('exam-mode').textContent = results.mode || 'Timed';
+        }
+
+        function renderReviewList(questions) {
+            const container = document.getElementById('review-list');
+            if (!questions || questions.length === 0) {
+                container.innerHTML = '<p class="no-data">No questions to review.</p>';
+                return;
+            }
+
+            container.innerHTML = questions.map((q, idx) => {
+                const isCorrect = q.correct;
+                const statusClass = isCorrect ? 'correct' : 'incorrect';
+                const statusIcon = isCorrect ? '✅' : '❌';
+
+                // Map letter to full option text
+                let userAnswerText = '—';
+                if (q.userAnswer && q.options && q.options.length > 0) {
+                    const letter = q.userAnswer.trim().toUpperCase();
+                    const index = letter.charCodeAt(0) - 65; // 'A' -> 0
+                    if (index >= 0 && index < q.options.length) {
+                        userAnswerText = q.options[index];
+                    } else {
+                        userAnswerText = letter; // fallback to letter
+                    }
+                }
+                let correctAnswerText = '—';
+                if (q.correctAnswer && q.options && q.options.length > 0) {
+                    const letter = q.correctAnswer.trim().toUpperCase();
+                    const index = letter.charCodeAt(0) - 65;
+                    if (index >= 0 && index < q.options.length) {
+                        correctAnswerText = q.options[index];
+                    } else {
+                        correctAnswerText = letter;
+                    }
+                }
+
+                return `
+                <div class="review-item ${statusClass}">
+                    <div class="review-header">
+                        <span class="q-num">Q${idx + 1}</span>
+                        <span class="status">${statusIcon}</span>
+                        <span class="topic-tag">${q.topic || 'General'}</span>
+                        <span class="time-spent">⏱️ ${q.timeSpent || 0}s</span>
+                    </div>
+                    <div class="review-question">${q.question}</div>
+                    <div class="review-answers">
+                        <div><strong>Your answer:</strong> ${userAnswerText}</div>
+                        <div><strong>Correct answer:</strong> ${correctAnswerText}</div>
+                    </div>
+                    <div class="review-explanation">
+                        <strong>Explanation:</strong> ${q.explanation || 'No explanation available.'}
+                    </div>
+                    ${q.flagged ? '<span class="flagged-badge">🏴 Flagged</span>' : ''}
+                </div>
+            `;
+            }).join('');
+        }
+
+        function renderTopicPerformance(topicData) {
+            const container = document.getElementById('topic-performance');
+            if (!topicData || topicData.length === 0) {
+                container.innerHTML = '<p class="no-data">No topic data available.</p>';
+                return;
+            }
+
+            topicData.sort((a, b) => a.percentage - b.percentage);
+
+            let html = '<h3>Topic Performance</h3><ul class="topic-list">';
+            topicData.forEach(t => {
+                const color = t.percentage >= 70 ? 'green' : (t.percentage >= 50 ? 'orange' : 'red');
+                html += `
+                <li>
+                    <span class="topic-name">${t.topic}</span>
+                    <span class="topic-score" style="color: ${color};">${Math.round(t.percentage)}%</span>
+                    <span class="topic-count">${t.correct}/${t.questions}</span>
+                    <div class="topic-bar">
+                        <div class="bar-fill" style="width: ${t.percentage}%; background: ${color};"></div>
+                    </div>
+                </li>
+            `;
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        }
+
+        function displayRecommendations(weakAreas) {
+            const container = document.getElementById('recommendations');
+            if (!weakAreas || weakAreas.length === 0) {
+                container.innerHTML = '<p class="no-data">Great job! No weak areas detected.</p>';
+                return;
+            }
+            let html = '<h3>📚 Recommended Focus</h3><ul>';
+            weakAreas.forEach(area => {
+                html += `<li>🔍 Focus on <strong>${area}</strong> – review related topics.</li>`;
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        }
+
+        // ==================== ACTION HANDLERS (using currentExamId) ====================
+        window.reviewIncorrect = function () {
+            console.log('[Results] reviewIncorrect clicked');
+            if (!currentExamId) {
+                ui.showToast('No exam ID found', 'error');
+                return;
+            }
+            db.getExamResult(currentExamId).then(results => {
+                if (!results) {
+                    ui.showToast('Exam results not found', 'error');
+                    return;
+                }
+                const incorrectIds = results.questions.filter(q => !q.correct).map(q => q.id);
+                if (incorrectIds.length === 0) {
+                    ui.showToast('No incorrect questions!', 'success');
+                    return;
+                }
+                app.setExamConfig({
+                    subject: results.subject,
+                    specificQuestions: incorrectIds,
+                    totalQuestions: incorrectIds.length,
+                    mode: 'practice'
+                });
+                router.navigateTo('exam-settings.html');
+            }).catch(err => {
+                console.error('[Results] Error in reviewIncorrect:', err);
+                ui.showToast('Failed to load exam data', 'error');
+            });
+        };
+
+        window.takeSimilarExam = function () {
+            console.log('[Results] takeSimilarExam clicked');
+            if (!currentExamId) {
+                ui.showToast('No exam ID found', 'error');
+                return;
+            }
+            db.getExamResult(currentExamId).then(results => {
+                if (!results) {
+                    ui.showToast('Exam results not found', 'error');
+                    return;
+                }
+                app.setExamConfig({
+                    subject: results.subject,
+                    topics: results.topics ? results.topics.map(t => ({ id: t.topic, name: t.topic })) : [],
+                    totalQuestions: results.totalQuestions,
+                    mode: results.mode
+                });
+                router.navigateTo('exam-settings.html');
+            }).catch(err => {
+                console.error('[Results] Error in takeSimilarExam:', err);
+                ui.showToast('Failed to load exam data', 'error');
+            });
+        };
+
+        window.exportResults = function () {
+            console.log('[Results] exportResults clicked');
+            if (!currentExamId) {
+                ui.showToast('No exam ID found', 'error');
+                return;
+            }
+            db.getExamResult(currentExamId).then(results => {
+                if (!results) {
+                    ui.showToast('Exam results not found', 'error');
+                    return;
+                }
+                const dataStr = JSON.stringify(results, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `exam-results-${currentExamId}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }).catch(err => {
+                console.error('[Results] Error in exportResults:', err);
+                ui.showToast('Failed to export results', 'error');
+            });
+        };
+
+        window.downloadExam = function () {
+            console.log('[Results] downloadExam clicked');
+            if (!currentExamId) {
+                ui.showToast('No exam ID found', 'error');
+                return;
+            }
+            db.getExamResult(currentExamId).then(results => {
+                if (!results) {
+                    ui.showToast('Exam results not found', 'error');
+                    return;
+                }
+                const downloadData = {
+                    version: 1,
+                    type: 'exam_review',
+                    examId: results.examId,
+                    subject: results.subject,
+                    date: results.date,
+                    score: results.scorePercentage,
+                    questions: results.questions.map(q => ({
+                        id: q.id,
+                        question: q.question,
+                        options: q.options,
+                        correctAnswer: q.correctAnswer,
+                        userAnswer: q.userAnswer,
+                        timeSpent: q.timeSpent,
+                        flagged: q.flagged,
+                        explanation: q.explanation
+                    }))
+                };
+                const blob = new Blob([JSON.stringify(downloadData, null, 2)], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `exam-${results.examId}.mexam`;
+                a.click();
+                URL.revokeObjectURL(url);
+                saveDownloadedExam(results);
+            }).catch(err => {
+                console.error('[Results] Error in downloadExam:', err);
+                ui.showToast('Failed to download exam', 'error');
+            });
+        };
+
+        async function saveDownloadedExam(exam) {
+            try {
+                let downloaded = await db.getDownloadedExams() || [];
+                downloaded.unshift({
+                    examId: exam.examId,
+                    subject: exam.subject,
+                    date: exam.date,
+                    score: exam.scorePercentage,
+                    data: exam
+                });
+                if (downloaded.length > 10) downloaded = downloaded.slice(0, 10);
+                await db.saveDownloadedExams(downloaded);
+                ui.showToast('Exam saved to downloads', 'success');
+            } catch (err) {
+                console.error('[Results] Error saving downloaded exam:', err);
+                ui.showToast('Failed to save exam to downloads', 'error');
+            }
+        }
+    </script>
+
     <script data-lazy data-src="../scripts/offline.js"></script>
 </body>
+
 </html>

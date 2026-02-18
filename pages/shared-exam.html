@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shared Exam – Medical Exam Room Pro</title>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/results.css" media="all">
+    
+    <!-- Additional styles specific to shared view -->
+    <style>
+        .share-notice {
+            background: var(--bg-secondary);
+            padding: 1rem;
+            border-radius: var(--radius);
+            margin-bottom: 2rem;
+            border-left: 4px solid var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .share-notice p {
+            margin: 0;
+            color: var(--text-secondary);
+        }
+        .read-only-note {
+            font-weight: 500;
+        }
+        .share-badge {
+            background: var(--warning);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .cta-buttons {
+            display: flex;
+            gap: 0.75rem;
+        }
+        .error-state {
+            text-align: center;
+            padding: 3rem;
+        }
+    </style>
+    
+    <!-- Core modules -->
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+    <script type="module" src="../scripts/db.js"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('../service-worker.js').catch(() => {});
+        }
+    </script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <button onclick="ui.toggleTheme()" class="btn-outline">🌓</button>
+        </header>
+
+        <main>
+            <div id="share-notice" class="share-notice">
+                <div>
+                    <span class="share-badge">SHARED</span>
+                    <p class="read-only-note">You are viewing a read-only shared exam.</p>
+                </div>
+                <div class="cta-buttons">
+                    <button onclick="router.navigateTo('signup.html')" class="btn-primary">Sign Up</button>
+                    <button onclick="router.navigateTo('login.html')" class="btn-secondary">Log In</button>
+                </div>
+            </div>
+
+            <!-- Results content will be dynamically inserted here -->
+            <div id="shared-results-container"></div>
+        </main>
+
+        <footer>
+            <button onclick="router.navigateTo('index.html')" class="btn-text">← Back to Home</button>
+        </footer>
+    </div>
+
+    <script type="module">
+        import * as ui from '../scripts/ui.js';
+        import * as utils from '../scripts/utils.js';
+        import * as db from '../scripts/db.js';
+        import * as router from '../scripts/router.js';
+
+        (async function initSharedExam() {
+            ui.applyTheme();
+
+            // Get token from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+            
+            if (!token) {
+                document.getElementById('shared-results-container').innerHTML = `
+                    <div class="error-state">
+                        <h2>Invalid Link</h2>
+                        <p>No exam token provided.</p>
+                        <button onclick="router.navigateTo('index.html')" class="btn-primary">Go Home</button>
+                    </div>
+                `;
+                return;
+            }
+
+            ui.showLoading('Loading shared exam...');
+
+            try {
+                // Load shared exam data from IndexedDB
+                const examData = await db.getSharedExam(token);
+                
+                if (!examData) {
+                    ui.hideLoading();
+                    document.getElementById('shared-results-container').innerHTML = `
+                        <div class="error-state">
+                            <h2>Exam Not Found</h2>
+                            <p>This shared exam may have expired or been deleted. Shared links are valid for 24 hours.</p>
+                            <button onclick="router.navigateTo('index.html')" class="btn-primary">Go Home</button>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Display results
+                displaySharedResults(examData);
+            } catch (error) {
+                console.error('Error loading shared exam:', error);
+                document.getElementById('shared-results-container').innerHTML = `
+                    <div class="error-state">
+                        <h2>Error Loading Exam</h2>
+                        <p>${error.message || 'An unexpected error occurred.'}</p>
+                        <button onclick="router.navigateTo('index.html')" class="btn-primary">Go Home</button>
+                    </div>
+                `;
+            } finally {
+                ui.hideLoading();
+            }
+        })();
+
+        function displaySharedResults(results) {
+            const container = document.getElementById('shared-results-container');
+            
+            // Create summary card
+            const summaryHTML = `
+                <div class="summary-card">
+                    <div class="score-circle" style="width:120px; height:120px; border-radius:50%; background:conic-gradient(var(--accent) ${results.scorePercentage}deg, #eee 0deg); display:flex; align-items:center; justify-content:center; font-size:2rem; font-weight:bold;">${Math.round(results.scorePercentage)}%</div>
+                    <div class="summary-details">
+                        <p><strong>Subject:</strong> ${results.subject || 'General'}</p>
+                        <p><strong>Date:</strong> ${utils.formatDate(results.date)}</p>
+                        <p><strong>Score:</strong> ${results.correctAnswers}/${results.totalQuestions}</p>
+                        <p><strong>Time:</strong> ${utils.formatTime(results.timeSpent)}</p>
+                        <p><strong>Mode:</strong> ${results.mode || 'Timed'}</p>
+                    </div>
+                </div>
+            `;
+
+            // Topic performance if available
+            let topicHTML = '';
+            if (results.topics && results.topics.length > 0) {
+                topicHTML = '<div class="topic-section"><h3>Topic Performance</h3><ul class="topic-list">';
+                results.topics.sort((a, b) => a.percentage - b.percentage).forEach(t => {
+                    const color = t.percentage >= 70 ? 'green' : (t.percentage >= 50 ? 'orange' : 'red');
+                    topicHTML += `
+                        <li>
+                            <span class="topic-name">${t.topic}</span>
+                            <span class="topic-score" style="color: ${color};">${Math.round(t.percentage)}%</span>
+                            <span class="topic-count">${t.correct}/${t.questions}</span>
+                            <div class="topic-bar">
+                                <div class="bar-fill" style="width: ${t.percentage}%; background: ${color};"></div>
+                            </div>
+                        </li>
+                    `;
+                });
+                topicHTML += '</ul></div>';
+            }
+
+            // Question review list
+            const questionsHTML = results.questions.map((q, idx) => {
+                const isCorrect = q.correct;
+                const statusClass = isCorrect ? 'correct' : 'incorrect';
+                const statusIcon = isCorrect ? '✅' : '❌';
+                return `
+                    <div class="review-item ${statusClass}">
+                        <div class="review-header">
+                            <span class="q-num">Q${idx+1}</span>
+                            <span class="status">${statusIcon}</span>
+                            <span class="topic-tag">${q.topic || 'General'}</span>
+                            <span class="time-spent">⏱️ ${q.timeSpent || 0}s</span>
+                        </div>
+                        <div class="review-question">${q.question}</div>
+                        <div class="review-answers">
+                            <div><strong>Your answer:</strong> ${q.userAnswer || '—'}</div>
+                            <div><strong>Correct answer:</strong> ${q.correctAnswer}</div>
+                        </div>
+                        <div class="review-explanation">${q.explanation || ''}</div>
+                        ${q.flagged ? '<span class="flagged-badge">🏴 Flagged</span>' : ''}
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = summaryHTML + topicHTML + '<h2>Question Review</h2><div class="review-list">' + questionsHTML + '</div>';
+        }
+    </script>
+
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>

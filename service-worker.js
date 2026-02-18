@@ -19,7 +19,10 @@ const STATIC_ASSETS = [
   '/pages/profile.html',
   '/pages/locked.html',
   '/pages/forgot-password.html',
-  '/pages/offline.html',                // ← added
+  '/pages/offline.html', 
+  '/pages/shared-exam.html', 
+  '/pages/privacy.html',
+  '/pages/terms.html',         // ← added
   '/css/common.css',
   '/css/index.css',
   '/css/welcome.css',
@@ -55,7 +58,6 @@ const STATIC_ASSETS = [
   '/scripts/offline.js',
   '/manifest.json',
   '/assets/images/logo.png',
-  '/assets/images/mpesa-logo.png'
 ];
 
 self.addEventListener('install', event => {

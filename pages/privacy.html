@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy – Medical Exam Room Pro</title>
+    
+    <!-- Redirect fix for direct access -->
+    <script>
+        (function() {
+            var path = window.location.pathname;
+            if (!path.startsWith('/pages/') && path !== '/' && path !== '/index.html') {
+                var filename = path.substring(path.lastIndexOf('/') + 1);
+                if (filename && filename !== 'index.html') {
+                    window.location.replace('/pages/' + filename);
+                }
+            }
+        })();
+    </script>
+    
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../css/common.css" media="all">
+    <link rel="stylesheet" href="../css/privacy.css" media="all">
+    
+    <!-- Modules needed -->
+    <script type="module" src="../scripts/utils.js"></script>
+    <script type="module" src="../scripts/ui.js"></script>
+    <script type="module" src="../scripts/router.js"></script>
+</head>
+<body>
+    <div class="page-container">
+        <header>
+            <div class="logo">
+                <img src="../assets/images/logo.png" alt="Logo" width="40" height="40">
+                <span>MedExamPro</span>
+            </div>
+            <button onclick="window.ui?.toggleTheme()" class="btn-outline">🌓</button>
+        </header>
+        
+        <main class="privacy-container">
+            <h1>Privacy Policy</h1>
+            <p class="last-updated">Last Updated: March 2025</p>
+            
+            <div class="privacy-content">
+                <ol>
+                    <li><strong>Information We Collect:</strong> We collect personal information you provide during registration (name, email, phone number), device fingerprint, exam results, and usage data. Payment information is processed by M‑Pesa and is not stored on our servers.</li>
+                    
+                    <li><strong>How We Use Your Information:</strong> Your data is used to provide and improve the App, authenticate your account, process subscriptions, track your progress, and detect fraudulent activities such as time manipulation.</li>
+                    
+                    <li><strong>Device Fingerprint:</strong> We generate a unique device fingerprint to prevent trial abuse and enhance security. This fingerprint is stored locally and associated with your account.</li>
+                    
+                    <li><strong>Offline Data Storage:</strong> All question banks and your exam results are stored locally on your device using IndexedDB. You are responsible for backing up your data.</li>
+                    
+                    <li><strong>M‑Pesa Payments:</strong> When you make a payment, your phone number is used to initiate the M‑Pesa STK push. We do not store your M‑Pesa PIN or transaction details beyond the receipt for verification.</li>
+                    
+                    <li><strong>Data Sharing:</strong> We do not sell or share your personal information with third parties, except as required by law or to protect our rights. Aggregated, anonymized statistics may be used for research.</li>
+                    
+                    <li><strong>Data Security:</strong> We employ industry‑standard security measures, including encryption of sensitive data and secure communication with our backend. However, no method of transmission over the internet is 100% secure.</li>
+                    
+                    <li><strong>Your Rights:</strong> You may access, update, or delete your account information at any time via the Profile page. You can also request a copy of your data using the Export feature.</li>
+                    
+                    <li><strong>Data Retention:</strong> We retain your personal information as long as your account is active. If you delete your account, your data is removed from our systems, though some anonymized records may be kept for analytics.</li>
+                    
+                    <li><strong>Children's Privacy:</strong> The App is intended for adult medical students and professionals. We do not knowingly collect information from individuals under 18 without parental consent.</li>
+                    
+                    <li><strong>Changes to This Policy:</strong> We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy on this page and updating the "Last Updated" date.</li>
+                    
+                    <li><strong>Contact Us:</strong> If you have any questions about this Privacy Policy, please contact us at felixappbuilder@gmail.com or call 0746834527.</li>
+                </ol>
+            </div>
+            
+            <div class="privacy-footer">
+                <p>By using the App, you consent to the collection and use of your information as described in this policy.</p>
+                <button onclick="window.router?.navigateTo('signup.html')" class="btn-primary">Back to Sign Up</button>
+                <button onclick="window.router?.navigateTo('welcome.html')" class="btn-secondary">Go to Welcome</button>
+            </div>
+        </main>
+        
+        <footer>
+            <button onclick="window.router?.navigateTo('index.html')" class="btn-text">← Back to Home</button>
+        </footer>
+    </div>
+    
+    <!-- Lazy offline script -->
+    <script data-lazy data-src="../scripts/offline.js"></script>
+</body>
+</html>
