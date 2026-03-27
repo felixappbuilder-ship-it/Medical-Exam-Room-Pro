@@ -1,0 +1,27 @@
+{
+  "functions": "convex/",
+  "authInfo": [
+    {
+      "domain": "your-convex-domain",
+      "applicationID": "your-app-id"
+    }
+  ],
+  "environmentVariables": {
+    "JWT_SECRET": "your-jwt-secret",
+    "MPESA_CONSUMER_KEY": "your-consumer-key",
+    "MPESA_CONSUMER_SECRET": "your-consumer-secret",
+    "MPESA_PASSKEY": "your-passkey",
+    "MPESA_SHORTCODE": "174379",
+    "MPESA_CALLBACK_URL": "https://your-domain.convex.site/mpesaCallback",
+    "AI_API_KEY": "your-openai-api-key",
+    "AI_MODEL": "gpt-4",
+    "ADMIN_EMAIL": "admin@example.com"
+  },
+  "httpRoutes": [
+    {
+      "path": "/mpesaCallback",
+      "method": "POST",
+      "handler": "payments/mpesaCallback:mpesaCallback"
+    }
+  ]
+}
