@@ -1,67 +1,118 @@
-import { v } from "convex/values";
+// convex/payments/queries.ts
 import { query } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Id } from "../_generated/dataModel";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-// -----------------------------------------------------------------------------
-// Check payment status by transactionId (our internal ID)
-// -----------------------------------------------------------------------------
 export const checkPaymentStatus = query({
-  args: {
-    transactionId: v.string(), // This is the paymentId stored in payments.transactionId
-  },
+  args: { token: v.string(), transactionId: v.string() },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
+    // Verify JWT
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
+    }
 
+    const userId = payload.userId;
     const payment = await ctx.db
       .query("payments")
-      .withIndex("by_transactionId", (q: any) => q.eq("transactionId", args.transactionId))
+      .withIndex("by_transactionId", (q) => q.eq("transactionId", args.transactionId))
       .first();
 
-    if (!payment) throw new ConvexError("Payment not found");
+    if (!payment) {
+      return {
+        success: false,
+        error: "payment_not_found",
+        message: "No payment found with that transaction ID.",
+      };
+    }
 
-    // Ensure the payment belongs to the current user
-    if (payment.userId !== identity.subject) throw new ConvexError("Unauthorized");
+    // Ensure user owns the payment
+    if (payment.userId !== userId) {
+      return {
+        success: false,
+        error: "unauthorized",
+        message: "You do not have permission to view this payment.",
+      };
+    }
 
     return {
-      status: payment.status,
-      mpesaReceipt: payment.mpesaReceipt,
-      completedAt: payment.completedAt,
+      success: true,
+      data: {
+        status: payment.status,
+        receipt: payment.mpesaReceipt || null,
+        amount: payment.amount,
+        updatedAt: payment.updatedAt,
+      },
     };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Get payment history for current user
-// -----------------------------------------------------------------------------
 export const getPaymentHistory = query({
-  args: {
-    limit: v.optional(v.number()),
-    offset: v.optional(v.number()),
-  },
+  args: { token: v.string(), limit: v.optional(v.number()), cursor: v.optional(v.id("payments")) },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
+    }
 
-    const limit = args.limit ?? 20;
-    const offset = args.offset ?? 0;
-
-    const payments = await ctx.db
+    const userId = payload.userId;
+    const limit = args.limit || 20;
+    let query = ctx.db
       .query("payments")
-      .withIndex("by_userId", (q: any) => q.eq("userId", identity.subject))
-      .order("desc")
-      .take(limit + offset);
+      .withIndex("by_userId_status", (q) => q.eq("userId", userId));
+    if (args.cursor) {
+      query = query.filter((q) => q.lt(q.field("_id"), args.cursor));
+    }
+    const payments = await query.take(limit + 1);
+    const hasMore = payments.length > limit;
+    const results = payments.slice(0, limit);
+    const nextCursor = hasMore ? results[results.length - 1]._id : null;
 
-    return payments.slice(offset).map((p) => ({
-      _id: p._id,
-      amount: p.amount,
-      currency: p.currency,
-      status: p.status,
-      mpesaReceipt: p.mpesaReceipt,
-      createdAt: p.createdAt,
-      completedAt: p.completedAt,
+    // Remove sensitive internal fields
+    const sanitized = results.map((p) => ({
       transactionId: p.transactionId,
+      amount: p.amount,
+      status: p.status,
+      receipt: p.mpesaReceipt,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
     }));
+
+    return {
+      success: true,
+      data: {
+        payments: sanitized,
+        nextCursor,
+        hasMore,
+      },
+    };
   },
 });

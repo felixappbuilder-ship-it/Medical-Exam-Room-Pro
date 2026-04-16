@@ -1,89 +1,125 @@
-import { v } from "convex/values";
+// convex/questions/queries.ts
 import { query } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Doc } from "../_generated/dataModel";
-import { z } from "zod";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-const getQuestionsSchema = z.object({
-  subject: z.string().optional(),
-  topic: z.string().optional(),
-  difficulty: z.number().min(1).max(5).optional(),
-  limit: z.number().min(1).max(100).default(50),
-  offset: z.number().min(0).default(0),
-});
-
-// -----------------------------------------------------------------------------
-// Get questions with optional filters and pagination
-// -----------------------------------------------------------------------------
 export const getQuestions = query({
   args: {
     subject: v.optional(v.string()),
     topic: v.optional(v.string()),
     difficulty: v.optional(v.number()),
     limit: v.optional(v.number()),
-    offset: v.optional(v.number()),
+    cursor: v.optional(v.id("questions")),
   },
   handler: async (ctx, args) => {
-    const validated = getQuestionsSchema.parse(args);
-
-    let query = ctx.db.query("questions");
-
-    // Apply filters if provided
-    if (validated.subject) {
-      query = query.withIndex("by_subject", (q: any) => q.eq("subject", validated.subject));
+    const limit = args.limit || 20;
+    let queryBuilder = ctx.db.query("questions");
+    if (args.subject && args.topic) {
+      // Use compound index? Actually schema has by_category_difficulty, but subject/topic not indexed.
+      // Fallback to filter
+      queryBuilder = queryBuilder.filter((q) =>
+        q.and(
+          q.eq(q.field("category"), args.subject),
+          q.eq(q.field("difficulty"), args.difficulty ?? 1)
+        )
+      );
     }
-    if (validated.topic) {
-      // Note: we need a compound index for (subject, topic) or separate index on topic.
-      // Assuming there is an index on "topic" as per schema (subject, topic are indexed individually)
-      query = query.withIndex("by_topic", (q: any) => q.eq("topic", validated.topic));
+    if (args.cursor) {
+      queryBuilder = queryBuilder.filter((q) => q.lt(q.field("_id"), args.cursor));
     }
-    if (validated.difficulty) {
-      // No index on difficulty, but we can still filter after fetching (small set)
-      // Better to fetch with other filters first, then filter in memory.
-    }
-
-    const allQuestions = await query.collect();
-    
-    // Apply difficulty filter in memory if needed
-    let filtered = allQuestions;
-    if (validated.difficulty) {
-      filtered = filtered.filter(q => q.difficulty === validated.difficulty);
-    }
-
-    // Paginate
-    const start = validated.offset;
-    const end = start + validated.limit;
-    const paginated = filtered.slice(start, end);
-
-    return paginated;
+    const questions = await queryBuilder.take(limit + 1);
+    const hasMore = questions.length > limit;
+    const results = questions.slice(0, limit);
+    const nextCursor = hasMore ? results[results.length - 1]._id : null;
+    return {
+      success: true,
+      data: {
+        questions: results,
+        nextCursor,
+        hasMore,
+      },
+    };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Get questions by their original string IDs (for resuming exams)
-// -----------------------------------------------------------------------------
 export const getQuestionsByIds = query({
+  args: { questionIds: v.array(v.string()), token: v.string() },
+  handler: async (ctx, args) => {
+    // Verify JWT – even though questions are semi-public, we still require auth
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
+    }
+    const questions = await ctx.runQuery(internal.questions.internal.getQuestionsByIds, {
+      questionIds: args.questionIds,
+    });
+    return {
+      success: true,
+      data: { questions },
+    };
+  },
+});
+
+export const getUnseenQuestions = query({
   args: {
-    ids: v.array(v.string()),
+    token: v.string(),
+    subject: v.string(),
+    topic: v.string(),
+    limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    if (args.ids.length === 0) return [];
-
-    // Fetch all questions that match any of the given IDs
-    // Since we have an index on "id", we can query one by one or use a workaround.
-    // Convex doesn't have an "in" operator, so we fetch sequentially.
-    const results: Doc<"questions">[] = [];
-    for (const id of args.ids) {
-      const question = await ctx.db
-        .query("questions")
-        .withIndex("by_id", (q: any) => q.eq("id", id))
-        .first();
-      if (question) results.push(question);
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
     }
-
-    return results;
+    const userId = payload.userId;
+    const seenIds = await ctx.runQuery(internal.questions.internal.getSeenQuestions, {
+      userId,
+      subject: args.subject,
+      topic: args.topic,
+    });
+    // Get all questions for subject/topic (simplified – in production you'd paginate)
+    const allQuestions = await ctx.db
+      .query("questions")
+      .filter((q) => q.eq(q.field("category"), args.subject))
+      .collect();
+    const unseen = allQuestions.filter((q) => !seenIds.includes(q._id));
+    const limit = args.limit || 10;
+    const results = unseen.slice(0, limit);
+    return {
+      success: true,
+      data: {
+        questions: results,
+        totalUnseen: unseen.length,
+      },
+    };
   },
 });

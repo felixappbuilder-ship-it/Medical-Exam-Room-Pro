@@ -1,109 +1,203 @@
-import { v } from "convex/values";
+// convex/examResults/queries.ts
 import { query } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Id } from "../_generated/dataModel";
-import { z } from "zod";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-const getExamHistorySchema = z.object({
-  limit: v.optional(v.number()),
-  offset: v.optional(v.number()),
-});
-
-const getExamResultSchema = z.object({
-  examId: v.string(),
-});
-
-const getSharedExamSchema = z.object({
-  token: v.string(),
-});
-
-// -----------------------------------------------------------------------------
-// Get user's exam history (paginated)
-// -----------------------------------------------------------------------------
 export const getExamHistory = query({
   args: {
-    limit: v.optional(v.number()),
-    offset: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const validated = getExamHistorySchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    const limit = validated.limit ?? 20;
-    const offset = validated.offset ?? 0;
-
-    const results = await ctx.db
-      .query("examResults")
-      .withIndex("by_userId", (q: any) => q.eq("userId", userId))
-      .order("desc")
-      .take(limit + offset);
-
-    const paginated = results.slice(offset, offset + limit);
-
-    // Return without sensitive internal fields? No sensitive fields in examResults.
-    return paginated;
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Get specific exam result by examId
-// -----------------------------------------------------------------------------
-export const getExamResult = query({
-  args: {
-    examId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const validated = getExamResultSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    // examId is unique, but we need to ensure it belongs to user
-    const examResult = await ctx.db
-      .query("examResults")
-      .withIndex("by_examId", (q: any) => q.eq("examId", validated.examId))
-      .first();
-
-    if (!examResult) throw new ConvexError("Exam result not found");
-    if (examResult.userId !== userId) throw new ConvexError("Unauthorized");
-
-    return examResult;
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Get shared exam result by token (public)
-// -----------------------------------------------------------------------------
-export const getSharedExam = query({
-  args: {
     token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("examResults")),
   },
   handler: async (ctx, args) => {
-    const validated = getSharedExamSchema.parse(args);
-
-    // Find the shared link
-    const sharedLink = await ctx.db
-      .query("sharedLinks")
-      .withIndex("by_token", (q: any) => q.eq("token", validated.token))
-      .first();
-
-    if (!sharedLink) throw new ConvexError("Invalid share link");
-    if (sharedLink.type !== "exam") throw new ConvexError("Invalid share link type");
-
-    // Check expiration
-    if (sharedLink.expiresAt < Date.now()) {
-      throw new ConvexError("Share link has expired");
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
     }
 
-    // Get the exam result
-    const examResult = await ctx.db.get(sharedLink.targetId as Id<"examResults">);
-    if (!examResult) throw new ConvexError("Exam result not found");
+    const userId = payload.userId;
+    const limit = args.limit || 20;
+    const { items, nextCursor, hasMore } = await ctx.runQuery(
+      internal.examResults.internal.getExamResultsByUser,
+      {
+        userId,
+        limit,
+        cursor: args.cursor,
+      }
+    );
 
-    // Return the exam result (publicly accessible)
-    return examResult;
+    // For each exam result, optionally include answers summary (not full answers to save bandwidth)
+    const enriched = items.map((result) => ({
+      _id: result._id,
+      examId: result.examId,
+      score: result.score,
+      weakAreas: result.weakAreas,
+      completedAt: result.createdAt,
+    }));
+
+    return {
+      success: true,
+      data: {
+        results: enriched,
+        nextCursor,
+        hasMore,
+      },
+    };
+  },
+});
+
+export const getExamResult = query({
+  args: {
+    token: v.string(),
+    examResultId: v.id("examResults"),
+  },
+  handler: async (ctx, args) => {
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
+    }
+
+    const userId = payload.userId;
+    const examResult = await ctx.runQuery(internal.examResults.internal.getExamResultById, {
+      examResultId: args.examResultId,
+    });
+    if (!examResult || examResult.userId !== userId) {
+      return {
+        success: false,
+        error: "unauthorized",
+        message: "You do not have access to this exam result.",
+      };
+    }
+
+    // Fetch answers from normalized table
+    const answers = await ctx.db
+      .query("examAnswers")
+      .withIndex("by_examResultId", (q) => q.eq("examResultId", args.examResultId))
+      .collect();
+
+    return {
+      success: true,
+      data: {
+        examId: examResult.examId,
+        score: examResult.score,
+        topicPerformance: examResult.topicPerformance,
+        weakAreas: examResult.weakAreas,
+        completedAt: examResult.createdAt,
+        answers: answers.map((a) => ({
+          questionId: a.questionId,
+          selectedAnswer: a.selectedAnswer,
+          isCorrect: a.isCorrect,
+          timeSpent: a.timeSpent,
+        })),
+      },
+    };
+  },
+});
+
+export const getSharedExam = query({
+  args: {
+    shareToken: v.string(),
+    password: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const link = await ctx.runQuery(internal.examResults.internal.getSharedLinkByToken, {
+      token: args.shareToken,
+    });
+    if (!link) {
+      return {
+        success: false,
+        error: "not_found",
+        message: "Shared link not found or expired.",
+      };
+    }
+    if (link.expiry < Date.now()) {
+      // Expired – optionally delete
+      await ctx.runMutation(internal.examResults.internal.deleteSharedLink, { linkId: link._id });
+      return {
+        success: false,
+        error: "expired",
+        message: "This shared link has expired.",
+      };
+    }
+    if (link.passwordHash) {
+      if (!args.password) {
+        return {
+          success: false,
+          error: "password_required",
+          message: "This shared exam is password protected.",
+        };
+      }
+      const isValid = await ctx.runAction(internal.auth.helpers.comparePassword, {
+        password: args.password,
+        hash: link.passwordHash,
+      });
+      if (!isValid) {
+        return {
+          success: false,
+          error: "invalid_password",
+          message: "Incorrect password.",
+        };
+      }
+    }
+
+    const examResult = await ctx.runQuery(internal.examResults.internal.getExamResultById, {
+      examResultId: link.targetId as any,
+    });
+    if (!examResult) {
+      return {
+        success: false,
+        error: "not_found",
+        message: "The exam result no longer exists.",
+      };
+    }
+
+    // Do NOT include user identifying info
+    const answers = await ctx.db
+      .query("examAnswers")
+      .withIndex("by_examResultId", (q) => q.eq("examResultId", link.targetId))
+      .collect();
+
+    return {
+      success: true,
+      data: {
+        score: examResult.score,
+        topicPerformance: examResult.topicPerformance,
+        weakAreas: examResult.weakAreas,
+        completedAt: examResult.createdAt,
+        answers: answers.map((a) => ({
+          questionId: a.questionId,
+          selectedAnswer: a.selectedAnswer,
+          isCorrect: a.isCorrect,
+        })),
+      },
+    };
   },
 });

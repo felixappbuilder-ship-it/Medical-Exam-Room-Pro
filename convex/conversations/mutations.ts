@@ -1,172 +1,159 @@
-import { v } from "convex/values";
+// convex/conversations/mutations.ts
 import { mutation } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Id } from "../_generated/dataModel";
-import { z } from "zod";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-const saveConversationSchema = z.object({
-  id: v.optional(v.id("conversations")), // if provided, update existing
-  title: v.string(),
-  messages: v.array(
-    v.object({
-      role: v.union(v.literal("user"), v.literal("ai")),
-      content: v.string(),
-      timestamp: v.number(),
-      references: v.optional(
-        v.array(
-          v.object({
-            book: v.string(),
-            page: v.optional(v.number()),
-          })
-        )
-      ),
-      rating: v.optional(v.string()), // could be "good", "bad", or empty
-    })
-  ),
-});
-
-const deleteConversationSchema = z.object({
-  convId: v.id("conversations"),
-});
-
-const shareConversationSchema = z.object({
-  convId: v.id("conversations"),
-  expiresInDays: v.optional(v.number()),
-});
-
-// -----------------------------------------------------------------------------
-// Save or update a conversation (upsert)
-// -----------------------------------------------------------------------------
 export const saveConversation = mutation({
   args: {
-    id: v.optional(v.id("conversations")),
+    token: v.string(),
+    conversationId: v.optional(v.id("conversations")),
     title: v.string(),
     messages: v.array(
       v.object({
-        role: v.union(v.literal("user"), v.literal("ai")),
+        role: v.union(v.literal("user"), v.literal("assistant")),
         content: v.string(),
-        timestamp: v.number(),
-        references: v.optional(
-          v.array(
-            v.object({
-              book: v.string(),
-              page: v.optional(v.number()),
-            })
-          )
-        ),
-        rating: v.optional(v.string()),
       })
     ),
   },
   handler: async (ctx, args) => {
-    const validated = saveConversationSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch {
+      return { success: false, error: "token_verification_failed", message: "Authentication failed" };
+    }
+    const userId = payload.userId;
     const now = Date.now();
-
-    if (validated.id) {
-      // Update existing conversation
-      const existing = await ctx.db.get(validated.id);
-      if (!existing) throw new ConvexError("Conversation not found");
-      if (existing.userId !== userId) throw new ConvexError("Unauthorized");
-
-      await ctx.db.patch(validated.id, {
-        title: validated.title,
-        messages: validated.messages,
-        updatedAt: now,
-      });
-
-      return { id: validated.id };
-    } else {
+    let conversationId = args.conversationId;
+    if (!conversationId) {
       // Create new conversation
-      const convId = await ctx.db.insert("conversations", {
+      conversationId = await ctx.runMutation(internal.conversations.internal.createConversation, {
         userId,
-        title: validated.title,
-        messages: validated.messages,
+        title: args.title,
         createdAt: now,
         updatedAt: now,
       });
-      return { id: convId };
+    } else {
+      // Verify ownership
+      const existing = await ctx.runQuery(internal.conversations.internal.getConversationById, {
+        conversationId,
+      });
+      if (!existing || existing.userId !== userId) {
+        return { success: false, error: "unauthorized", message: "Conversation not found or access denied" };
+      }
+      await ctx.runMutation(internal.conversations.internal.updateConversation, {
+        conversationId,
+        title: args.title,
+        updatedAt: now,
+      });
     }
+    // Save messages (normalized)
+    for (const msg of args.messages) {
+      await ctx.runMutation(internal.conversations.internal.addMessage, {
+        conversationId: conversationId!,
+        role: msg.role,
+        content: msg.content,
+        timestamp: now,
+      });
+    }
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "save_conversation",
+      targetId: conversationId,
+      details: { messageCount: args.messages.length },
+    });
+    return { success: true, data: { conversationId } };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Delete a conversation
-// -----------------------------------------------------------------------------
 export const deleteConversation = mutation({
   args: {
-    convId: v.id("conversations"),
+    token: v.string(),
+    conversationId: v.id("conversations"),
   },
   handler: async (ctx, args) => {
-    const validated = deleteConversationSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    const conversation = await ctx.db.get(validated.convId);
-    if (!conversation) throw new ConvexError("Conversation not found");
-    if (conversation.userId !== userId) throw new ConvexError("Unauthorized");
-
-    // Delete any associated shared links
-    const sharedLinks = await ctx.db
-      .query("sharedLinks")
-      .withIndex("by_target", (q: any) =>
-        q.eq("type", "conversation").eq("targetId", validated.convId)
-      )
-      .collect();
-    for (const link of sharedLinks) {
-      await ctx.db.delete(link._id);
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch {
+      return { success: false, error: "token_verification_failed", message: "Authentication failed" };
     }
-
-    await ctx.db.delete(validated.convId);
-
-    return { success: true };
+    const userId = payload.userId;
+    const conversation = await ctx.runQuery(internal.conversations.internal.getConversationById, {
+      conversationId: args.conversationId,
+    });
+    if (!conversation || conversation.userId !== userId) {
+      return { success: false, error: "unauthorized", message: "Conversation not found" };
+    }
+    await ctx.runMutation(internal.conversations.internal.deleteConversation, {
+      conversationId: args.conversationId,
+    });
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "delete_conversation",
+      targetId: args.conversationId,
+      details: {},
+    });
+    return { success: true, data: { message: "Conversation deleted" } };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Share a conversation (generate public link)
-// -----------------------------------------------------------------------------
 export const shareConversation = mutation({
   args: {
-    convId: v.id("conversations"),
-    expiresInDays: v.optional(v.number()),
+    token: v.string(),
+    conversationId: v.id("conversations"),
+    expiryHours: v.optional(v.number()),
+    password: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const validated = shareConversationSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    const conversation = await ctx.db.get(validated.convId);
-    if (!conversation) throw new ConvexError("Conversation not found");
-    if (conversation.userId !== userId) throw new ConvexError("Unauthorized");
-
-    // Generate unique token
-    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    const now = Date.now();
-    const expiresInMs = (validated.expiresInDays || 7) * 24 * 60 * 60 * 1000; // default 7 days
-    const expiresAt = now + expiresInMs;
-
-    // Create shared link entry
-    await ctx.db.insert("sharedLinks", {
-      token,
-      type: "conversation",
-      targetId: validated.convId,
-      createdAt: now,
-      expiresAt,
-      createdBy: userId,
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch {
+      return { success: false, error: "token_verification_failed", message: "Authentication failed" };
+    }
+    const userId = payload.userId;
+    const conversation = await ctx.runQuery(internal.conversations.internal.getConversationById, {
+      conversationId: args.conversationId,
     });
-
+    if (!conversation || conversation.userId !== userId) {
+      return { success: false, error: "unauthorized", message: "Cannot share this conversation" };
+    }
+    const expiryHours = args.expiryHours || 168;
+    const expiry = Date.now() + expiryHours * 60 * 60 * 1000;
+    const shareToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    let passwordHash: string | undefined = undefined;
+    if (args.password) {
+      passwordHash = await ctx.runAction(internal.auth.helpers.hashPassword, { password: args.password });
+    }
+    const linkId = await ctx.runMutation(internal.conversations.internal.createSharedLink, {
+      targetType: "conversation",
+      targetId: args.conversationId,
+      token: shareToken,
+      expiry,
+      passwordHash,
+    });
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "share_conversation",
+      targetId: args.conversationId,
+      details: { shareToken, expiryHours, hasPassword: !!args.password },
+    });
     return {
-      shareToken: token,
-      url: `/shared/conversation/${token}`, // frontend route
+      success: true,
+      data: { shareToken, shareUrl: `/shared/conversation/${shareToken}`, expiry },
     };
   },
 });

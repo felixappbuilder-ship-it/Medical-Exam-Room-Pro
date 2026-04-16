@@ -1,94 +1,81 @@
-import { v } from "convex/values";
+// convex/security/queries.ts
 import { query } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Id } from "../_generated/dataModel";
-import { z } from "zod";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-const MAX_ALLOWED_DRIFT_MS = 5 * 60 * 1000; // 5 minutes
-
-// -----------------------------------------------------------------------------
-// Check Time Integrity (called by frontend)
-// -----------------------------------------------------------------------------
 export const checkTimeIntegrity = query({
   args: {
+    token: v.string(),
     clientTime: v.number(),
   },
   handler: async (ctx, args) => {
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch {
+      return { success: false, error: "token_verification_failed", message: "Authentication failed" };
+    }
+    const userId = payload.userId;
     const serverTime = Date.now();
-    const drift = serverTime - args.clientTime;
-    const valid = Math.abs(drift) <= MAX_ALLOWED_DRIFT_MS;
-    return { valid, drift };
+    const drift = Math.abs(serverTime - args.clientTime);
+    const isValid = drift < 5 * 60 * 1000; // 5 minutes tolerance
+    if (!isValid) {
+      // Log time manipulation event
+      await ctx.runMutation(internal.security.mutations.logSecurityEvent, {
+        userId,
+        eventType: "time_manipulation",
+        metadata: { clientTime: args.clientTime, serverTime, drift },
+      });
+      // Count violations in last 24h (R21)
+      const oneDayAgo = serverTime - 24 * 60 * 60 * 1000;
+      const events = await ctx.db
+        .query("securityEvents")
+        .withIndex("by_userId_timestamp", (q) => q.eq("userId", userId))
+        .collect();
+      const recentViolations = events.filter(
+        (e) => e.eventType === "time_manipulation" && e.timestamp >= oneDayAgo
+      );
+      if (recentViolations.length >= 3) {
+        await ctx.runMutation(internal.auth.internal.lockUser, {
+          userId,
+          reason: "time_manipulation",
+        });
+      }
+    }
+    return { success: true, data: { valid: isValid, drift } };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Helper: Ensure admin (for admin queries)
-// -----------------------------------------------------------------------------
-async function ensureAdmin(ctx: any) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) throw new ConvexError("Not authenticated");
-  const user = await ctx.db.get(identity.subject as Id<"users">);
-  if (!user || user.role !== "admin") throw new ConvexError("Admin access required");
-  return user._id;
-}
-
-const getSecurityLogsSchema = z.object({
-  userId: v.optional(v.id("users")),
-  type: v.optional(v.string()),
-  startDate: v.optional(v.number()),
-  endDate: v.optional(v.number()),
-  limit: v.optional(v.number()),
-  cursor: v.optional(v.string()),
-});
-
-// -----------------------------------------------------------------------------
-// Get Security Logs (admin only, with filters and pagination)
-// -----------------------------------------------------------------------------
 export const getSecurityLogs = query({
   args: {
+    token: v.string(),
     userId: v.optional(v.id("users")),
-    type: v.optional(v.string()),
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
     limit: v.optional(v.number()),
-    cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const validated = getSecurityLogsSchema.parse(args);
-    await ensureAdmin(ctx);
-
-    let events = await ctx.db.query("securityEvents").collect();
-
-    // Apply filters
-    if (validated.userId) {
-      events = events.filter((e) => e.userId === validated.userId);
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch {
+      return { success: false, error: "token_verification_failed", message: "Authentication failed" };
     }
-    if (validated.type) {
-      events = events.filter((e) => e.type === validated.type);
+    if (payload.role !== "admin") {
+      return { success: false, error: "forbidden", message: "Admin access required" };
     }
-    if (validated.startDate) {
-      events = events.filter((e) => e.timestamp >= validated.startDate!);
+    const limit = args.limit || 50;
+    let query = ctx.db.query("securityEvents").order("desc");
+    if (args.userId) {
+      query = query.withIndex("by_userId_timestamp", (q) => q.eq("userId", args.userId));
     }
-    if (validated.endDate) {
-      events = events.filter((e) => e.timestamp <= validated.endDate!);
-    }
-
-    // Sort by timestamp desc
-    events.sort((a, b) => b.timestamp - a.timestamp);
-
-    // Pagination
-    const limit = validated.limit ?? 50;
-    let startIndex = 0;
-    if (validated.cursor) {
-      const cursorIndex = events.findIndex((e) => e._id === validated.cursor);
-      if (cursorIndex !== -1) startIndex = cursorIndex + 1;
-    }
-    const paginated = events.slice(startIndex, startIndex + limit);
-    const nextCursor = paginated.length === limit ? paginated[paginated.length - 1]._id : undefined;
-
-    return {
-      events: paginated,
-      nextCursor,
-    };
+    const events = await query.take(limit);
+    return { success: true, data: { events } };
   },
 });

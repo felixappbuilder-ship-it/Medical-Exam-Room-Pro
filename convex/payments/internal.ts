@@ -1,132 +1,108 @@
-import { v } from "convex/values";
+// convex/payments/internal.ts
 import { internalMutation, internalQuery } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Id } from "../_generated/dataModel";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-// -----------------------------------------------------------------------------
-// Internal query to find payment by merchantRequestId or checkoutRequestId
-// -----------------------------------------------------------------------------
-export const findPaymentByMerchantRequest = internalQuery({
-  args: {
-    merchantRequestId: v.optional(v.string()),
-    checkoutRequestId: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    if (args.merchantRequestId) {
-      const payment = await ctx.db
-        .query("payments")
-        .withIndex("by_merchantRequestId", (q: any) =>
-          q.eq("merchantRequestId", args.merchantRequestId)
-        )
-        .first();
-      if (payment) return payment;
-    }
-    if (args.checkoutRequestId) {
-      const payment = await ctx.db
-        .query("payments")
-        .withIndex("by_checkoutRequestId", (q: any) =>
-          q.eq("checkoutRequestId", args.checkoutRequestId)
-        )
-        .first();
-      if (payment) return payment;
-    }
-    return null;
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Internal mutation to update payment status and details
-// -----------------------------------------------------------------------------
 export const updatePaymentStatus = internalMutation({
   args: {
-    paymentId: v.id("payments"),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("completed"),
-      v.literal("failed"),
-      v.literal("refunded")
-    ),
-    merchantRequestId: v.optional(v.string()),
-    checkoutRequestId: v.optional(v.string()),
-    mpesaReceipt: v.optional(v.string()),
-    resultCode: v.optional(v.number()),
-    resultDesc: v.optional(v.string()),
-    details: v.optional(v.any()),
+    merchantRequestId: v.string(),
+    status: v.union(v.literal("completed"), v.literal("failed"), v.literal("expired")),
+    receipt: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const payment = await ctx.db.get(args.paymentId);
-    if (!payment) throw new ConvexError("Payment not found");
-
+    const payment = await ctx.db
+      .query("payments")
+      .withIndex("by_merchantRequestId", (q) => q.eq("merchantRequestId", args.merchantRequestId))
+      .first();
+    if (!payment) return;
+    // Idempotency: only update if still pending (already enforced in http.ts, but double-check)
+    if (payment.status !== "pending") return;
     const updates: any = {
       status: args.status,
+      updatedAt: Date.now(),
     };
-    if (args.merchantRequestId !== undefined) updates.merchantRequestId = args.merchantRequestId;
-    if (args.checkoutRequestId !== undefined) updates.checkoutRequestId = args.checkoutRequestId;
-    if (args.mpesaReceipt !== undefined) updates.mpesaReceipt = args.mpesaReceipt;
-    if (args.resultCode !== undefined) updates.resultCode = args.resultCode;
-    if (args.resultDesc !== undefined) updates.resultDesc = args.resultDesc;
-    if (args.details !== undefined) updates.details = args.details;
-
-    if (args.status === "completed" || args.status === "failed") {
-      updates.completedAt = Date.now();
+    if (args.receipt) {
+      updates.mpesaReceipt = args.receipt;
     }
-
-    await ctx.db.patch(args.paymentId, updates);
+    await ctx.db.patch(payment._id, updates);
+    // If payment completed, activate subscription
+    if (args.status === "completed") {
+      await ctx.runMutation(internal.payments.internal.activateSubscriptionAfterPayment, {
+        paymentId: payment._id,
+      });
+    }
   },
 });
 
-// -----------------------------------------------------------------------------
-// Internal mutation to create or update subscription after successful payment
-// -----------------------------------------------------------------------------
-export const activateSubscriptionAfterPayment = internalMutation({
-  args: {
-    paymentId: v.id("payments"),
-    userId: v.id("users"),
-    metadata: v.any(), // contains planId, durationDays
-  },
+export const getPaymentByMerchantRequestId = internalQuery({
+  args: { merchantRequestId: v.string() },
   handler: async (ctx, args) => {
-    const { planId, durationDays } = args.metadata;
-    const now = Date.now();
-    const expiryDate = now + durationDays * 24 * 60 * 60 * 1000;
+    return await ctx.db
+      .query("payments")
+      .withIndex("by_merchantRequestId", (q) => q.eq("merchantRequestId", args.merchantRequestId))
+      .first();
+  },
+});
 
-    // Check if user already has an active subscription for this plan
+export const getPendingPaymentsOlderThan = internalQuery({
+  args: { minutes: v.number() },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.minutes * 60 * 1000;
+    return await ctx.db
+      .query("payments")
+      .withIndex("by_status_createdAt", (q) => q.eq("status", "pending").lt("createdAt", cutoff))
+      .collect();
+  },
+});
+
+export const activateSubscriptionAfterPayment = internalMutation({
+  args: { paymentId: v.id("payments") },
+  handler: async (ctx, args) => {
+    const payment = await ctx.db.get(args.paymentId);
+    if (!payment) return;
+    const user = await ctx.db.get(payment.userId);
+    if (!user) return;
+
+    // Get plan details from appConfig (need to infer plan from amount or store planName in payment)
+    // For simplicity, assume payment.transactionId contains plan info or we need to add planName to payments table.
+    // Blueprint didn't add planName to payments schema, so we'll fetch the plan by amount matching.
+    const config = await ctx.db.query("appConfig").first();
+    if (!config) return;
+    const matchedPlan = config.subscriptionPlans.find((p) => p.price === payment.amount);
+    if (!matchedPlan) return;
+
+    const startDate = Date.now();
+    const expiryDate = startDate + matchedPlan.days * 24 * 60 * 60 * 1000;
+
+    // Check if user already has active subscription – if so, extend
     const existingSub = await ctx.db
       .query("subscriptions")
-      .withIndex("by_userId", (q: any) => q.eq("userId", args.userId))
+      .withIndex("by_userId", (q) => q.eq("userId", payment.userId))
       .first();
-
-    if (existingSub) {
-      // Update existing subscription (extend or replace)
+    if (existingSub && existingSub.expiryDate > startDate) {
+      // Extend existing subscription
+      const newExpiry = existingSub.expiryDate + matchedPlan.days * 24 * 60 * 60 * 1000;
       await ctx.db.patch(existingSub._id, {
-        plan: planId,
-        startDate: now,
-        expiryDate,
-        isActive: true,
-        paymentHistory: [...(existingSub.paymentHistory || []), args.paymentId],
+        expiryDate: newExpiry,
+        status: "active",
       });
     } else {
       // Create new subscription
       await ctx.db.insert("subscriptions", {
-        userId: args.userId,
-        plan: planId,
-        startDate: now,
+        userId: payment.userId,
+        plan: matchedPlan.name,
+        startDate,
         expiryDate,
-        isActive: true,
-        autoRenew: false, // default
-        paymentHistory: [args.paymentId],
+        status: "active",
       });
     }
 
-    // Link payment to subscription
-    const payment = await ctx.db.get(args.paymentId);
-    if (payment) {
-      const sub = await ctx.db
-        .query("subscriptions")
-        .withIndex("by_userId", (q: any) => q.eq("userId", args.userId))
-        .first();
-      if (sub) {
-        await ctx.db.patch(args.paymentId, { subscriptionId: sub._id });
-      }
-    }
+    // Audit log
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: payment.userId,
+      action: "payment_completed_subscription_activated",
+      targetId: payment._id,
+      details: { amount: payment.amount, plan: matchedPlan.name, receipt: payment.mpesaReceipt },
+    });
   },
 });

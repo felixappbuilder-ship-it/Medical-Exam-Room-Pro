@@ -1,168 +1,137 @@
-import { v } from "convex/values";
+// convex/users/mutations.ts
 import { mutation } from "../_generated/server";
+import { v } from "convex/values";
 import { internal } from "../_generated/api";
-import { ConvexError } from "convex/values";
-import { z } from "zod";
 
-// Validation schemas
-const updateProfileSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  phone: z.string().regex(/^254\d{9}$/).optional(),
-  institution: z.string().optional(),
-  yearOfStudy: z.number().min(1).max(6).optional(),
-});
-
-const updatePreferencesSchema = z.object({
-  preferences: z.object({
-    theme: z.enum(["auto", "light", "dark"]).optional(),
-    notifications: z.boolean().optional(),
-  }),
-});
-
-const deleteAccountSchema = z.object({
-  password: z.string().min(1),
-});
-
-// -----------------------------------------------------------------------------
-// Update Profile
-// -----------------------------------------------------------------------------
 export const updateProfile = mutation({
   args: {
+    token: v.string(),
     name: v.optional(v.string()),
     phone: v.optional(v.string()),
-    institution: v.optional(v.string()),
-    yearOfStudy: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const validated = updateProfileSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    const user = await ctx.db.get(identity.subject);
-    if (!user) throw new ConvexError("User not found");
-
-    // If phone is being updated, check it's not already taken
-    if (validated.phone && validated.phone !== user.phone) {
-      const existing = await ctx.db
-        .query("users")
-        .withIndex("by_phone", (q: any) => q.eq("phone", validated.phone))
-        .first();
-      if (existing) throw new ConvexError("Phone number already in use");
+    // Verify JWT
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
     }
 
-    // Build update object
+    const userId = payload.userId;
+    const user = await ctx.runQuery(internal.users.internal.getUserById, { userId });
+    if (!user) {
+      return {
+        success: false,
+        error: "user_not_found",
+        message: "User account no longer exists.",
+      };
+    }
+
+    if (user.isLocked) {
+      return {
+        success: false,
+        error: "account_locked",
+        message: `Account is locked. Reason: ${user.lockReason || "suspicious activity"}.`,
+      };
+    }
+
+    // Prepare updates
     const updates: any = {};
-    if (validated.name !== undefined) updates.name = validated.name;
-    if (validated.phone !== undefined) updates.phone = validated.phone;
-    if (validated.institution !== undefined) updates.institution = validated.institution;
-    if (validated.yearOfStudy !== undefined) updates.yearOfStudy = validated.yearOfStudy;
+    if (args.name !== undefined) updates.name = args.name;
+    if (args.phone !== undefined) updates.phone = args.phone;
 
-    await ctx.db.patch(user._id, updates);
+    if (Object.keys(updates).length === 0) {
+      return {
+        success: false,
+        error: "no_updates",
+        message: "No valid fields to update.",
+      };
+    }
 
-    // Return updated user (non‑sensitive fields)
-    const updatedUser = await ctx.db.get(user._id);
+    // Update user
+    await ctx.runMutation(internal.users.internal.updateUserById, {
+      userId,
+      updates,
+    });
+
+    // Audit log (R16)
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "update_profile",
+      targetId: userId,
+      details: updates,
+    });
+
+    // Return updated safe profile
+    const updatedUser = await ctx.runQuery(internal.users.internal.getUserById, { userId });
+    const { passwordHash, securityQuestions, ...safeUser } = updatedUser!;
     return {
-      _id: updatedUser!._id,
-      name: updatedUser!.name,
-      email: updatedUser!.email,
-      phone: updatedUser!.phone,
-      devices: updatedUser!.devices,
-      preferences: updatedUser!.preferences,
-      createdAt: updatedUser!.createdAt,
-      lastLogin: updatedUser!.lastLogin,
-      isLocked: updatedUser!.isLocked,
-      lockReason: updatedUser!.lockReason,
-      role: updatedUser!.role,
-      trialUsed: updatedUser!.trialUsed,
-      institution: updatedUser!.institution,
-      yearOfStudy: updatedUser!.yearOfStudy,
+      success: true,
+      data: { user: safeUser },
     };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Update Preferences
-// -----------------------------------------------------------------------------
-export const updatePreferences = mutation({
-  args: {
-    preferences: v.object({
-      theme: v.optional(v.union(v.literal("auto"), v.literal("light"), v.literal("dark"))),
-      notifications: v.optional(v.boolean()),
-    }),
-  },
-  handler: async (ctx, args) => {
-    const validated = updatePreferencesSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    const user = await ctx.db.get(identity.subject);
-    if (!user) throw new ConvexError("User not found");
-
-    // Merge preferences
-    const newPreferences = {
-      ...user.preferences,
-      ...validated.preferences,
-    };
-
-    await ctx.db.patch(user._id, { preferences: newPreferences });
-
-    return {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      devices: user.devices,
-      preferences: newPreferences,
-      createdAt: user.createdAt,
-      lastLogin: user.lastLogin,
-      isLocked: user.isLocked,
-      lockReason: user.lockReason,
-      role: user.role,
-      trialUsed: user.trialUsed,
-    };
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Delete Account
-// -----------------------------------------------------------------------------
 export const deleteAccount = mutation({
-  args: {
-    password: v.string(),
-  },
+  args: { token: v.string() },
   handler: async (ctx, args) => {
-    const validated = deleteAccountSchema.parse(args);
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
+    }
 
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
+    const userId = payload.userId;
+    const user = await ctx.runQuery(internal.users.internal.getUserById, { userId });
+    if (!user) {
+      return {
+        success: false,
+        error: "user_not_found",
+        message: "User account no longer exists.",
+      };
+    }
 
-    const user = await ctx.db.get(identity.subject);
-    if (!user) throw new ConvexError("User not found");
-
-    // Verify password via action
-    const isValid = await ctx.runAction(internal.auth.actions.verifyPassword, {
-      password: validated.password,
-      hash: user.passwordHash,
+    // Audit log before deletion
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "delete_account",
+      targetId: userId,
+      details: { email: user.email, phone: user.phone },
     });
-    if (!isValid) throw new ConvexError("Invalid password");
 
-    // Log security event before deletion
-    await ctx.db.insert("securityEvents", {
-      userId: user._id,
-      type: "account_deletion",
-      details: {},
-      timestamp: Date.now(),
-      resolved: true,
-    });
+    // Delete user
+    await ctx.runMutation(internal.users.internal.deleteUserById, { userId });
 
-    // Delete the user document
-    await ctx.db.delete(user._id);
-
-    // Note: related data (subscriptions, payments, notes, etc.) remains orphaned.
-    // A cron job can clean them up later if needed.
-
-    return { success: true };
+    // Also delete related data? (optional, but blueprint doesn't specify cascade – we'll keep simple)
+    return {
+      success: true,
+      data: { message: "Account permanently deleted." },
+    };
   },
 });

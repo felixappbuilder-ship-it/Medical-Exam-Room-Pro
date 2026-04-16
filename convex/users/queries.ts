@@ -1,30 +1,47 @@
+// convex/users/queries.ts
 import { query } from "../_generated/server";
-import { ConvexError } from "convex/values";
 import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
 export const getProfile = query({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    // Verify JWT (R8)
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
+    }
 
-    const user = await ctx.db.get(identity.subject);
-    if (!user) throw new ConvexError("User not found");
+    const userId = payload.userId;
+    const user = await ctx.runQuery(internal.users.internal.getUserById, { userId });
 
-    // Return all non‑sensitive fields
+    if (!user) {
+      return {
+        success: false,
+        error: "user_not_found",
+        message: "User account no longer exists.",
+      };
+    }
+
+    // Return safe profile (exclude passwordHash and securityQuestions)
+    const { passwordHash, securityQuestions, ...safeUser } = user;
     return {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      devices: user.devices,
-      preferences: user.preferences,
-      createdAt: user.createdAt,
-      lastLogin: user.lastLogin,
-      isLocked: user.isLocked,
-      lockReason: user.lockReason,
-      role: user.role,
-      trialUsed: user.trialUsed,
+      success: true,
+      data: { user: safeUser },
     };
   },
 });

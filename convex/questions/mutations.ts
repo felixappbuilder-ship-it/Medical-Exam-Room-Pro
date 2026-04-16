@@ -1,92 +1,119 @@
-import { v } from "convex/values";
+// convex/questions/mutations.ts
 import { mutation } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Id } from "../_generated/dataModel";
-import { z } from "zod";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-const recordSeenQuestionsSchema = z.object({
-  subject: z.string().min(1),
-  topic: z.string().min(1),
-  questionIds: z.array(z.string()).min(1),
-});
-
-const resetSeenQuestionsSchema = z.object({
-  subject: z.string().min(1),
-  topic: z.string().min(1),
-});
-
-// -----------------------------------------------------------------------------
-// Record that a user has seen specific questions in a subject/topic
-// -----------------------------------------------------------------------------
 export const recordSeenQuestions = mutation({
   args: {
+    token: v.string(),
     subject: v.string(),
     topic: v.string(),
     questionIds: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const validated = recordSeenQuestionsSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    // Find existing seenQuestions document for this user/subject/topic
-    const existing = await ctx.db
-      .query("seenQuestions")
-      .withIndex("by_user_subject_topic", (q: any) =>
-        q.eq("userId", userId).eq("subject", validated.subject).eq("topic", validated.topic)
-      )
-      .first();
-
-    if (existing) {
-      // Merge existing questionIds with new ones (avoid duplicates)
-      const currentSet = new Set(existing.questionIds);
-      for (const qid of validated.questionIds) {
-        currentSet.add(qid);
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
       }
-      const mergedIds = Array.from(currentSet);
-      await ctx.db.patch(existing._id, { questionIds: mergedIds });
-    } else {
-      // Create new document
-      await ctx.db.insert("seenQuestions", {
-        userId,
-        subject: validated.subject,
-        topic: validated.topic,
-        questionIds: validated.questionIds,
-      });
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
     }
-
-    return { success: true };
+    const userId = payload.userId;
+    // Validate user exists and not locked
+    const user = await ctx.runQuery(internal.users.internal.getUserById, { userId });
+    if (!user) {
+      return {
+        success: false,
+        error: "user_not_found",
+        message: "User not found.",
+      };
+    }
+    if (user.isLocked) {
+      return {
+        success: false,
+        error: "account_locked",
+        message: `Account is locked. Reason: ${user.lockReason || "suspicious activity"}.`,
+      };
+    }
+    await ctx.runMutation(internal.questions.internal.upsertSeenQuestions, {
+      userId,
+      subject: args.subject,
+      topic: args.topic,
+      questionIds: args.questionIds,
+    });
+    // Audit log (R16)
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "record_seen_questions",
+      targetId: userId,
+      details: { subject: args.subject, topic: args.topic, count: args.questionIds.length },
+    });
+    return {
+      success: true,
+      data: { message: "Seen questions recorded." },
+    };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Reset seen questions for a user in a specific subject/topic
-// -----------------------------------------------------------------------------
 export const resetSeenQuestions = mutation({
   args: {
+    token: v.string(),
     subject: v.string(),
     topic: v.string(),
   },
   handler: async (ctx, args) => {
-    const validated = resetSeenQuestionsSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    const existing = await ctx.db
-      .query("seenQuestions")
-      .withIndex("by_user_subject_topic", (q: any) =>
-        q.eq("userId", userId).eq("subject", validated.subject).eq("topic", validated.topic)
-      )
-      .first();
-
-    if (existing) {
-      await ctx.db.delete(existing._id);
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
     }
-
-    return { success: true };
+    const userId = payload.userId;
+    const user = await ctx.runQuery(internal.users.internal.getUserById, { userId });
+    if (!user || user.isLocked) {
+      return {
+        success: false,
+        error: "unauthorized",
+        message: "Cannot reset seen questions.",
+      };
+    }
+    await ctx.runMutation(internal.questions.internal.resetSeenQuestions, {
+      userId,
+      subject: args.subject,
+      topic: args.topic,
+    });
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "reset_seen_questions",
+      targetId: userId,
+      details: { subject: args.subject, topic: args.topic },
+    });
+    return {
+      success: true,
+      data: { message: "Seen questions reset." },
+    };
   },
 });

@@ -1,316 +1,483 @@
+// convex/ai/actions.ts
 "use node";
 
-import { v } from "convex/values";
 import { action } from "../_generated/server";
+import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { ConvexError } from "convex/values";
-import { Id } from "../_generated/dataModel";
-import { z } from "zod";
 
-// Environment variables (set in Convex dashboard)
-const AI_API_KEY = process.env.AI_API_KEY!;
-const AI_MODEL = process.env.AI_MODEL || "gpt-4";
-
-// Helper to call OpenAI API
+// Helper to call OpenAI with retry logic
 async function callOpenAI(
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
-  temperature = 0.7,
-  maxTokens = 1000
+  messages: Array<{ role: string; content: string }>,
+  model: string = process.env.AI_MODEL || "gpt-4"
 ): Promise<string> {
+  const apiKey = process.env.AI_API_KEY;
+  if (!apiKey) throw new Error("AI_API_KEY not set");
+
+  const isTestMode = process.env.IS_TEST_MODE === "true";
+  if (isTestMode) {
+    // Mock response (R19)
+    return "This is a mock AI response for testing purposes.";
+  }
+
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      Authorization: `Bearer ${AI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model,
       messages,
-      temperature,
-      max_tokens: maxTokens,
+      temperature: 0.7,
     }),
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
+    throw new Error(`OpenAI API error: ${response.status} - ${error}`);
   }
 
   const data = await response.json();
   return data.choices[0].message.content;
 }
 
-// -----------------------------------------------------------------------------
-// Ask AI a medical question
-// -----------------------------------------------------------------------------
+// Rate limiting helper
+async function checkRateLimit(ctx: any, userId: string, endpoint: string): Promise<boolean> {
+  const now = Date.now();
+  const resetAt = now + 60 * 1000;
+  const record = await ctx.runQuery(internal.auth.internal.getRateLimit, {
+    key: `${userId}_${endpoint}`,
+    endpoint,
+  });
+  if (record && record.count >= 10 && record.resetAt > now) {
+    return false;
+  }
+  await ctx.runMutation(internal.auth.internal.incrementRateLimit, {
+    key: `${userId}_${endpoint}`,
+    endpoint,
+    resetAt,
+  });
+  return true;
+}
+
+// Verify token and subscription
+async function verifyAuthAndSubscription(ctx: any, token: string): Promise<{ userId: string; isSubscribed: boolean }> {
+  const result = await ctx.runAction(internal.auth.actions.verifyToken, { token });
+  if (!result.success) {
+    throw new ConvexError("Invalid or expired token");
+  }
+  const userId = result.data.userId;
+  const user = await ctx.runQuery(internal.users.internal.getUserById, { userId });
+  if (!user || user.isLocked) {
+    throw new ConvexError("Account locked or not found");
+  }
+  const subscription = await ctx.runQuery(internal.subscriptions.internal.getActiveSubscriptionByUserId, { userId });
+  const isSubscribed = subscription !== null && subscription.expiryDate > Date.now();
+  if (!isSubscribed) {
+    throw new ConvexError("Active subscription required for AI features");
+  }
+  return { userId, isSubscribed };
+}
+
 export const askAI = action({
   args: {
+    token: v.string(),
     question: v.string(),
-    context: v.optional(v.string()), // e.g., weak areas, subject context
+    context: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    // Optionally fetch user's weak areas from analytics to include in context
-    let weakAreas: string[] = [];
-    if (!args.context) {
-      try {
-        const weak = await ctx.runQuery(internal.analytics.getWeakAreas, {
-          threshold: 70,
-        });
-        weakAreas = weak.map((w: any) => w.topic);
-      } catch (e) {
-        // Ignore if analytics fails
-      }
+    const { userId, isSubscribed } = await verifyAuthAndSubscription(ctx, args.token);
+    if (!isSubscribed) {
+      return {
+        success: false,
+        error: "subscription_required",
+        message: "Active subscription required to use AI tutor.",
+      };
     }
 
-    const systemPrompt = `You are a medical tutor for Kenyan medical students. Provide accurate, concise answers with references to standard textbooks where possible. Format your response with clear sections if needed.`;
-    const userPrompt = args.context
-      ? `Context: ${args.context}\n\nQuestion: ${args.question}`
-      : weakAreas.length > 0
-      ? `User's weak areas: ${weakAreas.join(", ")}. Question: ${args.question}`
-      : args.question;
+    // Rate limiting (R15)
+    const allowed = await checkRateLimit(ctx, userId, "askAI");
+    if (!allowed) {
+      return {
+        success: false,
+        error: "rate_limit_exceeded",
+        message: "Too many AI requests. Please wait a minute.",
+      };
+    }
 
-    const reply = await callOpenAI([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
+    // Fetch user's weak areas from examResults to personalize (optional)
+    const weakAreasResult = await ctx.db
+      .query("examResults")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .order("desc")
+      .first();
+    let weakAreasPrompt = "";
+    if (weakAreasResult && weakAreasResult.weakAreas.length > 0) {
+      weakAreasPrompt = `The user has weak areas in: ${weakAreasResult.weakAreas.slice(0, 3).join(", ")}. Focus explanations on these topics.`;
+    }
 
-    // Extract references (simple placeholder; could be enhanced with structured parsing)
-    const references: Array<{ book: string; page?: number }> = [];
-    // For now, return empty references
+    const messages = [
+      {
+        role: "system",
+        content: `You are a medical exam tutor for Kenyan medical students. Provide accurate, concise, and educational answers. ${weakAreasPrompt}`,
+      },
+      {
+        role: "user",
+        content: args.context ? `Context from notes: ${args.context}\n\nQuestion: ${args.question}` : args.question,
+      },
+    ];
 
-    return {
-      reply,
-      references,
-    };
+    try {
+      const answer = await callOpenAI(messages);
+      // Audit log (R16)
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: userId,
+        action: "ai_ask",
+        targetId: userId,
+        details: { questionLength: args.question.length },
+      });
+      return {
+        success: true,
+        data: { answer },
+      };
+    } catch (err: any) {
+      console.error("AI ask error:", err);
+      throw new ConvexError(`AI service error: ${err.message}`);
+    }
   },
 });
 
-// -----------------------------------------------------------------------------
-// Upload and process a file (image/PDF) – extract text or summarize
-// -----------------------------------------------------------------------------
-export const uploadFile = action({
-  args: {
-    file: v.any(), // File object from client
-    fileName: v.string(),
-    fileType: v.string(), // e.g., "image/jpeg", "application/pdf"
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    // Store the file in Convex storage
-    const storageId = await ctx.storage.store(args.file);
-
-    // Get a URL for the file (optional, for later reference)
-    const fileUrl = await ctx.storage.getUrl(storageId);
-    if (!fileUrl) throw new ConvexError("Failed to get file URL");
-
-    // Determine how to process based on file type
-    let extractedText = "";
-    let summary = "";
-
-    if (args.fileType.startsWith("image/")) {
-      // For images, we could use a vision model, but for simplicity, we'll return a note that image was uploaded
-      extractedText = "Image uploaded. To extract text, use a dedicated OCR action.";
-      summary = "Image file received.";
-    } else if (args.fileType === "application/pdf") {
-      // For PDFs, we could use a PDF parsing library, but that would be complex in serverless.
-      // Placeholder: we'll note that PDF processing is not implemented yet.
-      extractedText = "PDF uploaded. Text extraction not yet implemented.";
-      summary = "PDF file received.";
-    } else {
-      extractedText = "Unsupported file type.";
-      summary = "File uploaded but not processed.";
-    }
-
-    return {
-      storageId,
-      fileName: args.fileName,
-      fileUrl,
-      summary,
-      content: extractedText,
-    };
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Summarize text
-// -----------------------------------------------------------------------------
 export const summarizeText = action({
   args: {
+    token: v.string(),
     text: v.string(),
-    length: v.optional(v.string()), // "short", "medium", "long"
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    const lengthInstruction = args.length || "medium";
-    const lengthMap = {
-      short: "a brief paragraph",
-      medium: "a few paragraphs",
-      long: "a detailed summary",
-    };
-
-    const prompt = `Summarize the following text in ${lengthMap[lengthInstruction as keyof typeof lengthMap] || lengthMap.medium}:\n\n${args.text}`;
-
-    const summary = await callOpenAI([
-      { role: "system", content: "You are a helpful assistant that summarizes text accurately." },
-      { role: "user", content: prompt },
-    ]);
-
-    return { summary };
+    const { userId, isSubscribed } = await verifyAuthAndSubscription(ctx, args.token);
+    if (!isSubscribed) {
+      return {
+        success: false,
+        error: "subscription_required",
+        message: "Active subscription required to use AI summarization.",
+      };
+    }
+    const allowed = await checkRateLimit(ctx, userId, "summarizeText");
+    if (!allowed) {
+      return {
+        success: false,
+        error: "rate_limit_exceeded",
+        message: "Too many requests. Please wait a minute.",
+      };
+    }
+    const messages = [
+      {
+        role: "system",
+        content: "Summarize the following medical text in 3-5 bullet points. Keep it educational and precise.",
+      },
+      { role: "user", content: args.text },
+    ];
+    try {
+      const summary = await callOpenAI(messages);
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: userId,
+        action: "ai_summarize",
+        targetId: userId,
+        details: { textLength: args.text.length },
+      });
+      return { success: true, data: { summary } };
+    } catch (err: any) {
+      throw new ConvexError(`Summarization failed: ${err.message}`);
+    }
   },
 });
 
-// -----------------------------------------------------------------------------
-// Generate flashcards from text
-// -----------------------------------------------------------------------------
 export const generateFlashcards = action({
   args: {
+    token: v.string(),
     text: v.string(),
     count: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    const flashcardCount = args.count || 10;
-
-    const prompt = `Based on the following text, generate ${flashcardCount} flashcards. Each flashcard should have a "front" (question or term) and "back" (answer or definition). Return the result as a JSON array of objects with keys "front" and "back". Do not include any other text.\n\nText:\n${args.text}`;
-
-    const response = await callOpenAI([
-      { role: "system", content: "You are a helpful assistant that creates flashcards for medical students." },
-      { role: "user", content: prompt },
-    ]);
-
+    const { userId, isSubscribed } = await verifyAuthAndSubscription(ctx, args.token);
+    if (!isSubscribed) {
+      return {
+        success: false,
+        error: "subscription_required",
+        message: "Active subscription required to generate flashcards.",
+      };
+    }
+    const allowed = await checkRateLimit(ctx, userId, "generateFlashcards");
+    if (!allowed) {
+      return {
+        success: false,
+        error: "rate_limit_exceeded",
+        message: "Too many requests. Please wait a minute.",
+      };
+    }
+    const count = args.count || 5;
+    const messages = [
+      {
+        role: "system",
+        content: `Extract ${count} key medical concepts from the following text. Return a JSON array of objects with "front" (question/concept) and "back" (answer/explanation). Only output valid JSON.`,
+      },
+      { role: "user", content: args.text },
+    ];
     try {
-      // Attempt to parse JSON response
-      const flashcards = JSON.parse(response);
-      if (Array.isArray(flashcards) && flashcards.every(f => "front" in f && "back" in f)) {
-        return flashcards;
-      } else {
-        throw new Error("Invalid flashcard format");
+      const response = await callOpenAI(messages);
+      let flashcards;
+      try {
+        flashcards = JSON.parse(response);
+      } catch {
+        // Fallback: try to extract JSON from markdown
+        const match = response.match(/\[[\s\S]*\]/);
+        if (match) flashcards = JSON.parse(match[0]);
+        else throw new Error("Invalid JSON response");
       }
-    } catch (e) {
-      // Fallback: return raw text as a single flashcard
-      return [{ front: "Generated content", back: response }];
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: userId,
+        action: "ai_generate_flashcards",
+        targetId: userId,
+        details: { count: flashcards.length },
+      });
+      return { success: true, data: { flashcards } };
+    } catch (err: any) {
+      throw new ConvexError(`Flashcard generation failed: ${err.message}`);
     }
   },
 });
 
-// -----------------------------------------------------------------------------
-// Generate practice questions from text
-// -----------------------------------------------------------------------------
-export const generateQuestions = action({
-  args: {
-    text: v.string(),
-    count: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    const questionCount = args.count || 5;
-
-    const prompt = `Based on the following text, generate ${questionCount} multiple-choice practice questions. Each question should have a "question" (the question text), "options" (an array of 4 strings, labeled A through D), "answer" (the correct option letter, e.g., "A"), and "explanation" (a brief explanation). Return the result as a JSON array of objects with keys "question", "options", "answer", "explanation". Do not include any other text.\n\nText:\n${args.text}`;
-
-    const response = await callOpenAI([
-      { role: "system", content: "You are a helpful assistant that creates medical practice questions." },
-      { role: "user", content: prompt },
-    ]);
-
-    try {
-      const questions = JSON.parse(response);
-      if (Array.isArray(questions) && questions.every(q => "question" in q && "options" in q && "answer" in q && "explanation" in q)) {
-        return questions;
-      } else {
-        throw new Error("Invalid question format");
-      }
-    } catch (e) {
-      // Fallback: return one simple question
-      return [{
-        question: "Generated question could not be parsed",
-        options: ["A. Try again", "B. Contact support", "C. Ignore", "D. None"],
-        answer: "D",
-        explanation: "The AI response was not in the expected format. Please try again with different text."
-      }];
-    }
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Generate study plan based on weak topics
-// -----------------------------------------------------------------------------
-export const getStudyPlan = action({
-  args: {
-    weakTopics: v.array(v.string()),
-    days: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    const planDays = args.days || 7;
-
-    const prompt = `Create a ${planDays}-day study plan for a medical student focusing on the following weak topics: ${args.weakTopics.join(", ")}. For each day, provide a list of tasks (e.g., review topic, practice questions, etc.). Return the result as a JSON array of objects with keys "day" (number) and "tasks" (array of strings). Do not include any other text.`;
-
-    const response = await callOpenAI([
-      { role: "system", content: "You are a helpful medical education advisor." },
-      { role: "user", content: prompt },
-    ]);
-
-    try {
-      const plan = JSON.parse(response);
-      if (Array.isArray(plan) && plan.every(p => "day" in p && "tasks" in p)) {
-        return plan;
-      } else {
-        throw new Error("Invalid plan format");
-      }
-    } catch (e) {
-      // Fallback: return a simple plan
-      return Array.from({ length: planDays }, (_, i) => ({
-        day: i + 1,
-        tasks: ["Review weak topics", "Practice 20 questions", "Review explanations"],
-      }));
-    }
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Generate mnemonics for medical terms
-// -----------------------------------------------------------------------------
 export const getMnemonics = action({
   args: {
-    terms: v.array(v.string()),
+    token: v.string(),
+    medicalTerm: v.string(),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    const prompt = `Create a memorable mnemonic for each of the following medical terms. For each term, provide a short, easy-to-remember mnemonic that helps recall the term's meaning or details. Return the result as a JSON array of objects with keys "term" and "mnemonic". Do not include any other text.\n\nTerms: ${args.terms.join(", ")}`;
-
-    const response = await callOpenAI([
-      { role: "system", content: "You are a creative medical educator specializing in mnemonics." },
-      { role: "user", content: prompt },
-    ]);
-
+    const { userId, isSubscribed } = await verifyAuthAndSubscription(ctx, args.token);
+    if (!isSubscribed) {
+      return {
+        success: false,
+        error: "subscription_required",
+        message: "Active subscription required to generate mnemonics.",
+      };
+    }
+    const allowed = await checkRateLimit(ctx, userId, "getMnemonics");
+    if (!allowed) {
+      return {
+        success: false,
+        error: "rate_limit_exceeded",
+        message: "Too many requests. Please wait a minute.",
+      };
+    }
+    const messages = [
+      {
+        role: "system",
+        content: "Create a memorable mnemonic or memory aid for the given medical term. Explain the mnemonic briefly.",
+      },
+      { role: "user", content: args.medicalTerm },
+    ];
     try {
-      const mnemonics = JSON.parse(response);
-      if (Array.isArray(mnemonics) && mnemonics.every(m => "term" in m && "mnemonic" in m)) {
-        return mnemonics;
-      } else {
-        throw new Error("Invalid mnemonic format");
+      const mnemonic = await callOpenAI(messages);
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: userId,
+        action: "ai_mnemonic",
+        targetId: userId,
+        details: { term: args.medicalTerm },
+      });
+      return { success: true, data: { mnemonic } };
+    } catch (err: any) {
+      throw new ConvexError(`Mnemonic generation failed: ${err.message}`);
+    }
+  },
+});
+
+export const semanticSearch = action({
+  args: {
+    token: v.string(),
+    query: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { userId, isSubscribed } = await verifyAuthAndSubscription(ctx, args.token);
+    if (!isSubscribed) {
+      return {
+        success: false,
+        error: "subscription_required",
+        message: "Active subscription required for semantic search.",
+      };
+    }
+    const allowed = await checkRateLimit(ctx, userId, "semanticSearch");
+    if (!allowed) {
+      return {
+        success: false,
+        error: "rate_limit_exceeded",
+        message: "Too many requests. Please wait a minute.",
+      };
+    }
+    const limit = args.limit || 5;
+    const isTestMode = process.env.IS_TEST_MODE === "true";
+    if (isTestMode) {
+      // Mock vector search results
+      return {
+        success: true,
+        data: {
+          results: [
+            { _id: "mock1", text: "Mock question 1", explanation: "Mock explanation", score: 0.95 },
+            { _id: "mock2", text: "Mock question 2", explanation: "Mock explanation", score: 0.89 },
+          ],
+        },
+      };
+    }
+
+    // In production, we need to generate an embedding for the query using OpenAI
+    const apiKey = process.env.AI_API_KEY;
+    if (!apiKey) throw new ConvexError("AI_API_KEY not set");
+    const embedResponse = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "text-embedding-ada-002",
+        input: args.query,
+      }),
+    });
+    if (!embedResponse.ok) {
+      throw new ConvexError("Failed to generate embedding for search query");
+    }
+    const embedData = await embedResponse.json();
+    const embedding = embedData.data[0].embedding;
+
+    // Perform vector search on questions table (R18)
+    const results = await ctx.db
+      .query("questions")
+      .withVectorIndex("by_embedding", {
+        vector: embedding,
+        limit: limit,
+      })
+      .collect();
+
+    // Return relevant fields only
+    const sanitized = results.map((q) => ({
+      _id: q._id,
+      text: q.text,
+      explanation: q.explanation,
+      category: q.category,
+      difficulty: q.difficulty,
+    }));
+
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "ai_semantic_search",
+      targetId: userId,
+      details: { queryLength: args.query.length, resultCount: sanitized.length },
+    });
+
+    return { success: true, data: { results: sanitized } };
+  },
+});
+
+export const generateQuestions = action({
+  args: {
+    token: v.string(),
+    topic: v.string(),
+    count: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { userId, isSubscribed } = await verifyAuthAndSubscription(ctx, args.token);
+    if (!isSubscribed) {
+      return {
+        success: false,
+        error: "subscription_required",
+        message: "Active subscription required to generate questions.",
+      };
+    }
+    const allowed = await checkRateLimit(ctx, userId, "generateQuestions");
+    if (!allowed) {
+      return {
+        success: false,
+        error: "rate_limit_exceeded",
+        message: "Too many requests. Please wait a minute.",
+      };
+    }
+    const count = args.count || 5;
+    const messages = [
+      {
+        role: "system",
+        content: `Generate ${count} multiple-choice medical questions on the topic "${args.topic}". Each question must have 4 options (A, B, C, D), indicate the correct letter, and provide a short explanation. Return as JSON array with objects: { questionText, options: {A, B, C, D}, correctAnswer, explanation }.`,
+      },
+    ];
+    try {
+      const response = await callOpenAI(messages);
+      let questions;
+      try {
+        questions = JSON.parse(response);
+      } catch {
+        const match = response.match(/\[[\s\S]*\]/);
+        if (match) questions = JSON.parse(match[0]);
+        else throw new Error("Invalid JSON");
       }
-    } catch (e) {
-      // Fallback: return simple mnemonics
-      return args.terms.map(term => ({
-        term,
-        mnemonic: `Create your own mnemonic for ${term}`,
-      }));
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: userId,
+        action: "ai_generate_questions",
+        targetId: userId,
+        details: { topic: args.topic, count: questions.length },
+      });
+      return { success: true, data: { questions } };
+    } catch (err: any) {
+      throw new ConvexError(`Question generation failed: ${err.message}`);
+    }
+  },
+});
+
+export const getStudyPlan = action({
+  args: {
+    token: v.string(),
+    targetExam: v.string(),
+    weeksAvailable: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const { userId, isSubscribed } = await verifyAuthAndSubscription(ctx, args.token);
+    if (!isSubscribed) {
+      return {
+        success: false,
+        error: "subscription_required",
+        message: "Active subscription required to generate study plan.",
+      };
+    }
+    const allowed = await checkRateLimit(ctx, userId, "getStudyPlan");
+    if (!allowed) {
+      return {
+        success: false,
+        error: "rate_limit_exceeded",
+        message: "Too many requests. Please wait a minute.",
+      };
+    }
+    // Fetch user's weak areas from exam results
+    const weakAreasResult = await ctx.db
+      .query("examResults")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .order("desc")
+      .first();
+    let weakAreas = weakAreasResult?.weakAreas || [];
+    const messages = [
+      {
+        role: "system",
+        content: `You are a medical exam study planner. Create a ${args.weeksAvailable}-week study plan for ${args.targetExam}. User's weak areas: ${weakAreas.join(", ")}. Return as a JSON array of weeks, each with topics and daily tasks.`,
+      },
+    ];
+    try {
+      const plan = await callOpenAI(messages);
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: userId,
+        action: "ai_study_plan",
+        targetId: userId,
+        details: { targetExam: args.targetExam, weeks: args.weeksAvailable },
+      });
+      return { success: true, data: { plan } };
+    } catch (err: any) {
+      throw new ConvexError(`Study plan generation failed: ${err.message}`);
     }
   },
 });

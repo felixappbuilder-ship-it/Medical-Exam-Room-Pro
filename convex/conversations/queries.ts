@@ -1,97 +1,121 @@
-import { v } from "convex/values";
+// convex/conversations/queries.ts
 import { query } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Id } from "../_generated/dataModel";
-import { z } from "zod";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-const getConversationsSchema = z.object({
-  limit: v.optional(v.number()),
-});
-
-const getConversationSchema = z.object({
-  convId: v.id("conversations"),
-});
-
-const getSharedConversationSchema = z.object({
-  token: v.string(),
-});
-
-// -----------------------------------------------------------------------------
-// List user's conversations (most recent first)
-// -----------------------------------------------------------------------------
 export const getConversations = query({
   args: {
+    token: v.string(),
     limit: v.optional(v.number()),
+    cursor: v.optional(v.id("conversations")),
   },
   handler: async (ctx, args) => {
-    const validated = getConversationsSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    const limit = validated.limit ?? 50;
-
-    const conversations = await ctx.db
-      .query("conversations")
-      .withIndex("by_userId", (q: any) => q.eq("userId", userId))
-      .order("desc")
-      .take(limit);
-
-    return conversations;
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch {
+      return { success: false, error: "token_verification_failed", message: "Authentication failed" };
+    }
+    const userId = payload.userId;
+    const limit = args.limit || 20;
+    const { items, nextCursor, hasMore } = await ctx.runQuery(
+      internal.conversations.internal.getUserConversations,
+      { userId, limit, cursor: args.cursor }
+    );
+    return {
+      success: true,
+      data: { conversations: items, nextCursor, hasMore },
+    };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Get a specific conversation by ID
-// -----------------------------------------------------------------------------
 export const getConversation = query({
   args: {
-    convId: v.id("conversations"),
+    token: v.string(),
+    conversationId: v.id("conversations"),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("messages")),
   },
   handler: async (ctx, args) => {
-    const validated = getConversationSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    const conversation = await ctx.db.get(validated.convId);
-    if (!conversation) throw new ConvexError("Conversation not found");
-    if (conversation.userId !== userId) throw new ConvexError("Unauthorized");
-
-    return conversation;
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch {
+      return { success: false, error: "token_verification_failed", message: "Authentication failed" };
+    }
+    const userId = payload.userId;
+    const conversation = await ctx.runQuery(internal.conversations.internal.getConversationById, {
+      conversationId: args.conversationId,
+    });
+    if (!conversation || conversation.userId !== userId) {
+      return { success: false, error: "unauthorized", message: "Conversation not found" };
+    }
+    const limit = args.limit || 50;
+    const { items: messages, nextCursor, hasMore } = await ctx.runQuery(
+      internal.conversations.internal.getMessages,
+      { conversationId: args.conversationId, limit, cursor: args.cursor }
+    );
+    return {
+      success: true,
+      data: { conversation: { title: conversation.title, createdAt: conversation.createdAt }, messages, nextCursor, hasMore },
+    };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Get shared conversation by token (public)
-// -----------------------------------------------------------------------------
 export const getSharedConversation = query({
   args: {
-    token: v.string(),
+    shareToken: v.string(),
+    password: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("messages")),
   },
   handler: async (ctx, args) => {
-    const validated = getSharedConversationSchema.parse(args);
-
-    // Find the shared link
-    const sharedLink = await ctx.db
-      .query("sharedLinks")
-      .withIndex("by_token", (q: any) => q.eq("token", validated.token))
-      .first();
-
-    if (!sharedLink) throw new ConvexError("Invalid share link");
-    if (sharedLink.type !== "conversation") throw new ConvexError("Invalid share link type");
-
-    // Check expiration
-    if (sharedLink.expiresAt < Date.now()) {
-      throw new ConvexError("Share link has expired");
+    const link = await ctx.runQuery(internal.conversations.internal.getSharedLinkByToken, {
+      token: args.shareToken,
+    });
+    if (!link) {
+      return { success: false, error: "not_found", message: "Shared link not found or expired." };
     }
-
-    // Get the conversation
-    const conversation = await ctx.db.get(sharedLink.targetId as Id<"conversations">);
-    if (!conversation) throw new ConvexError("Conversation not found");
-
-    return conversation;
+    if (link.expiry < Date.now()) {
+      await ctx.runMutation(internal.conversations.internal.deleteSharedLink, { linkId: link._id });
+      return { success: false, error: "expired", message: "This shared link has expired." };
+    }
+    if (link.passwordHash) {
+      if (!args.password) {
+        return { success: false, error: "password_required", message: "Password required." };
+      }
+      const isValid = await ctx.runAction(internal.auth.helpers.comparePassword, {
+        password: args.password,
+        hash: link.passwordHash,
+      });
+      if (!isValid) {
+        return { success: false, error: "invalid_password", message: "Incorrect password." };
+      }
+    }
+    const conversation = await ctx.runQuery(internal.conversations.internal.getConversationById, {
+      conversationId: link.targetId as any,
+    });
+    if (!conversation) {
+      return { success: false, error: "not_found", message: "Conversation no longer exists." };
+    }
+    const limit = args.limit || 50;
+    const { items: messages, nextCursor, hasMore } = await ctx.runQuery(
+      internal.conversations.internal.getMessages,
+      { conversationId: conversation._id, limit, cursor: args.cursor }
+    );
+    // Strip user ID
+    const { userId, ...safeConversation } = conversation;
+    return {
+      success: true,
+      data: { conversation: safeConversation, messages, nextCursor, hasMore },
+    };
   },
 });

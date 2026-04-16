@@ -1,19 +1,40 @@
+// convex/users/internal.ts
+import { internalMutation, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
-import { internalQuery } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
-
-export const getProfile = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-    return await ctx.db.get(identity.subject as Id<"users">);
-  },
-});
 
 export const getUserById = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.userId);
+  },
+});
+
+export const updateUserById = internalMutation({
+  args: {
+    userId: v.id("users"),
+    updates: v.object({
+      name: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      isLocked: v.optional(v.boolean()),
+      trialUsed: v.optional(v.boolean()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, args.updates);
+  },
+});
+
+export const deleteUserById = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.userId);
+  },
+});
+
+export const getUserDevices = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    return user?.devices || [];
   },
 });

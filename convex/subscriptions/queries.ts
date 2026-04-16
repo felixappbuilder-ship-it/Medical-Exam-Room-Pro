@@ -1,78 +1,65 @@
+// convex/subscriptions/queries.ts
 import { query } from "../_generated/server";
-import { ConvexError } from "convex/values";
 import { v } from "convex/values";
-import { Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 
-// -----------------------------------------------------------------------------
-// Get Available Plans from AppConfig
-// -----------------------------------------------------------------------------
 export const getPlans = query({
   args: {},
   handler: async (ctx) => {
-    const config = await ctx.db.get("config" as Id<"appConfig">);
+    // Public: read from appConfig singleton
+    const config = await ctx.db.query("appConfig").first();
     if (!config) {
-      // Fallback default plans if config not set
-      return [
-        { id: "monthly", price: 500, durationDays: 30 },
-        { id: "quarterly", price: 1350, durationDays: 90 },
-        { id: "yearly", price: 4800, durationDays: 365 },
-      ];
+      return {
+        success: false,
+        error: "config_not_found",
+        message: "System configuration missing.",
+      };
     }
-    return config.plans;
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Get Current User's Subscription Status
-// -----------------------------------------------------------------------------
-export const getSubscriptionStatus = query({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    const subscription = await ctx.db
-      .query("subscriptions")
-      .withIndex("by_userId", (q: any) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!subscription) return null;
-
-    // Check if expired and update isActive if needed
-    const now = Date.now();
-    if (subscription.expiryDate < now && subscription.isActive) {
-      // Automatically deactivate expired subscription
-      await ctx.db.patch(subscription._id, { isActive: false });
-      subscription.isActive = false;
-    }
-
-    return subscription;
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Quick Check for Access (used by frontend)
-// -----------------------------------------------------------------------------
-export const checkSubscription = query({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-
-    const subscription = await ctx.db
-      .query("subscriptions")
-      .withIndex("by_userId", (q: any) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!subscription) return { hasAccess: false };
-
-    const now = Date.now();
-    const hasAccess = subscription.isActive && subscription.expiryDate > now;
-
     return {
-      hasAccess,
-      expiryDate: subscription.expiryDate,
-      plan: subscription.plan,
+      success: true,
+      data: { plans: config.subscriptionPlans },
+    };
+  },
+});
+
+export const getSubscriptionStatus = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    // Verify JWT
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
+    }
+
+    const userId = payload.userId;
+    const subscription = await ctx.runQuery(
+      internal.subscriptions.internal.getActiveSubscriptionByUserId,
+      { userId }
+    );
+
+    const hasAccess = subscription !== null && subscription.expiryDate > Date.now();
+    return {
+      success: true,
+      data: {
+        hasAccess,
+        expiryDate: subscription?.expiryDate || null,
+        plan: subscription?.plan || null,
+        status: subscription?.status || "none",
+      },
     };
   },
 });

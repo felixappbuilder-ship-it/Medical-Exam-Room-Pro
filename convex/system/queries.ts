@@ -1,35 +1,29 @@
+// convex/system/queries.ts
 import { query } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Id } from "../_generated/dataModel";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-// -----------------------------------------------------------------------------
-// Get Public App Configuration
-// -----------------------------------------------------------------------------
 export const getAppConfig = query({
   args: {},
   handler: async (ctx) => {
-    const config = await ctx.db.get("config" as Id<"appConfig">);
+    const config = await ctx.runQuery(internal.system.internal.getAppConfig, {});
     if (!config) {
-      // Return default config if not set
       return {
-        trialDuration: 3, // hours
-        plans: [
-          { id: "monthly", price: 500, durationDays: 30 },
-          { id: "quarterly", price: 1350, durationDays: 90 },
-          { id: "yearly", price: 4800, durationDays: 365 },
-        ],
-        systemLocked: false,
-        maintenanceMode: false,
-        paymentsFrozen: false,
+        success: false,
+        error: "config_not_found",
+        message: "System configuration missing.",
       };
     }
-    // Return only public fields (all fields are public except maybe sensitive ones)
+    // Return public subset (exclude paymentsFrozen if not needed? blueprint says return subset but we can keep for frontend)
+    // However to be safe, return all except sensitive internal flags? Blueprint says return maintenanceMode.
     return {
-      trialDuration: config.trialDuration,
-      plans: config.plans,
-      systemLocked: config.systemLocked,
-      maintenanceMode: config.maintenanceMode,
-      paymentsFrozen: config.paymentsFrozen,
+      success: true,
+      data: {
+        trialDurationHours: config.trialDurationHours,
+        maintenanceMode: config.maintenanceMode,
+        subscriptionPlans: config.subscriptionPlans,
+        maxRequestsPerMinute: config.maxRequestsPerMinute,
+      },
     };
   },
 });

@@ -1,149 +1,167 @@
-import { v } from "convex/values";
+// convex/notes/queries.ts
 import { query } from "../_generated/server";
-import { ConvexError } from "convex/values";
-import { Doc, Id } from "../_generated/dataModel";
-import { z } from "zod";
+import { v } from "convex/values";
+import { internal } from "../_generated/api";
 
-const getNoteSchema = z.object({
-  noteId: v.id("notes"),
-});
-
-const getUserNotesSchema = z.object({
-  subject: v.optional(v.string()),
-  topic: v.optional(v.string()),
-  tag: v.optional(v.string()),
-});
-
-const getNoteByShareTokenSchema = z.object({
-  token: v.string(),
-});
-
-// -----------------------------------------------------------------------------
-// Get Note by ID (authenticated, user must own the note)
-// -----------------------------------------------------------------------------
 export const getNote = query({
   args: {
+    token: v.string(),
     noteId: v.id("notes"),
   },
   handler: async (ctx, args) => {
-    const validated = getNoteSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    const note = await ctx.db.get(validated.noteId);
-    if (!note) return null;
-
-    // User must own the note to view it (unless public sharing, but that's separate endpoint)
-    if (note.userId !== userId) throw new ConvexError("Unauthorized");
-
-    return note;
-  },
-});
-
-// -----------------------------------------------------------------------------
-// List User's Notes with optional filters
-// -----------------------------------------------------------------------------
-export const getUserNotes = query({
-  args: {
-    subject: v.optional(v.string()),
-    topic: v.optional(v.string()),
-    tag: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const validated = getUserNotesSchema.parse(args);
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
-
-    let query = ctx.db
-      .query("notes")
-      .withIndex("by_userId", (q: any) => q.eq("userId", userId))
-      .order("desc");
-
-    const notes = await query.collect();
-
-    // Apply optional filters in memory
-    let filtered = notes;
-    if (validated.subject) {
-      filtered = filtered.filter((n) => n.subject === validated.subject);
-    }
-    if (validated.topic) {
-      filtered = filtered.filter((n) => n.topic === validated.topic);
-    }
-    if (validated.tag) {
-      filtered = filtered.filter((n) => n.tags.includes(validated.tag!));
-    }
-
-    return filtered;
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Get Note by Share Token (public access)
-// -----------------------------------------------------------------------------
-export const getNoteByShareToken = query({
-  args: {
-    token: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const validated = getNoteByShareTokenSchema.parse(args);
-
-    // First find the shared link
-    const sharedLink = await ctx.db
-      .query("sharedLinks")
-      .withIndex("by_token", (q: any) => q.eq("token", validated.token))
-      .first();
-
-    if (!sharedLink) throw new ConvexError("Invalid or expired share link");
-
-    // Check expiration
-    if (sharedLink.expiresAt < Date.now()) {
-      throw new ConvexError("Share link has expired");
-    }
-
-    // Get the note
-    const note = await ctx.db.get(sharedLink.targetId as Id<"notes">);
-    if (!note) throw new ConvexError("Note not found");
-
-    // If note is password protected, we cannot return content here;
-    // frontend should prompt for password and then fetch content with password.
-    // For now, return note without content if protected.
-    if (note.isProtected) {
-      // Return limited info: title, subject, topic, etc., but not content
-      const { content, ...rest } = note;
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
       return {
-        ...rest,
-        content: null, // indicate that password is required
-        requiresPassword: true,
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
       };
     }
 
-    return note;
+    const userId = payload.userId;
+    const note = await ctx.runQuery(internal.notes.internal.getNoteById, { noteId: args.noteId });
+    if (!note || note.userId !== userId) {
+      return {
+        success: false,
+        error: "unauthorized",
+        message: "Note not found or you do not own it.",
+      };
+    }
+
+    // Remove password hash from response
+    const { passwordHash, ...safeNote } = note;
+    return {
+      success: true,
+      data: { note: safeNote },
+    };
   },
 });
 
-// -----------------------------------------------------------------------------
-// Export Note as HTML (returns the content as plain HTML string)
-// -----------------------------------------------------------------------------
-export const exportNoteHTML = query({
+export const getUserNotes = query({
   args: {
-    noteId: v.id("notes"),
+    token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("notes")),
   },
   handler: async (ctx, args) => {
-    const validated = getNoteSchema.parse(args); // reuse schema
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      payload = result.data;
+    } catch (err) {
+      return {
+        success: false,
+        error: "token_verification_failed",
+        message: "Failed to verify authentication token.",
+      };
+    }
 
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Not authenticated");
-    const userId = identity.subject as Id<"users">;
+    const userId = payload.userId;
+    const limit = args.limit || 20;
+    const { items, nextCursor, hasMore } = await ctx.runQuery(
+      internal.notes.internal.getUserNotes,
+      {
+        userId,
+        limit,
+        cursor: args.cursor,
+      }
+    );
 
-    const note = await ctx.db.get(validated.noteId);
-    if (!note) throw new ConvexError("Note not found");
-    if (note.userId !== userId) throw new ConvexError("Unauthorized");
+    // Strip passwordHash from each note
+    const safeNotes = items.map((note) => {
+      const { passwordHash, ...rest } = note;
+      return rest;
+    });
 
-    // Return the HTML content as string
-    return note.content;
+    return {
+      success: true,
+      data: {
+        notes: safeNotes,
+        nextCursor,
+        hasMore,
+      },
+    };
+  },
+});
+
+export const getNoteByShareToken = query({
+  args: {
+    shareToken: v.string(),
+    password: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const link = await ctx.runQuery(internal.notes.internal.getSharedLinkByToken, {
+      token: args.shareToken,
+    });
+    if (!link) {
+      return {
+        success: false,
+        error: "not_found",
+        message: "Shared link not found or expired.",
+      };
+    }
+    if (link.expiry < Date.now()) {
+      await ctx.runMutation(internal.notes.internal.deleteSharedLink, { linkId: link._id });
+      return {
+        success: false,
+        error: "expired",
+        message: "This shared link has expired.",
+      };
+    }
+    if (link.passwordHash) {
+      if (!args.password) {
+        return {
+          success: false,
+          error: "password_required",
+          message: "This shared note is password protected.",
+        };
+      }
+      const isValid = await ctx.runAction(internal.auth.helpers.comparePassword, {
+        password: args.password,
+        hash: link.passwordHash,
+      });
+      if (!isValid) {
+        return {
+          success: false,
+          error: "invalid_password",
+          message: "Incorrect password.",
+        };
+      }
+    }
+
+    const note = await ctx.runQuery(internal.notes.internal.getNoteById, {
+      noteId: link.targetId as any,
+    });
+    if (!note) {
+      return {
+        success: false,
+        error: "not_found",
+        message: "The note no longer exists.",
+      };
+    }
+
+    // Return note without user ID or password hash
+    const { userId, passwordHash, ...safeNote } = note;
+    return {
+      success: true,
+      data: { note: safeNote },
+    };
   },
 });
