@@ -1,190 +1,137 @@
-// convex/examResults/queries.ts
-import { query } from "../_generated/server";
+import { query, action } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 
-export const getExamHistory = query({
+async function verifyTokenAndGetUser(ctx: any, token: string) {
+  const result = await ctx.runAction(internal.auth.actions.verifyToken, { token });
+  if (!result.success) throw new Error(result.message);
+  const user = await ctx.runQuery(internal.auth.internal.getUserById, { userId: result.data.userId });
+  if (!user) throw new Error("User not found");
+  return user;
+}
+
+export const getExamHistory = action({
   args: {
     token: v.string(),
     limit: v.optional(v.number()),
     cursor: v.optional(v.id("examResults")),
   },
   handler: async (ctx, args) => {
-    let payload;
     try {
-      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
-      if (!result.success) {
-        return {
-          success: false,
-          error: "invalid_token",
-          message: result.message,
-        };
-      }
-      payload = result.data;
+      const user = await verifyTokenAndGetUser(ctx, args.token);
+      const limit = args.limit || 50;
+      const { items, nextCursor, hasMore } = await ctx.runQuery(
+        internal.examResults.internal.getExamResultsByUser,
+        { userId: user._id, limit, cursor: args.cursor }
+      );
+      const results = items.map((result) => ({
+        _id: result._id,
+        examId: result.examId,
+        userId: result.userId,
+        subject: result.subject || '',
+        mode: result.mode || '',
+        date: result.date || new Date(result.createdAt).toISOString(),
+        totalQuestions: result.totalQuestions || 0,
+        correctAnswers: result.correctAnswers || 0,
+        scorePercentage: result.scorePercentage || 0,
+        timeSpent: result.timeSpent || 0,
+        averageTimePerQuestion: result.averageTimePerQuestion || 0,
+        questions: result.questions || [],
+        topicPerformance: result.topicPerformance || [],
+        weakAreas: result.weakAreas || [],
+        completedAt: result.createdAt,
+        updatedAt: result.updatedAt || result.createdAt,
+      }));
+      return { success: true, data: { results, nextCursor, hasMore } };
     } catch (err) {
-      return {
-        success: false,
-        error: "token_verification_failed",
-        message: "Failed to verify authentication token.",
-      };
+      console.error("[getExamHistory] Error:", err);
+      return { success: false, error: err.message || "Failed to fetch exam history", message: err.message };
     }
-
-    const userId = payload.userId;
-    const limit = args.limit || 20;
-    const { items, nextCursor, hasMore } = await ctx.runQuery(
-      internal.examResults.internal.getExamResultsByUser,
-      {
-        userId,
-        limit,
-        cursor: args.cursor,
-      }
-    );
-
-    // For each exam result, optionally include answers summary (not full answers to save bandwidth)
-    const enriched = items.map((result) => ({
-      _id: result._id,
-      examId: result.examId,
-      score: result.score,
-      weakAreas: result.weakAreas,
-      completedAt: result.createdAt,
-    }));
-
-    return {
-      success: true,
-      data: {
-        results: enriched,
-        nextCursor,
-        hasMore,
-      },
-    };
   },
 });
 
-export const getExamResult = query({
-  args: {
-    token: v.string(),
-    examResultId: v.id("examResults"),
-  },
+export const getExamResult = action({
+  args: { token: v.string(), examResultId: v.id("examResults") },
   handler: async (ctx, args) => {
-    let payload;
     try {
-      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
-      if (!result.success) {
-        return {
-          success: false,
-          error: "invalid_token",
-          message: result.message,
-        };
+      const user = await verifyTokenAndGetUser(ctx, args.token);
+      const examResult = await ctx.runQuery(internal.examResults.internal.getExamResultById, {
+        examResultId: args.examResultId,
+      });
+      if (!examResult || examResult.userId !== user._id) {
+        return { success: false, error: "unauthorized", message: "You do not have access to this exam result." };
       }
-      payload = result.data;
-    } catch (err) {
-      return {
-        success: false,
-        error: "token_verification_failed",
-        message: "Failed to verify authentication token.",
-      };
-    }
-
-    const userId = payload.userId;
-    const examResult = await ctx.runQuery(internal.examResults.internal.getExamResultById, {
-      examResultId: args.examResultId,
-    });
-    if (!examResult || examResult.userId !== userId) {
-      return {
-        success: false,
-        error: "unauthorized",
-        message: "You do not have access to this exam result.",
-      };
-    }
-
-    // Fetch answers from normalized table
-    const answers = await ctx.db
-      .query("examAnswers")
-      .withIndex("by_examResultId", (q) => q.eq("examResultId", args.examResultId))
-      .collect();
-
-    return {
-      success: true,
-      data: {
+      const answers = await ctx.db
+        .query("examAnswers")
+        .withIndex("by_examResultId", (q) => q.eq("examResultId", args.examResultId))
+        .collect();
+      const resultData = {
+        _id: examResult._id,
         examId: examResult.examId,
-        score: examResult.score,
-        topicPerformance: examResult.topicPerformance,
-        weakAreas: examResult.weakAreas,
+        userId: examResult.userId,
+        subject: examResult.subject || '',
+        mode: examResult.mode || '',
+        date: examResult.date || new Date(examResult.createdAt).toISOString(),
+        totalQuestions: examResult.totalQuestions || 0,
+        correctAnswers: examResult.correctAnswers || 0,
+        scorePercentage: examResult.scorePercentage || 0,
+        timeSpent: examResult.timeSpent || 0,
+        averageTimePerQuestion: examResult.averageTimePerQuestion || 0,
+        questions: examResult.questions || [],
+        topicPerformance: examResult.topicPerformance || [],
+        weakAreas: examResult.weakAreas || [],
         completedAt: examResult.createdAt,
+        updatedAt: examResult.updatedAt || examResult.createdAt,
         answers: answers.map((a) => ({
           questionId: a.questionId,
           selectedAnswer: a.selectedAnswer,
           isCorrect: a.isCorrect,
           timeSpent: a.timeSpent,
         })),
-      },
-    };
+      };
+      return { success: true, data: resultData };
+    } catch (err) {
+      console.error("[getExamResult] Error:", err);
+      return { success: false, error: err.message || "Failed to fetch exam result", message: err.message };
+    }
   },
 });
 
 export const getSharedExam = query({
-  args: {
-    shareToken: v.string(),
-    password: v.optional(v.string()),
-  },
+  args: { shareToken: v.string(), password: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const link = await ctx.runQuery(internal.examResults.internal.getSharedLinkByToken, {
       token: args.shareToken,
     });
     if (!link) {
-      return {
-        success: false,
-        error: "not_found",
-        message: "Shared link not found or expired.",
-      };
+      return { success: false, error: "not_found", message: "Shared link not found or expired." };
     }
     if (link.expiry < Date.now()) {
-      // Expired – optionally delete
       await ctx.runMutation(internal.examResults.internal.deleteSharedLink, { linkId: link._id });
-      return {
-        success: false,
-        error: "expired",
-        message: "This shared link has expired.",
-      };
+      return { success: false, error: "expired", message: "This shared link has expired." };
     }
     if (link.passwordHash) {
       if (!args.password) {
-        return {
-          success: false,
-          error: "password_required",
-          message: "This shared exam is password protected.",
-        };
+        return { success: false, error: "password_required", message: "This shared exam is password protected." };
       }
       const isValid = await ctx.runAction(internal.auth.helpers.comparePassword, {
         password: args.password,
         hash: link.passwordHash,
       });
       if (!isValid) {
-        return {
-          success: false,
-          error: "invalid_password",
-          message: "Incorrect password.",
-        };
+        return { success: false, error: "invalid_password", message: "Incorrect password." };
       }
     }
-
     const examResult = await ctx.runQuery(internal.examResults.internal.getExamResultById, {
       examResultId: link.targetId as any,
     });
     if (!examResult) {
-      return {
-        success: false,
-        error: "not_found",
-        message: "The exam result no longer exists.",
-      };
+      return { success: false, error: "not_found", message: "The exam result no longer exists." };
     }
-
-    // Do NOT include user identifying info
     const answers = await ctx.db
       .query("examAnswers")
       .withIndex("by_examResultId", (q) => q.eq("examResultId", link.targetId))
       .collect();
-
     return {
       success: true,
       data: {
@@ -192,6 +139,7 @@ export const getSharedExam = query({
         topicPerformance: examResult.topicPerformance,
         weakAreas: examResult.weakAreas,
         completedAt: examResult.createdAt,
+        questions: examResult.questions || [],
         answers: answers.map((a) => ({
           questionId: a.questionId,
           selectedAnswer: a.selectedAnswer,

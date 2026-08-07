@@ -21,10 +21,33 @@ export const deleteSharedLink = internalMutation({
   },
 });
 
+// Fetch singleton – first document in the table (there will be only one)
 export const getAppConfig = internalQuery({
   args: {},
   handler: async (ctx) => {
     return await ctx.db.query("appConfig").first();
+  },
+});
+
+// Ensure singleton exists with fixed ID "config"
+export const ensureAppConfig = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const existing = await ctx.db.query("appConfig").first();
+    if (!existing) {
+      // Insert with custom ID "config" to allow direct lookup if needed
+      await ctx.db.insert("appConfig", {
+        trialDurationHours: 3,
+        maintenanceMode: false,
+        subscriptionPlans: [
+          { name: "1 Month", price: 350, days: 30 },
+          { name: "3 Months", price: 850, days: 90 },
+          { name: "1 Year", price: 2100, days: 365 },
+        ],
+        paymentsFrozen: false,
+        maxRequestsPerMinute: 60,
+      }, { id: "config" }); // ✅ Explicitly set document ID to "config"
+    }
   },
 });
 
@@ -41,18 +64,12 @@ export const updateAppConfigInternal = internalMutation({
     }),
   },
   handler: async (ctx, args) => {
-    const config = await ctx.db.query("appConfig").first();
+    // Ensure config exists (creates with ID "config" if missing)
+    await ctx.runMutation(internal.system.internal.ensureAppConfig, {});
+    const config = await ctx.db.get("config" as any); // Now safe because we inserted with that ID
     if (!config) {
-      await ctx.db.insert("appConfig", {
-        _id: "config",
-        trialDurationHours: args.updates.trialDurationHours ?? 3,
-        maintenanceMode: args.updates.maintenanceMode ?? false,
-        subscriptionPlans: args.updates.subscriptionPlans ?? [],
-        paymentsFrozen: args.updates.paymentsFrozen ?? false,
-        maxRequestsPerMinute: args.updates.maxRequestsPerMinute ?? 60,
-      });
-    } else {
-      await ctx.db.patch(config._id, args.updates);
+      throw new Error("AppConfig still missing after seeding");
     }
+    await ctx.db.patch(config._id, args.updates);
   },
 });

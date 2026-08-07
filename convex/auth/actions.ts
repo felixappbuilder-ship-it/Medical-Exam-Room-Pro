@@ -4,8 +4,10 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
-import { ConvexError } from "convex/values";
 
+// ============================================================
+// REGISTER (with referral, isAgent, agentVerified)
+// ============================================================
 export const register = action({
   args: {
     name: v.string(),
@@ -19,9 +21,12 @@ export const register = action({
       })
     ),
     deviceFingerprint: v.string(),
+    deviceInfo: v.optional(v.any()),
+    referralCode: v.optional(v.string()),
+    isAgent: v.optional(v.boolean()),
+    agentVerified: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    // Rate limiting check (R15)
     const now = Date.now();
     const resetAt = now + 60 * 1000;
     const rateKey = `register_${args.deviceFingerprint}`;
@@ -42,7 +47,6 @@ export const register = action({
       resetAt,
     });
 
-    // Check existing user by email or phone (R2 manual uniqueness)
     const existingByEmail = await ctx.runQuery(internal.auth.internal.getUserByEmail, {
       email: args.email,
     });
@@ -64,7 +68,6 @@ export const register = action({
       };
     }
 
-    // Hash password and security answers
     const passwordHash = await ctx.runAction(internal.auth.helpers.hashPassword, {
       password: args.password,
     });
@@ -77,31 +80,70 @@ export const register = action({
       }))
     );
 
-    // Create user
+    const baseName = args.name.replace(/\s+/g, "");
+    // Ensure username uniqueness – this mutation is defined in challenges/internal.ts
+    const username = await ctx.runMutation(internal.challenges.internal.generateUniqueUsername, {
+      baseName,
+    });
+    const displayName = args.name;
+
+    // ============================================================
+    // REFERRAL HANDLING
+    // ============================================================
+    // Generate a new referral code for the user (always, even if no referrer)
+    const referralCode = await ctx.runMutation(internal.users.internal.generateUniqueReferralCode, {});
+
+    let referredBy: string | undefined = undefined;
+    if (args.referralCode) {
+      const referrer = await ctx.runQuery(internal.users.internal.getUserByReferralCode, {
+        referralCode: args.referralCode,
+      });
+      if (referrer) {
+        referredBy = referrer._id;
+      }
+    }
+
+    const isAgent = args.isAgent || false;
+    const agentVerified = args.agentVerified || false;
+
+    // Insert user with all fields
     const userId = await ctx.runMutation(internal.auth.internal.insertUser, {
       name: args.name,
       email: args.email,
       phone: args.phone,
       passwordHash,
       securityQuestions: hashedQuestions,
+      username,
+      displayName,
+      referralCode,               // always a string (generated)
+      referredBy,
+      isAgent,
+      agentVerified,
+      referralBalance: 0,
+      totalEarned: 0,
+      pendingBalance: 0,
     });
 
-    // Add device (R22)
     await ctx.runMutation(internal.auth.internal.addDevice, {
       userId,
       fingerprint: args.deviceFingerprint,
       lastUsed: now,
     });
 
-    // Log registration (R16)
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
       actorId: userId,
       action: "user_register",
       targetId: userId,
-      details: { email: args.email, phone: args.phone },
+      details: {
+        email: args.email,
+        phone: args.phone,
+        deviceInfo: args.deviceInfo,
+        referralCode: args.referralCode,
+        isAgent: args.isAgent,
+        agentVerified: args.agentVerified,
+      },
     });
 
-    // Generate JWT
     const token = await ctx.runAction(internal.auth.helpers.signJWT, {
       payload: { userId, email: args.email, role: "user" },
       expiresIn: "30d",
@@ -109,20 +151,33 @@ export const register = action({
 
     return {
       success: true,
-      data: { token, userId, name: args.name, email: args.email },
+      data: {
+        token,
+        userId,
+        name: args.name,
+        email: args.email,
+        username,
+        displayName,
+        referralCode,
+        isAgent,
+        agentVerified,
+      },
     };
   },
 });
 
+// ============================================================
+// LOGIN – with session management & single-device enforcement
+// ============================================================
 export const login = action({
   args: {
-    identifier: v.string(), // email or phone
+    identifier: v.string(),
     password: v.string(),
     deviceFingerprint: v.string(),
+    deviceInfo: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    // Rate limiting (R15)
     const rateKey = `login_${args.identifier}`;
     const rateRecord = await ctx.runQuery(internal.auth.internal.getRateLimit, {
       key: rateKey,
@@ -141,7 +196,6 @@ export const login = action({
       };
     }
 
-    // Find user by email or phone
     let user = await ctx.runQuery(internal.auth.internal.getUserByEmail, { email: args.identifier });
     if (!user) {
       user = await ctx.runQuery(internal.auth.internal.getUserByPhone, { phone: args.identifier });
@@ -159,7 +213,6 @@ export const login = action({
       };
     }
 
-    // Check if account is locked (R21)
     if (user.isLocked) {
       return {
         success: false,
@@ -168,7 +221,6 @@ export const login = action({
       };
     }
 
-    // Verify password
     const isValid = await ctx.runAction(internal.auth.helpers.comparePassword, {
       password: args.password,
       hash: user.passwordHash,
@@ -191,7 +243,26 @@ export const login = action({
       };
     }
 
-    // Device change event (R22)
+    // ---- SESSION MANAGEMENT ----
+    const existingSession = await ctx.runQuery(internal.auth.internal.getSessionByDeviceId, {
+      deviceId: args.deviceFingerprint,
+    });
+    if (existingSession && existingSession.userId !== user._id) {
+      await ctx.runMutation(internal.auth.internal.revokeAllSessions, { userId: existingSession.userId });
+    }
+    const activeSession = await ctx.runQuery(internal.auth.internal.getActiveSession, { userId: user._id });
+    if (activeSession && activeSession.deviceId !== args.deviceFingerprint) {
+      await ctx.runMutation(internal.auth.internal.revokeSession, { sessionId: activeSession.sessionId });
+    }
+
+    const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
+      userId: user._id,
+      deviceId: args.deviceFingerprint,
+      deviceFingerprint: args.deviceFingerprint,
+      platform: args.deviceInfo?.platform || "web",
+      expiresAt: now + 30 * 24 * 60 * 60 * 1000,
+    });
+
     const existingDevices = user.devices || [];
     const deviceExists = existingDevices.some((d) => d.fingerprint === args.deviceFingerprint);
     if (!deviceExists) {
@@ -207,39 +278,130 @@ export const login = action({
       lastUsed: now,
     });
 
-    // Log successful login (R16)
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
       actorId: user._id,
       action: "user_login",
       targetId: user._id,
-      details: { deviceFingerprint: args.deviceFingerprint },
+      details: { deviceFingerprint: args.deviceFingerprint, sessionId },
     });
 
-    // Generate JWT
+    const userRole = user.role || "user";
     const token = await ctx.runAction(internal.auth.helpers.signJWT, {
-      payload: { userId: user._id, email: user.email, role: "user" },
+      payload: { userId: user._id, email: user.email, role: userRole, sessionId },
       expiresIn: "30d",
     });
 
     return {
       success: true,
-      data: { token, userId: user._id, name: user.name, email: user.email },
+      data: {
+        token,
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: userRole,
+        username: user.username,
+        displayName: user.displayName,
+        sessionId,
+        isNewDevice: !deviceExists,
+      },
     };
   },
 });
 
+// ============================================================
+// VERIFY TOKEN
+// ============================================================
 export const verifyToken = action({
   args: { token: v.string() },
   handler: async (ctx, args) => {
     try {
       const payload = await ctx.runAction(internal.auth.helpers.verifyJWT, { token: args.token });
+      if (payload.sessionId) {
+        const session = await ctx.runQuery(internal.auth.internal.getSessionBySessionId, {
+          sessionId: payload.sessionId,
+        });
+        if (!session || session.revoked) {
+          return { success: false, error: "session_expired", message: "Session revoked or expired." };
+        }
+        await ctx.runMutation(internal.auth.internal.updateSessionLastSeen, {
+          sessionId: payload.sessionId,
+          lastSeen: Date.now(),
+        });
+      }
       return { success: true, data: payload };
     } catch (err) {
-      return { success: false, error: "invalid_token", message: "Token is invalid or expired." };
+      const errorMessage = err instanceof Error ? err.message : "Token is invalid or expired.";
+      console.error("[verifyToken] Verification failed:", errorMessage);
+      return { success: false, error: "invalid_token", message: errorMessage };
     }
   },
 });
 
+// ============================================================
+// CHANGE PASSWORD
+// ============================================================
+export const changePassword = action({
+  args: {
+    token: v.string(),
+    currentPassword: v.string(),
+    newPassword: v.string(),
+  },
+  handler: async (ctx, args) => {
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch (err) {
+      return { success: false, error: "token_verification_failed", message: "Invalid token." };
+    }
+
+    const userId = payload.userId;
+    const user = await ctx.runQuery(internal.auth.internal.getUserById, { userId });
+    if (!user) {
+      return { success: false, error: "user_not_found", message: "User not found." };
+    }
+
+    const isValid = await ctx.runAction(internal.auth.helpers.comparePassword, {
+      password: args.currentPassword,
+      hash: user.passwordHash,
+    });
+    if (!isValid) {
+      await ctx.runMutation(internal.auth.internal.logSecurityEvent, {
+        userId: user._id,
+        eventType: "failed_password_change",
+        metadata: {},
+      });
+      return { success: false, error: "invalid_password", message: "Current password is incorrect." };
+    }
+
+    const newHash = await ctx.runAction(internal.auth.helpers.hashPassword, {
+      password: args.newPassword,
+    });
+
+    await ctx.runMutation(internal.auth.internal.updateUser, {
+      userId,
+      updates: { passwordHash: newHash },
+    });
+
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "change_password",
+      targetId: userId,
+      details: {},
+    });
+
+    await ctx.runMutation(internal.auth.internal.revokeAllSessions, { userId });
+
+    return { success: true, data: { message: "Password changed successfully. You have been logged out from other devices." } };
+  },
+});
+
+// ============================================================
+// PASSWORD RESET FLOW
+// ============================================================
 export const resetPasswordRequest = action({
   args: { identifier: v.string(), securityAnswers: v.array(v.string()) },
   handler: async (ctx, args) => {
@@ -255,7 +417,6 @@ export const resetPasswordRequest = action({
       };
     }
 
-    // Verify security answers
     const storedQuestions = user.securityQuestions || [];
     if (storedQuestions.length !== args.securityAnswers.length) {
       return {
@@ -283,7 +444,6 @@ export const resetPasswordRequest = action({
       }
     }
 
-    // Generate a temporary reset token (short-lived)
     const resetToken = await ctx.runAction(internal.auth.helpers.signJWT, {
       payload: { userId: user._id, purpose: "password_reset" },
       expiresIn: "15m",
@@ -303,10 +463,12 @@ export const resetPasswordConfirm = action({
     try {
       payload = await ctx.runAction(internal.auth.helpers.verifyJWT, { token: args.resetToken });
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Reset token is invalid or expired.";
+      console.error("[resetPasswordConfirm] Token verification failed:", errorMessage);
       return {
         success: false,
         error: "invalid_token",
-        message: "Reset token is invalid or expired.",
+        message: errorMessage,
       };
     }
     if (payload.purpose !== "password_reset") {
@@ -336,5 +498,38 @@ export const resetPasswordConfirm = action({
       success: true,
       data: { message: "Password has been reset successfully." },
     };
+  },
+});
+
+export const verifySecurityAnswers = action({
+  args: {
+    identifier: v.string(),
+    answers: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const result = await resetPasswordRequest(ctx, {
+      identifier: args.identifier,
+      securityAnswers: args.answers,
+    });
+    if (!result.success) return result;
+    return {
+      success: true,
+      data: { resetToken: result.data.resetToken },
+    };
+  },
+});
+
+export const resetPassword = action({
+  args: {
+    identifier: v.string(),
+    newPassword: v.string(),
+    resetToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const result = await resetPasswordConfirm(ctx, {
+      resetToken: args.resetToken,
+      newPassword: args.newPassword,
+    });
+    return result;
   },
 });

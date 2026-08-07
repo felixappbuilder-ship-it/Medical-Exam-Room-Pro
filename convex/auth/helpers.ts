@@ -1,53 +1,65 @@
 // convex/auth/helpers.ts
 "use node";
 
+import { internalAction } from "../_generated/server";
+import { v } from "convex/values";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 const SALT_ROUNDS = 10;
 
-export const hashPassword = async ({ password }: { password: string }): Promise<string> => {
-  return await bcrypt.hash(password, SALT_ROUNDS);
-};
+export const hashPassword = internalAction({
+  args: { password: v.string() },
+  handler: async (_, args) => {
+    return await bcrypt.hash(args.password, SALT_ROUNDS);
+  },
+});
 
-export const comparePassword = async ({
-  password,
-  hash,
-}: {
-  password: string;
-  hash: string;
-}): Promise<boolean> => {
-  return await bcrypt.compare(password, hash);
-};
+export const comparePassword = internalAction({
+  args: { password: v.string(), hash: v.string() },
+  handler: async (_, args) => {
+    return await bcrypt.compare(args.password, args.hash);
+  },
+});
 
-export const hashSecurityAnswer = async ({ answer }: { answer: string }): Promise<string> => {
-  return await bcrypt.hash(answer.toLowerCase().trim(), SALT_ROUNDS);
-};
+export const hashSecurityAnswer = internalAction({
+  args: { answer: v.string() },
+  handler: async (_, args) => {
+    return await bcrypt.hash(args.answer.toLowerCase().trim(), SALT_ROUNDS);
+  },
+});
 
-export const compareSecurityAnswer = async ({
-  answer,
-  hash,
-}: {
-  answer: string;
-  hash: string;
-}): Promise<boolean> => {
-  return await bcrypt.compare(answer.toLowerCase().trim(), hash);
-};
+export const compareSecurityAnswer = internalAction({
+  args: { answer: v.string(), hash: v.string() },
+  handler: async (_, args) => {
+    return await bcrypt.compare(args.answer.toLowerCase().trim(), args.hash);
+  },
+});
 
-export const signJWT = async ({
-  payload,
-  expiresIn = "30d",
-}: {
-  payload: Record<string, any>;
-  expiresIn?: string;
-}): Promise<string> => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error("JWT_SECRET not set");
-  return jwt.sign(payload, secret, { expiresIn });
-};
+export const signJWT = internalAction({
+  args: { payload: v.any(), expiresIn: v.optional(v.string()) },
+  handler: async (_, args) => {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error("JWT_SECRET not set");
+    return jwt.sign(args.payload, secret, { expiresIn: args.expiresIn || "30d" });
+  },
+});
 
-export const verifyJWT = async ({ token }: { token: string }): Promise<any> => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error("JWT_SECRET not set");
-  return jwt.verify(token, secret);
-};
+export const verifyJWT = internalAction({
+  args: { token: v.string() },
+  handler: async (_, args) => {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      console.error("[verifyJWT] JWT_SECRET is NOT set in environment variables");
+      throw new Error("JWT_SECRET not set");
+    }
+    try {
+      const decoded = jwt.verify(args.token, secret);
+      return decoded;
+    } catch (err) {
+      console.error("[verifyJWT] Verification failed:", err.message);
+      // Re-throw with a clear message
+      throw new Error(`JWT verification error: ${err.message}`);
+    }
+  },
+});

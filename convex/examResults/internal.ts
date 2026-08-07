@@ -1,4 +1,3 @@
-// convex/examResults/internal.ts
 import { internalMutation, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 
@@ -16,11 +15,22 @@ export const upsertExamResult = internalMutation({
     ),
     weakAreas: v.array(v.string()),
     createdAt: v.number(),
+    subject: v.optional(v.string()),
+    mode: v.optional(v.string()),
+    date: v.optional(v.string()),
+    totalQuestions: v.optional(v.number()),
+    correctAnswers: v.optional(v.number()),
+    scorePercentage: v.optional(v.number()),
+    timeSpent: v.optional(v.number()),
+    averageTimePerQuestion: v.optional(v.number()),
+    questions: v.optional(v.array(v.any())),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("examResults")
-      .withIndex("by_userId_examId", (q) => q.eq("userId", args.userId).eq("examId", args.examId))
+      .withIndex("by_userId_examId", (q) =>
+        q.eq("userId", args.userId).eq("examId", args.examId)
+      )
       .first();
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -28,6 +38,15 @@ export const upsertExamResult = internalMutation({
         topicPerformance: args.topicPerformance,
         weakAreas: args.weakAreas,
         createdAt: args.createdAt,
+        subject: args.subject,
+        mode: args.mode,
+        date: args.date,
+        totalQuestions: args.totalQuestions,
+        correctAnswers: args.correctAnswers,
+        scorePercentage: args.scorePercentage,
+        timeSpent: args.timeSpent,
+        averageTimePerQuestion: args.averageTimePerQuestion,
+        questions: args.questions || [],
       });
       return existing._id;
     } else {
@@ -38,6 +57,15 @@ export const upsertExamResult = internalMutation({
         topicPerformance: args.topicPerformance,
         weakAreas: args.weakAreas,
         createdAt: args.createdAt,
+        subject: args.subject || '',
+        mode: args.mode || '',
+        date: args.date || new Date(args.createdAt).toISOString(),
+        totalQuestions: args.totalQuestions || 0,
+        correctAnswers: args.correctAnswers || 0,
+        scorePercentage: args.scorePercentage || 0,
+        timeSpent: args.timeSpent || 0,
+        averageTimePerQuestion: args.averageTimePerQuestion || 0,
+        questions: args.questions || [],
       });
       return id;
     }
@@ -71,7 +99,6 @@ export const getExamResultsByUser = internalQuery({
 export const deleteExamResultById = internalMutation({
   args: { examResultId: v.id("examResults") },
   handler: async (ctx, args) => {
-    // Also delete associated examAnswers
     const answers = await ctx.db
       .query("examAnswers")
       .withIndex("by_examResultId", (q) => q.eq("examResultId", args.examResultId))
