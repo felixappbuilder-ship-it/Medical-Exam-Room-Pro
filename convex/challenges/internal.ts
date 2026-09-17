@@ -3,7 +3,7 @@ import { internalMutation, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 
 // ============================================================
-// 1. CREATE CHALLENGE  (no challengeId – uses auto-generated _id)
+// 1. CREATE CHALLENGE
 // ============================================================
 export const createChallenge = internalMutation({
   args: {
@@ -71,7 +71,7 @@ export const updateChallengeStatus = internalMutation({
 });
 
 // ============================================================
-// 5. CREATE RESULT
+// 5. CREATE RESULT (alias: insertResult for compatibility)
 // ============================================================
 export const createResult = internalMutation({
   args: {
@@ -81,17 +81,51 @@ export const createResult = internalMutation({
     percentage: v.number(),
     timeSpent: v.number(),
     submittedAt: v.number(),
+    difficultyFactor: v.optional(v.number()),
+    totalQuestions: v.optional(v.number()),
+    pr: v.optional(v.number()),
+    ratingBefore: v.optional(v.number()),
+    ratingAfter: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const id = await ctx.db.insert("results", args);
+    const id = await ctx.db.insert("results", {
+      challengeId: args.challengeId,
+      userId: args.userId,
+      score: args.score,
+      percentage: args.percentage,
+      timeSpent: args.timeSpent,
+      submittedAt: args.submittedAt,
+      difficultyFactor: args.difficultyFactor,
+      totalQuestions: args.totalQuestions,
+      pr: args.pr,
+      ratingBefore: args.ratingBefore,
+      ratingAfter: args.ratingAfter,
+    });
     return id;
   },
 });
 
+// Alias for createResult
+export const insertResult = createResult;
+
 // ============================================================
-// 6. GET RESULTS BY CHALLENGE
+// 6. GET RESULT BY CHALLENGE AND USER
 // ============================================================
-export const getResultsByChallenge = internalQuery({
+export const getResultByChallengeAndUser = internalQuery({
+  args: { challengeId: v.id("challenges"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("results")
+      .withIndex("by_challenge", (q) => q.eq("challengeId", args.challengeId))
+      .filter((q) => q.eq(q.field("userId"), args.userId))
+      .first();
+  },
+});
+
+// ============================================================
+// 7. GET RESULTS BY CHALLENGE ID
+// ============================================================
+export const getResultsByChallengeId = internalQuery({
   args: { challengeId: v.id("challenges") },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -102,7 +136,87 @@ export const getResultsByChallenge = internalQuery({
 });
 
 // ============================================================
-// 7. CREATE INVITATION
+// 8. GET CHALLENGES BY STATUS AND CREATED AT (for cron)
+// ============================================================
+export const getChallengesByStatusAndCreatedAt = internalQuery({
+  args: { status: v.string(), olderThan: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("challenges")
+      .withIndex("by_status_expires", (q) => q.eq("status", args.status))
+      .filter((q) => q.lt(q.field("createdAt"), args.olderThan))
+      .collect();
+  },
+});
+
+// ============================================================
+// 9. GET PARTICIPANTS BY CHALLENGE ID
+// ============================================================
+export const getParticipantsByChallengeId = internalQuery({
+  args: { challengeId: v.id("challenges") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("challengeParticipants")
+      .withIndex("by_challengeId", (q) => q.eq("challengeId", args.challengeId))
+      .collect();
+  },
+});
+
+// ============================================================
+// 10. GET PARTICIPANTS WITH DETAILS (user data + results)
+// ============================================================
+export const getParticipantsWithDetails = internalQuery({
+  args: { challengeId: v.id("challenges") },
+  handler: async (ctx, args) => {
+    const participants = await ctx.db
+      .query("challengeParticipants")
+      .withIndex("by_challengeId", (q) => q.eq("challengeId", args.challengeId))
+      .collect();
+    const results = await ctx.db
+      .query("results")
+      .withIndex("by_challenge", (q) => q.eq("challengeId", args.challengeId))
+      .collect();
+
+    const userMap = new Map();
+    for (const p of participants) {
+      const user = await ctx.db.get(p.userId);
+      if (user) userMap.set(user._id, user);
+    }
+
+    const list = participants.map((p) => {
+      const user = userMap.get(p.userId);
+      const result = results.find((r) => r.userId === p.userId);
+      return {
+        userId: p.userId,
+        displayName: user?.displayName || user?.username || "Unknown",
+        rating: user?.rating || 100,
+        historyEWMA: user?.historyEWMA || 0.5,
+        completedExams: user?.completedExams || 0,
+        startedExams: user?.startedExams || 0,
+        leaderboardPoints: user?.leaderboardPoints || 0,
+        score: result?.score || 0,
+        percentage: result?.percentage || 0,
+        timeSpent: result?.timeSpent || 0,
+        submittedAt: result?.submittedAt || null,
+        difficultyFactor: result?.difficultyFactor || null,
+        totalQuestions: result?.totalQuestions || null,
+        submitted: !!result,
+        pr: result?.pr || null,
+        ratingBefore: result?.ratingBefore || null,
+        ratingAfter: result?.ratingAfter || null,
+      };
+    });
+    return list;
+  },
+});
+
+// ============================================================
+// 11. GET CHALLENGE PARTICIPANTS (alias)
+// ============================================================
+export const getChallengeParticipants = getParticipantsByChallengeId;
+
+// ============================================================
+// 12. CREATE INVITATION
 // ============================================================
 export const createInvitation = internalMutation({
   args: {
@@ -123,7 +237,7 @@ export const createInvitation = internalMutation({
 });
 
 // ============================================================
-// 8. GET INVITATION BY TOKEN
+// 13. GET INVITATION BY TOKEN
 // ============================================================
 export const getInvitationByToken = internalQuery({
   args: { token: v.string() },
@@ -136,7 +250,7 @@ export const getInvitationByToken = internalQuery({
 });
 
 // ============================================================
-// 9. UPDATE INVITATION STATUS
+// 14. UPDATE INVITATION STATUS
 // ============================================================
 export const updateInvitationStatus = internalMutation({
   args: {
@@ -149,7 +263,7 @@ export const updateInvitationStatus = internalMutation({
 });
 
 // ============================================================
-// 10. GET EXPIRED CHALLENGES (for cron cleanup)
+// 15. GET EXPIRED CHALLENGES (for cron cleanup)
 // ============================================================
 export const getExpiredChallenges = internalQuery({
   args: { now: v.number() },
@@ -164,7 +278,7 @@ export const getExpiredChallenges = internalQuery({
 });
 
 // ============================================================
-// 11. ARCHIVE CHALLENGE
+// 16. ARCHIVE CHALLENGE
 // ============================================================
 export const archiveChallenge = internalMutation({
   args: { id: v.id("challenges") },
@@ -174,7 +288,7 @@ export const archiveChallenge = internalMutation({
 });
 
 // ============================================================
-// 12. GET USER BY EMAIL
+// 17. GET USER BY EMAIL
 // ============================================================
 export const getUserByEmail = internalQuery({
   args: { email: v.string() },
@@ -187,7 +301,7 @@ export const getUserByEmail = internalQuery({
 });
 
 // ============================================================
-// 13. GET USER BY USERNAME
+// 18. GET USER BY USERNAME
 // ============================================================
 export const getUserByUsername = internalQuery({
   args: { username: v.string() },
@@ -200,7 +314,7 @@ export const getUserByUsername = internalQuery({
 });
 
 // ============================================================
-// 14. UPDATE USER LAST SEEN (online status)
+// 19. UPDATE USER LAST SEEN (online status)
 // ============================================================
 export const updateUserLastSeen = internalMutation({
   args: { userId: v.id("users") },
@@ -213,7 +327,7 @@ export const updateUserLastSeen = internalMutation({
 });
 
 // ============================================================
-// 15. GENERATE UNIQUE USERNAME
+// 20. GENERATE UNIQUE USERNAME
 // ============================================================
 export const generateUniqueUsername = internalMutation({
   args: { baseName: v.string() },
@@ -235,7 +349,7 @@ export const generateUniqueUsername = internalMutation({
 });
 
 // ============================================================
-// 16. GET ONLINE USERS
+// 21. GET ONLINE USERS
 // ============================================================
 export const getOnlineUsers = internalQuery({
   args: {},
@@ -254,7 +368,7 @@ export const getOnlineUsers = internalQuery({
 });
 
 // ============================================================
-// 17. GET CHALLENGES BY USER (uses participants table)
+// 22. GET CHALLENGES BY USER (uses participants table)
 // ============================================================
 export const getChallengesByUser = internalQuery({
   args: { userId: v.id("users") },
@@ -284,7 +398,7 @@ export const getChallengesByUser = internalQuery({
 });
 
 // ============================================================
-// 18. ADD PARTICIPANT
+// 23. ADD PARTICIPANT
 // ============================================================
 export const addParticipant = internalMutation({
   args: {
@@ -318,7 +432,7 @@ export const addParticipant = internalMutation({
 });
 
 // ============================================================
-// 19. GET PARTICIPANT BY CHALLENGE AND USER
+// 24. GET PARTICIPANT BY CHALLENGE AND USER
 // ============================================================
 export const getParticipantByChallengeAndUser = internalQuery({
   args: {
@@ -336,20 +450,7 @@ export const getParticipantByChallengeAndUser = internalQuery({
 });
 
 // ============================================================
-// 20. GET PARTICIPANTS BY CHALLENGE
-// ============================================================
-export const getParticipantsByChallenge = internalQuery({
-  args: { challengeId: v.id("challenges") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("challengeParticipants")
-      .withIndex("by_challengeId", (q) => q.eq("challengeId", args.challengeId))
-      .collect();
-  },
-});
-
-// ============================================================
-// 21. SEND CHAT MESSAGE
+// 25. SEND CHAT MESSAGE
 // ============================================================
 export const sendChatMessage = internalMutation({
   args: {
@@ -371,7 +472,7 @@ export const sendChatMessage = internalMutation({
 });
 
 // ============================================================
-// 22. GET CHAT MESSAGES SINCE TIMESTAMP
+// 26. GET CHAT MESSAGES SINCE TIMESTAMP
 // ============================================================
 export const getChatMessagesSince = internalQuery({
   args: {
@@ -390,7 +491,7 @@ export const getChatMessagesSince = internalQuery({
 });
 
 // ============================================================
-// 23. GET ROOM PARTICIPANT DETAILS (deduplicated count)
+// 27. GET ROOM PARTICIPANT DETAILS (deduplicated count)
 // ============================================================
 export const getRoomParticipantDetails = internalQuery({
   args: { challengeId: v.id("challenges") },
@@ -398,15 +499,13 @@ export const getRoomParticipantDetails = internalQuery({
     const challenge = await ctx.db.get(args.challengeId);
     if (!challenge) throw new Error("Challenge not found");
 
-    // Gather all participant rows for this challenge
     const participantRows = await ctx.db
       .query("challengeParticipants")
       .withIndex("by_challengeId", (q) => q.eq("challengeId", args.challengeId))
       .collect();
 
-    // Combine unique user IDs: creator + all participant userIds
     const userIdSet = new Set(participantRows.map(p => p.userId));
-    userIdSet.add(challenge.creatorId);   // ensure creator is included
+    userIdSet.add(challenge.creatorId);
 
     const userIds = Array.from(userIdSet);
 
@@ -414,7 +513,6 @@ export const getRoomParticipantDetails = internalQuery({
     const onlineUsers: string[] = [];
     let creatorName = "Unknown";
 
-    // Fetch each user and collect online ones + creator display name
     for (const uid of userIds) {
       const user = await ctx.db.get(uid);
       if (!user) continue;
@@ -430,7 +528,7 @@ export const getRoomParticipantDetails = internalQuery({
     }
 
     return {
-      count: userIds.length,          // exact number of unique participants
+      count: userIds.length,
       creator: creatorName,
       onlineUsers,
     };
@@ -438,7 +536,7 @@ export const getRoomParticipantDetails = internalQuery({
 });
 
 // ============================================================
-// 24. CLEANUP OLD CHAT MESSAGES (2 hours)
+// 28. CLEANUP OLD CHAT MESSAGES (2 hours)
 // ============================================================
 export const cleanupOldChatMessages = internalMutation({
   args: { olderThan: v.number() },
@@ -451,5 +549,55 @@ export const cleanupOldChatMessages = internalMutation({
       await ctx.db.delete(msg._id);
     }
     return oldMessages.length;
+  },
+});
+
+// ============================================================
+// 29. UPDATE USER PERFORMANCE (rating, history, points)
+// ============================================================
+export const updateUserPerformance = internalMutation({
+  args: {
+    userId: v.id("users"),
+    rating: v.number(),
+    historyEWMA: v.number(),
+    completedExams: v.number(),
+    startedExams: v.number(),
+    leaderboardPoints: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const updates: any = {
+      rating: args.rating,
+      historyEWMA: args.historyEWMA,
+      completedExams: args.completedExams,
+      startedExams: args.startedExams,
+    };
+    if (args.leaderboardPoints !== undefined) {
+      updates.leaderboardPoints = args.leaderboardPoints;
+    }
+    await ctx.db.patch(args.userId, updates);
+  },
+});
+
+// ============================================================
+// 30. SET CHALLENGE WINNER AND AWARD POINTS
+// ============================================================
+export const setChallengeWinner = internalMutation({
+  args: {
+    challengeId: v.id("challenges"),
+    winnerId: v.id("users"),
+    pointsAwarded: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Update challenge with winner
+    await ctx.db.patch(args.challengeId, { winnerId: args.winnerId });
+
+    // Increment leaderboard points for winner
+    const user = await ctx.db.get(args.winnerId);
+    if (user) {
+      const currentPoints = user.leaderboardPoints || 0;
+      await ctx.db.patch(args.winnerId, {
+        leaderboardPoints: currentPoints + args.pointsAwarded,
+      });
+    }
   },
 });

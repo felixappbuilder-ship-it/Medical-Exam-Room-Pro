@@ -4,6 +4,8 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
+import * as notificationTriggers from "../notifications/triggers";
+import * as messages from "../notifications/messages";
 
 // ============================================================
 // 1. START FREE TRIAL
@@ -102,7 +104,6 @@ export const startFreeTrial = action({
     const startDate = Date.now();
     const expiryDate = startDate + trialDurationMs;
 
-    // ✅ Include updatedAt when creating subscription
     const subscriptionId = await ctx.runMutation(
       internal.subscriptions.internal.createSubscription,
       {
@@ -133,6 +134,9 @@ export const startFreeTrial = action({
       details: { trialDurationHours: config.trialDurationHours, expiryDate },
     });
 
+    // 🔔 Notify user of trial start
+    await notificationTriggers.notifyTrialStarted(ctx, userId, expiryDate);
+
     return {
       success: true,
       data: { subscriptionId, expiryDate, plan: "trial" },
@@ -146,10 +150,10 @@ export const startFreeTrial = action({
 export const purchaseSubscription = action({
   args: {
     token: v.string(),
-    planName: v.string(),          // "monthly", "quarterly", "yearly", or "custom"
+    planName: v.string(),
     deviceFingerprint: v.string(),
     phoneNumber: v.string(),
-    customAmount: v.optional(v.number()), // ONLY used when planName === "custom"
+    customAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     let payload;
@@ -189,7 +193,7 @@ export const purchaseSubscription = action({
       };
     }
 
-    // ========== VALIDATE AND NORMALIZE PHONE NUMBER ==========
+    // Validate and normalize phone
     let formattedPhone = args.phoneNumber.replace(/\D/g, "");
     if (formattedPhone.startsWith("0")) {
       formattedPhone = "254" + formattedPhone.slice(1);
@@ -205,7 +209,6 @@ export const purchaseSubscription = action({
       };
     }
 
-    // Ensure appConfig exists and has plans
     await ctx.runMutation(internal.system.internal.ensureAppConfig, {});
 
     const config = await ctx.runQuery(internal.system.internal.getAppConfig, {});
@@ -220,11 +223,9 @@ export const purchaseSubscription = action({
     let amount: number;
     let planIdentifier: string;
 
-    // ========== HANDLE CUSTOM AMOUNT ==========
     if (args.planName === 'custom' && args.customAmount) {
       amount = args.customAmount;
       planIdentifier = 'custom';
-      // optional: validate amount range
       if (amount < 50 || amount > 150000) {
         return {
           success: false,
@@ -233,7 +234,6 @@ export const purchaseSubscription = action({
         };
       }
     } else {
-      // ========== MAP FRONTEND PLAN ID TO STORED PLAN NAME ==========
       const planIdToName: Record<string, string> = {
         monthly: "1 Month",
         quarterly: "3 Months",
@@ -272,13 +272,12 @@ export const purchaseSubscription = action({
       phoneNumber: formattedPhone,
     });
 
-    // Schedule STK push with the provided phone number and amount
     await ctx.scheduler.runAfter(0, internal.payments.actions.initiateMpesaPayment, {
       paymentId,
       phoneNumber: formattedPhone,
       amount,
       transactionId,
-      planName: planIdentifier, // 'custom' or 'monthly' etc.
+      planName: planIdentifier,
     });
 
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
@@ -287,6 +286,9 @@ export const purchaseSubscription = action({
       targetId: paymentId,
       details: { planName: args.planName, amount, transactionId, phoneNumber: formattedPhone },
     });
+
+    // 🔔 Notify user that payment is being processed (optional)
+    // Not necessary because payment success/failure will trigger notifications via payments.
 
     return {
       success: true,
@@ -338,7 +340,6 @@ export const cancelSubscription = action({
       };
     }
 
-    // cancelSubscriptionById now sets updatedAt automatically
     await ctx.runMutation(internal.subscriptions.internal.cancelSubscriptionById, {
       subscriptionId: subscription._id,
     });
@@ -350,6 +351,9 @@ export const cancelSubscription = action({
       details: { plan: subscription.plan, expiryDate: subscription.expiryDate },
     });
 
+    // 🔔 Notify user of cancellation
+    await notificationTriggers.notifySubscriptionCancelled(ctx, userId, subscription.plan);
+
     return {
       success: true,
       data: { message: "Subscription cancelled. You will retain access until expiry date." },
@@ -358,7 +362,7 @@ export const cancelSubscription = action({
 });
 
 // ============================================================
-// 4. CRON: MARK EXPIRED SUBSCRIPTIONS (ran by scheduler)
+// 4. CRON: MARK EXPIRED SUBSCRIPTIONS
 // ============================================================
 export const markExpiredSubscriptions = action({
   args: {},
@@ -367,10 +371,8 @@ export const markExpiredSubscriptions = action({
       internal.subscriptions.internal.getExpiredActiveSubscriptions,
       {}
     );
-
     let count = 0;
     for (const sub of expiredSubs) {
-      // updateSubscriptionStatus now sets updatedAt automatically
       await ctx.runMutation(internal.subscriptions.internal.updateSubscriptionStatus, {
         subscriptionId: sub._id,
         status: "expired",
@@ -378,5 +380,59 @@ export const markExpiredSubscriptions = action({
       count++;
     }
     return { updated: count };
+  },
+});
+
+// ============================================================
+// 5. CRON: SEND EXPIRY WARNINGS (run daily)
+// ============================================================
+export const sendExpiryWarnings = action({
+  args: {},
+  handler: async (ctx) => {
+    const expiringSubs = await ctx.runQuery(
+      internal.subscriptions.internal.getSubscriptionsExpiringSoon,
+      { days: 7 }
+    );
+    let count = 0;
+    for (const sub of expiringSubs) {
+      await notificationTriggers.notifySubscriptionExpiryWarning(ctx, sub.userId, sub.expiryDate);
+      count++;
+    }
+    return { sent: count };
+  },
+});
+
+// convex/subscriptions/actions.ts – add this at the end
+
+// ============================================================
+// CRON: SEND EXPIRY REMINDERS (daily at 6 AM UTC)
+// ============================================================
+export const sendExpiryReminders = action({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    const warningWindow = now + sevenDays;
+    const expiringSubs = await ctx.db
+      .query("subscriptions")
+      .withIndex("by_status_expiryDate", (q) =>
+        q.eq("status", "active").lt("expiryDate", warningWindow).gt("expiryDate", now)
+      )
+      .collect();
+    let count = 0;
+    for (const sub of expiringSubs) {
+      await ctx.runMutation(internal.notifications.internal.insertNotification, {
+        userId: sub.userId,
+        type: "subscription_expiry_reminder",
+        title: "Subscription Expiring Soon",
+        message: messages.buildSubscriptionExpiryReminderMessage(
+          Math.ceil((sub.expiryDate - now) / (1000 * 60 * 60 * 24)),
+          sub.expiryDate
+        ),
+        data: { route: "subscription" },
+      });
+      count++;
+    }
+    return { sent: count };
   },
 });

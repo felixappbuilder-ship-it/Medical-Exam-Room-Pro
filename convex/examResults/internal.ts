@@ -1,6 +1,10 @@
+// convex/examResults/internal.ts
 import { internalMutation, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 
+// ============================================================
+// 1. UPSERT EXAM RESULT
+// ============================================================
 export const upsertExamResult = internalMutation({
   args: {
     userId: v.id("users"),
@@ -72,6 +76,9 @@ export const upsertExamResult = internalMutation({
   },
 });
 
+// ============================================================
+// 2. GET EXAM RESULT BY ID
+// ============================================================
 export const getExamResultById = internalQuery({
   args: { examResultId: v.id("examResults") },
   handler: async (ctx, args) => {
@@ -79,6 +86,9 @@ export const getExamResultById = internalQuery({
   },
 });
 
+// ============================================================
+// 3. GET EXAM RESULTS BY USER (paginated)
+// ============================================================
 export const getExamResultsByUser = internalQuery({
   args: { userId: v.id("users"), limit: v.number(), cursor: v.optional(v.id("examResults")) },
   handler: async (ctx, args) => {
@@ -96,6 +106,9 @@ export const getExamResultsByUser = internalQuery({
   },
 });
 
+// ============================================================
+// 4. DELETE EXAM RESULT BY ID (cascades to answers)
+// ============================================================
 export const deleteExamResultById = internalMutation({
   args: { examResultId: v.id("examResults") },
   handler: async (ctx, args) => {
@@ -110,6 +123,22 @@ export const deleteExamResultById = internalMutation({
   },
 });
 
+// ============================================================
+// 5. GET EXAM ANSWERS BY RESULT ID (for detailed view)
+// ============================================================
+export const getExamAnswersByResultId = internalQuery({
+  args: { examResultId: v.id("examResults") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("examAnswers")
+      .withIndex("by_examResultId", (q) => q.eq("examResultId", args.examResultId))
+      .collect();
+  },
+});
+
+// ============================================================
+// 6. SHARED LINK HELPERS (for sharing exam results)
+// ============================================================
 export const createSharedLink = internalMutation({
   args: {
     targetType: v.union(v.literal("examResult"), v.literal("note"), v.literal("conversation")),

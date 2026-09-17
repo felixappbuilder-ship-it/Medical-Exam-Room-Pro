@@ -44,8 +44,8 @@ async function hasActiveAccess(ctx: any, userId: string) {
 }
 
 // ------------------------------------------------------------------
-// Generate a presigned download URL for a file stored in R2
-// Requires valid JWT and active subscription/trial
+// Generate presigned download URLs for the main file AND its thumbnail.
+// Requires valid JWT and active subscription/trial.
 // ------------------------------------------------------------------
 export const getDownloadUrl = action({
   args: {
@@ -117,13 +117,29 @@ export const getDownloadUrl = action({
       };
     }
 
-    // 4. Generate signed URL from R2
+    // 4. Generate signed URLs for BOTH the main file and thumbnail
     try {
-      const command = new GetObjectCommand({
+      // Main file
+      const fileCommand = new GetObjectCommand({
         Bucket: BUCKET,
         Key: resource.r2Key,
       });
-      const url = await getSignedUrl(r2Client, command, { expiresIn: 3600 }); // 1 hour
+      const downloadUrl = await getSignedUrl(r2Client, fileCommand, { expiresIn: 3600 });
+
+      // Thumbnail (if present)
+      let thumbnailUrl: string | null = null;
+      if (resource.r2ThumbnailKey) {
+        try {
+          const thumbnailCommand = new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: resource.r2ThumbnailKey,
+          });
+          thumbnailUrl = await getSignedUrl(r2Client, thumbnailCommand, { expiresIn: 3600 });
+        } catch (thumbErr) {
+          console.warn("[getDownloadUrl] Failed to generate thumbnail URL:", thumbErr);
+          // thumbnailUrl remains null – the frontend will handle it gracefully
+        }
+      }
 
       // 5. Increment download count (fire and forget – don't fail if this fails)
       try {
@@ -137,14 +153,17 @@ export const getDownloadUrl = action({
 
       return {
         success: true,
-        data: { downloadUrl: url },
+        data: {
+          downloadUrl,
+          thumbnailUrl, // may be null
+        },
       };
     } catch (err: any) {
       console.error("[getDownloadUrl] R2 presigned URL generation error:", err);
       return {
         success: false,
         error: "url_generation_failed",
-        message: "Failed to generate download URL. Please try again later.",
+        message: "Failed to generate download URLs. Please try again later.",
       };
     }
   },
@@ -175,8 +194,8 @@ export const deleteFromR2 = action({
 });
 
 // ------------------------------------------------------------------
-// (Optional) Generate a public thumbnail URL from R2
-// Used for listing resources – no authentication required
+// Generate a public thumbnail URL from R2 (legacy, kept for compatibility)
+// Used for listing resources – no authentication required.
 // ------------------------------------------------------------------
 export const getThumbnailUrl = action({
   args: { r2Key: v.string() },

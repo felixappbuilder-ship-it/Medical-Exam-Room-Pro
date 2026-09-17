@@ -13,9 +13,11 @@ async function verifyAdmin(ctx: any, token: string) {
   return payload;
 }
 
-// ------------------------------------------------------------------
-// 1. Get all users (with search & filters)
-// ------------------------------------------------------------------
+// ============================================================
+// 1. USER MANAGEMENT
+// ============================================================
+
+// Get all users (with search & filters)
 export const adminGetAllUsers = action({
   args: {
     token: v.string(),
@@ -32,26 +34,47 @@ export const adminGetAllUsers = action({
         limit,
         cursor: args.cursor,
       });
-      const { items, nextCursor, hasMore } = result;
-      const safeUsers = items.map((u) => {
-        const { passwordHash, securityQuestions, ...safe } = u;
-        return safe;
-      });
+      const { users, nextCursor, hasMore } = result;
       await ctx.runMutation(internal.admin.internal.logAuditEntry, {
         actorId: payload.userId,
         action: "admin_get_all_users",
         details: { limit, cursor: args.cursor },
       });
-      return { success: true, data: { users: safeUsers, nextCursor, hasMore } };
+      return { success: true, data: { users, nextCursor, hasMore } };
     } catch (err: any) {
       return { success: false, message: err.message };
     }
   },
 });
 
-// ------------------------------------------------------------------
-// 2. Revenue report
-// ------------------------------------------------------------------
+// Get a single user (admin only)
+export const adminGetUserDetails = action({
+  args: { token: v.string(), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const user = await ctx.runQuery(internal.admin.internal.getUserById, {
+        userId: args.userId,
+      });
+      if (!user) throw new Error("User not found");
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_user_details",
+        targetId: args.userId,
+        details: {},
+      });
+      return { success: true, data: { user } };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 2. REVENUE & ANALYTICS
+// ============================================================
+
+// Revenue report
 export const adminGetRevenueReport = action({
   args: {
     token: v.string(),
@@ -81,9 +104,7 @@ export const adminGetRevenueReport = action({
   },
 });
 
-// ------------------------------------------------------------------
-// 3. Conversion rates
-// ------------------------------------------------------------------
+// Conversion rates
 export const adminGetConversionRates = action({
   args: { token: v.string() },
   handler: async (ctx, args) => {
@@ -104,75 +125,7 @@ export const adminGetConversionRates = action({
   },
 });
 
-// ------------------------------------------------------------------
-// 4. All subscriptions
-// ------------------------------------------------------------------
-export const adminGetAllSubscriptions = action({
-  args: {
-    token: v.string(),
-    limit: v.optional(v.number()),
-    cursor: v.optional(v.id("subscriptions")),
-    filter: v.optional(v.any()),
-  },
-  handler: async (ctx, args) => {
-    try {
-      const payload = await verifyAdmin(ctx, args.token);
-      const limit = args.limit || 50;
-      const { items, nextCursor, hasMore } = await ctx.runQuery(internal.admin.internal.getAllSubscriptionsPaginated, {
-        limit,
-        cursor: args.cursor,
-        filter: args.filter,
-      });
-      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
-        actorId: payload.userId,
-        action: "admin_get_all_subscriptions",
-        details: { limit, cursor: args.cursor },
-      });
-      return { success: true, data: { subscriptions: items, nextCursor, hasMore } };
-    } catch (err: any) {
-      return { success: false, message: err.message };
-    }
-  },
-});
-
-// ------------------------------------------------------------------
-// 5. All payments
-// ------------------------------------------------------------------
-export const adminGetAllPayments = action({
-  args: {
-    token: v.string(),
-    limit: v.optional(v.number()),
-    cursor: v.optional(v.id("payments")),
-    filter: v.optional(v.any()),
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    try {
-      const payload = await verifyAdmin(ctx, args.token);
-      const limit = args.limit || 50;
-      const { items, nextCursor, hasMore } = await ctx.runQuery(internal.admin.internal.getAllPaymentsPaginated, {
-        limit,
-        cursor: args.cursor,
-        filter: args.filter,
-        startDate: args.startDate,
-        endDate: args.endDate,
-      });
-      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
-        actorId: payload.userId,
-        action: "admin_get_all_payments",
-        details: { limit, cursor: args.cursor },
-      });
-      return { success: true, data: { payments: items, nextCursor, hasMore } };
-    } catch (err: any) {
-      return { success: false, message: err.message };
-    }
-  },
-});
-
-// ------------------------------------------------------------------
-// 6. User growth (last 30 days)
-// ------------------------------------------------------------------
+// User growth (last 30 days)
 export const adminGetUserGrowth = action({
   args: { token: v.string() },
   handler: async (ctx, args) => {
@@ -203,9 +156,7 @@ export const adminGetUserGrowth = action({
   },
 });
 
-// ------------------------------------------------------------------
-// 7. Retention (active subscribers / total users)
-// ------------------------------------------------------------------
+// Retention (active subscribers / total users)
 export const adminGetRetention = action({
   args: { token: v.string() },
   handler: async (ctx, args) => {
@@ -226,9 +177,7 @@ export const adminGetRetention = action({
   },
 });
 
-// ------------------------------------------------------------------
-// 8. Exam performance by subject
-// ------------------------------------------------------------------
+// Exam performance by subject
 export const adminGetExamPerformance = action({
   args: { token: v.string() },
   handler: async (ctx, args) => {
@@ -260,9 +209,310 @@ export const adminGetExamPerformance = action({
   },
 });
 
-// ------------------------------------------------------------------
-// 9. Security logs
-// ------------------------------------------------------------------
+// ============================================================
+// 3. SUBSCRIPTIONS
+// ============================================================
+
+// All subscriptions
+export const adminGetAllSubscriptions = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("subscriptions")),
+    filter: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const limit = args.limit || 50;
+      const { items, nextCursor, hasMore } = await ctx.runQuery(
+        internal.admin.internal.getAllSubscriptionsPaginated,
+        {
+          limit,
+          cursor: args.cursor,
+          filter: args.filter,
+        }
+      );
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_all_subscriptions",
+        details: { limit, cursor: args.cursor },
+      });
+      return { success: true, data: { subscriptions: items, nextCursor, hasMore } };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 4. PAYMENTS
+// ============================================================
+
+// All payments
+export const adminGetAllPayments = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("payments")),
+    filter: v.optional(v.any()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const limit = args.limit || 50;
+      const { items, nextCursor, hasMore } = await ctx.runQuery(
+        internal.admin.internal.getAllPaymentsPaginated,
+        {
+          limit,
+          cursor: args.cursor,
+          filter: args.filter,
+          startDate: args.startDate,
+          endDate: args.endDate,
+        }
+      );
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_all_payments",
+        details: { limit, cursor: args.cursor },
+      });
+      return { success: true, data: { payments: items, nextCursor, hasMore } };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 5. WITHDRAWALS
+// ============================================================
+
+// Get all withdrawals (with user enrichment)
+export const adminGetAllWithdrawals = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("withdrawals")),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const limit = args.limit || 50;
+      const result = await ctx.runQuery(internal.admin.internal.getAllWithdrawals, {
+        limit,
+        cursor: args.cursor,
+      });
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_all_withdrawals",
+        details: { limit, cursor: args.cursor },
+      });
+      return { success: true, data: result };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// Get all pending withdrawals (for bulk approval)
+export const adminGetPendingWithdrawals = action({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const pending = await ctx.runQuery(internal.admin.internal.getAllPendingWithdrawals, {});
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_pending_withdrawals",
+        details: { count: pending.length },
+      });
+      return { success: true, data: { withdrawals: pending } };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 6. REVERSALS
+// ============================================================
+
+// Get all reversals
+export const adminGetAllReversals = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("reversals")),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const limit = args.limit || 50;
+      const result = await ctx.runQuery(internal.admin.internal.getAllReversals, {
+        limit,
+        cursor: args.cursor,
+      });
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_all_reversals",
+        details: { limit, cursor: args.cursor },
+      });
+      return { success: true, data: result };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 7. BALANCE QUERIES
+// ============================================================
+
+// Get all balance queries
+export const adminGetBalanceQueries = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("balanceQueries")),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const limit = args.limit || 50;
+      const result = await ctx.runQuery(internal.admin.internal.getAllBalanceQueries, {
+        limit,
+        cursor: args.cursor,
+      });
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_balance_queries",
+        details: { limit, cursor: args.cursor },
+      });
+      return { success: true, data: result };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 8. WEBHOOK LOGS
+// ============================================================
+
+// Get webhook logs
+export const adminGetWebhookLogs = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("webhookLogs")),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const limit = args.limit || 50;
+      const result = await ctx.runQuery(internal.admin.internal.getWebhookLogs, {
+        limit,
+        cursor: args.cursor,
+      });
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_webhook_logs",
+        details: { limit, cursor: args.cursor },
+      });
+      return { success: true, data: result };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 9. AGENTS
+// ============================================================
+
+// List all agents
+export const adminListAgents = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const limit = args.limit || 50;
+      const result = await ctx.runQuery(internal.admin.internal.getAllAgents, {
+        limit,
+        cursor: args.cursor,
+      });
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_list_agents",
+        details: { count: result.agents.length },
+      });
+      return { success: true, data: result };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// Get agent performance stats
+export const adminGetAgentStats = action({
+  args: {
+    token: v.string(),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const user = await ctx.runQuery(internal.admin.internal.getUserById, { userId: args.userId });
+      if (!user) throw new Error("User not found");
+      if (!user.isAgent) throw new Error("User is not an agent");
+      // Fetch referrals
+      const referredUsers = await ctx.db
+        .query("users")
+        .withIndex("by_referredBy", (q) => q.eq("referredBy", args.userId))
+        .collect();
+      let successfulReferrals = 0;
+      for (const u of referredUsers) {
+        const payments = await ctx.db
+          .query("payments")
+          .withIndex("by_userId_status", (q) => q.eq("userId", u._id).eq("status", "completed"))
+          .collect();
+        if (payments.length > 0) successfulReferrals++;
+      }
+      const stats = {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        totalReferrals: referredUsers.length,
+        successfulReferrals,
+        totalEarned: user.totalEarned || 0,
+        availableBalance: user.referralBalance || 0,
+        pendingBalance: user.pendingBalance || 0,
+        verified: user.agentVerified || false,
+      };
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_agent_stats",
+        targetId: args.userId,
+        details: { stats },
+      });
+      return { success: true, data: stats };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 10. SECURITY & AUDIT LOGS
+// ============================================================
+
+// Security logs
 export const adminGetSecurityLogs = action({
   args: { token: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -281,9 +531,7 @@ export const adminGetSecurityLogs = action({
   },
 });
 
-// ------------------------------------------------------------------
-// 10. Audit logs
-// ------------------------------------------------------------------
+// Audit logs
 export const adminGetAuditLogs = action({
   args: { token: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -302,9 +550,11 @@ export const adminGetAuditLogs = action({
   },
 });
 
-// ------------------------------------------------------------------
-// 11. App config (read)
-// ------------------------------------------------------------------
+// ============================================================
+// 11. APP CONFIG
+// ============================================================
+
+// Get app config
 export const adminGetAppConfig = action({
   args: { token: v.string() },
   handler: async (ctx, args) => {
@@ -323,15 +573,50 @@ export const adminGetAppConfig = action({
   },
 });
 
-// ------------------------------------------------------------------
-// 12. List backups (placeholder)
-// ------------------------------------------------------------------
+// ============================================================
+// 12. BACKUPS (placeholder)
+// ============================================================
+
+// List backups
 export const adminListBackups = action({
   args: { token: v.string() },
   handler: async (ctx, args) => {
     try {
       await verifyAdmin(ctx, args.token);
       return { success: true, data: { backups: [] } };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 13. NOTIFICATIONS (ADMIN)
+// ============================================================
+
+// Get notifications for admin (with optional user filter)
+export const adminGetNotifications = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.id("notifications")),
+    userId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const payload = await verifyAdmin(ctx, args.token);
+      const limit = args.limit || 50;
+      const result = await ctx.runQuery(internal.notifications.internal.adminGetAllNotifications, {
+        limit,
+        cursor: args.cursor,
+        userId: args.userId,
+      });
+      await ctx.runMutation(internal.admin.internal.logAuditEntry, {
+        actorId: payload.userId,
+        action: "admin_get_notifications",
+        details: { limit, cursor: args.cursor, userId: args.userId },
+      });
+      return { success: true, data: result };
     } catch (err: any) {
       return { success: false, message: err.message };
     }

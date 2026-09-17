@@ -5,6 +5,7 @@ import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { ConvexError } from "convex/values";
+import * as notificationTriggers from "../notifications/triggers";
 
 // ============================================================
 // HELPERS – Environment-aware endpoint selection
@@ -323,6 +324,16 @@ export const claimManualPayment = action({
     }
 
     console.log("[claimManualPayment] Subscription activated for user:", userId);
+
+    // 🔔 Notification: Manual claim successful (subscription activated)
+    await notificationTriggers.notifyPaymentSuccess(
+      ctx,
+      userId,
+      payment.amount,
+      "manual_claim",
+      payment.mpesaCode || "MANUAL"
+    );
+
     return {
       success: true,
       data: { message: "Subscription activated successfully!" },

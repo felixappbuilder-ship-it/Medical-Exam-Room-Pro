@@ -15,29 +15,28 @@ crons.daily(
   internal.system.actions.cleanupExpiredShares
 );
 
-// Clean up expired shared exams every hour (48‑hour expiry)
+// Clean up expired shared exams every hour
 crons.interval(
   "cleanupExpiredSharedExams",
   { hours: 1 },
   internal.sharedExams.actions.cleanupExpiredSharedExams
 );
 
-// Clean up expired challenges every 5 minutes (waiting rooms)
+// Clean up expired challenges every 5 minutes
 crons.interval(
   "cleanupExpiredChallenges",
   { minutes: 5 },
   internal.challenges.actions.cleanupExpiredChallenges
 );
 
-// Delete notifications older than 48 hours – runs every hour
-crons.interval(
+// ✅ Delete old notifications daily at 2:00 AM UTC
+crons.daily(
   "deleteOldNotifications",
-  { hours: 1 },
-  internal.notifications.internal.deleteOldNotifications,
-  { olderThan: 48 * 60 * 60 * 1000 } // 48 hours in milliseconds
+  { hourUTC: 2, minuteUTC: 0 },
+  internal.notifications.internal.deleteOldNotifications
 );
 
-// Clean up old devices (keep only the current logged-in device) every 4 days
+// Clean up old devices every 4 days (96 hours)
 crons.interval(
   "cleanupOldDevices",
   { hours: 96 },
@@ -63,47 +62,59 @@ crons.interval(
 );
 
 // ============================================================
-// 3. FINANCIAL LEDGER VERIFICATION JOBS
+// 3. SUBSCRIPTION EXPIRY WARNINGS (daily)
 // ============================================================
-
-// Verify pending STK payments that haven't received callbacks
-// Runs every 2 minutes to catch missed callbacks
-crons.interval(
-  "verifyPendingStkPayments",
-  { minutes: 2 },
-  internal.payments.actions.verifyPendingStkPayments
+crons.daily(
+  "sendSubscriptionExpiryWarnings",
+  { hourUTC: 8, minuteUTC: 0 },
+  internal.subscriptions.actions.sendExpiryWarnings
 );
 
-// Verify pending B2C transactions that haven't received results
-// Runs every 5 minutes
+// ============================================================
+// 4. PRIVACY & COMPLIANCE – DORMANT ACCOUNT DELETION
+//    Runs every 2 weeks (336 hours) to delete accounts inactive for 6 months
+// ============================================================
 crons.interval(
-  "verifyPendingB2C",
-  { minutes: 5 },
-  internal.payments.actions.verifyPendingB2C
+  "deleteDormantAccounts",
+  { hours: 336 }, // 14 days = 2 weeks
+  internal.users.actions.deleteDormantAccounts
 );
 
-// Verify pending Balance Queries that haven't received results
-// Runs every 10 minutes
+// ============================================================
+// 5. CHAT MESSAGE CLEANUP – remove messages older than 2 hours
+//    Runs every 30 minutes to keep chat history fresh
+// ============================================================
 crons.interval(
-  "verifyPendingBalanceQueries",
-  { minutes: 10 },
-  internal.payments.actions.verifyPendingBalanceQueries
+  "cleanupChatMessages",
+  { minutes: 30 },
+  internal.challenges.actions.cleanupChatMessages
 );
 
-// Verify pending Transaction Status Queries that haven't received results
-// Runs every 10 minutes
+// ============================================================
+// 6. CHALLENGE DEADLINE CHECK (every hour)
+// ============================================================
 crons.interval(
-  "verifyPendingStatusQueries",
-  { minutes: 10 },
-  internal.payments.actions.verifyPendingStatusQueries
+  "checkChallengeDeadlines",
+  { minutes: 60 },
+  internal.challenges.actions.checkChallengeDeadlines
 );
 
-// Verify pending Reversals that haven't received results
-// Runs every 15 minutes (reversals can take longer)
-crons.interval(
-  "verifyPendingReversals",
-  { minutes: 15 },
-  internal.payments.actions.verifyPendingReversals
+// ============================================================
+// 7. EXAM ENCOURAGEMENT NOTIFICATIONS (daily at 9 AM UTC)
+// ============================================================
+crons.daily(
+  "sendExamEncouragementNotifications",
+  { hourUTC: 9, minuteUTC: 0 },
+  internal.examResults.actions.sendExamEncouragementNotifications
+);
+
+// ============================================================
+// 8. SUBSCRIPTION EXPIRY REMINDERS (daily at 6 AM UTC)
+// ============================================================
+crons.daily(
+  "sendSubscriptionExpiryReminders",
+  { hourUTC: 6, minuteUTC: 0 },
+  internal.subscriptions.actions.sendExpiryReminders
 );
 
 export default crons;

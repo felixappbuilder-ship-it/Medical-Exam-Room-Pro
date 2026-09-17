@@ -93,3 +93,51 @@ export const exportData = action({
     };
   },
 });
+
+// ============================================================
+// DELETE DORMANT ACCOUNTS (cron job – runs daily)
+// ============================================================
+export const deleteDormantAccounts = action({
+  args: {},
+  handler: async (ctx) => {
+    const sixMonthsAgo = Date.now() - 180 * 24 * 60 * 60 * 1000;
+
+    // Fetch all users whose lastLogin or lastSeen is older than 6 months
+    const users = await ctx.db
+      .query("users")
+      .filter((q) =>
+        q.and(
+          q.or(
+            q.lt(q.field("lastLogin"), sixMonthsAgo),
+            q.lt(q.field("lastSeen"), sixMonthsAgo)
+          )
+        )
+      )
+      .collect();
+
+    console.log(`[Cron] Found ${users.length} dormant accounts to delete.`);
+
+    let deletedCount = 0;
+    for (const user of users) {
+      // Avoid deleting if user has a recent activity
+      const hasRecentActivity = (user.lastLogin && user.lastLogin > sixMonthsAgo) ||
+                                (user.lastSeen && user.lastSeen > sixMonthsAgo);
+      if (hasRecentActivity) continue;
+
+      // Log deletion (audit)
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: "system",
+        action: "dormant_account_deleted",
+        targetId: user._id,
+        details: { email: user.email, lastLogin: user.lastLogin, lastSeen: user.lastSeen },
+      });
+
+      // Delete all user data via internal mutation
+      await ctx.runMutation(internal.users.internal.deleteAllUserData, { userId: user._id });
+      deletedCount++;
+    }
+
+    console.log(`[Cron] Deleted ${deletedCount} dormant accounts.`);
+    return { deleted: deletedCount };
+  },
+});

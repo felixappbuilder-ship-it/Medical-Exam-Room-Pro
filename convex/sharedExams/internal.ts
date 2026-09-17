@@ -20,3 +20,24 @@ export const deleteSharedExam = internalMutation({
     await ctx.db.delete(args.id);
   },
 });
+
+// ============================================================
+// CREATE SHARED EXAM (internal mutation for actions)
+// ============================================================
+export const createSharedExam = internalMutation({
+  args: {
+    userId: v.id("users"),
+    token: v.string(),
+    examData: v.any(),
+    expiry: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("sharedExams", {
+      token: args.token,
+      examData: args.examData,
+      userId: args.userId,
+      createdAt: Date.now(),
+      expiry: args.expiry,
+    });
+  },
+});

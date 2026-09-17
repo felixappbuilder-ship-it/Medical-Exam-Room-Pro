@@ -2,6 +2,7 @@
 import { internalMutation, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
+import * as notificationTriggers from "../notifications/triggers";
 
 // ============ HELPER: CALCULATE PREMIUM DAYS (TARIFF MATRIX) ============
 function calculatePremiumDays(amount: number): number {
@@ -113,6 +114,19 @@ export const updatePaymentStatus = internalMutation({
         paymentId: payment._id,
         userId: payment.userId || undefined,
       });
+
+      // 🔔 Payment success notification – handled inside activateSubscriptionFromPayment
+      // We'll also send an explicit success notification here in case activation fails,
+      // but the subscription activation will send one too. We'll rely on activation.
+    } else if (args.status === "failed" && payment.userId) {
+      // 🔔 Payment failed notification
+      await notificationTriggers.notifyPaymentFailed(
+        ctx,
+        payment.userId,
+        payment.amount,
+        "subscription",
+        "Payment failed"
+      );
     } else {
       console.log("[updatePaymentStatus] Payment not completed (status:", args.status, ") – no activation.");
     }
@@ -279,7 +293,7 @@ export const setPaymentMpesaCode = internalMutation({
 });
 
 // ============================================================
-// 2. SUBSCRIPTION ACTIVATOR (with proportional referral reward)
+// 2. SUBSCRIPTION ACTIVATOR (with notifications and referral reward)
 // ============================================================
 
 export const activateSubscriptionFromPayment = internalMutation({
@@ -341,8 +355,10 @@ export const activateSubscriptionFromPayment = internalMutation({
       .query("subscriptions")
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .first();
+    let changeType: "new" | "extended" | "upgraded" | "downgraded" = "new";
     if (existingSub && existingSub.expiryDate > baseDate) {
       baseDate = existingSub.expiryDate;
+      changeType = "extended";
       console.log("[activateSubscription] Existing subscription found, extending from:", new Date(baseDate));
     }
     const newExpiry = baseDate + daysAwarded * 24 * 60 * 60 * 1000;
@@ -371,7 +387,27 @@ export const activateSubscriptionFromPayment = internalMutation({
         status: "active",
       });
       console.log("[activateSubscription] Created new subscription:", newSubId);
+      changeType = "new";
     }
+
+    // 🔔 Payment success notification (with plan details)
+    await notificationTriggers.notifyPaymentSuccess(
+      ctx,
+      user._id,
+      payment.amount,
+      planName,
+      payment.mpesaReceipt || "N/A"
+    );
+
+    // 🔔 Subscription updated notification
+    await notificationTriggers.notifySubscriptionUpdated(
+      ctx,
+      user._id,
+      planName,
+      newExpiry,
+      changeType,
+      daysAwarded
+    );
 
     // ============ REFERRAL REWARD (proportional to days awarded) ============
     if (user.referredBy && !user.referralRewarded) {
@@ -392,6 +428,14 @@ export const activateSubscriptionFromPayment = internalMutation({
           referredUserId: user._id,
           amount: finalReward,
         });
+
+        // 🔔 Notify referrer about reward
+        await notificationTriggers.notifyReferralReward(
+          ctx,
+          referrer._id,
+          finalReward,
+          user.displayName || user.name
+        );
       } else {
         console.log("[activateSubscription] Referrer not found, skipping reward");
       }

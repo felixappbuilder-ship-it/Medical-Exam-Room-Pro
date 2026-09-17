@@ -1,7 +1,8 @@
 // convex/users/queries.ts
-import { query } from "../_generated/server";
+import { query, action } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
+import * as perf from "../shared/performance";
 
 // ============================================================
 // 1. GET PROFILE (existing)
@@ -9,7 +10,6 @@ import { internal } from "../_generated/api";
 export const getProfile = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
-    // 1. Verify JWT (R8)
     let payload;
     try {
       const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
@@ -40,7 +40,6 @@ export const getProfile = query({
       };
     }
 
-    // Return safe profile (exclude passwordHash and securityQuestions) (R13, R20)
     const { passwordHash, securityQuestions, ...safeUser } = user;
     return {
       success: true,
@@ -55,7 +54,6 @@ export const getProfile = query({
 export const getDevices = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
-    // 1. Verify JWT (R8)
     let payload;
     try {
       const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
@@ -76,7 +74,8 @@ export const getDevices = query({
     }
 
     const userId = payload.userId;
-    const user = await ctx.db.get(userId);
+
+    const user = await ctx.runQuery(internal.users.internal.getUserById, { userId });
     if (!user) {
       return {
         success: false,
@@ -85,23 +84,12 @@ export const getDevices = query({
       };
     }
 
-    // 2. Get all sessions for this user (to know which devices are active)
-    const sessions = await ctx.db
-      .query("sessions")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-
-    // Map sessions to device info, marking the current one
-    // Current session is the one with sessionId == payload.sessionId (if present)
+    const sessions = await ctx.runQuery(internal.auth.internal.getSessionsForUser, { userId });
     const currentSessionId = payload.sessionId || null;
 
-    // Get the user's stored devices list (from devices table or user.devices array)
-    // The user.devices array contains fingerprints and lastUsed. We'll combine with sessions.
     const userDevices = user.devices || [];
 
-    // Build response: for each device fingerprint, show info
     const deviceList = userDevices.map((dev) => {
-      // Find if this device has an active session (not revoked and not expired)
       const session = sessions.find(
         (s) => s.deviceId === dev.fingerprint && !s.revoked && s.expiresAt > Date.now()
       );
@@ -116,7 +104,6 @@ export const getDevices = query({
       };
     });
 
-    // Sort: current device first, then by lastUsed descending
     deviceList.sort((a, b) => {
       if (a.isCurrent) return -1;
       if (b.isCurrent) return 1;
@@ -130,5 +117,156 @@ export const getDevices = query({
         currentSessionId,
       },
     };
+  },
+});
+
+// ============================================================
+// 3. GET USER PERFORMANCE (rating, rank, history, points)
+// ============================================================
+export const getUserPerformance = action({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      const userId = result.data.userId;
+      const user = await ctx.runQuery(internal.users.internal.getUserById, { userId });
+      if (!user) {
+        return {
+          success: false,
+          error: "user_not_found",
+          message: "User not found.",
+        };
+      }
+
+      // Compute rank
+      const rating = user.rating || 100;
+      const rankInfo = perf.getRank(rating);
+
+      // Get challenge stats (optional)
+      const challenges = await ctx.runQuery(
+        internal.challenges.internal.getChallengesByUser,
+        { userId }
+      );
+      const completedChallenges = challenges.filter(c => c.status === "completed").length;
+
+      return {
+        success: true,
+        data: {
+          rating,
+          historyEWMA: user.historyEWMA || 0.5,
+          completedExams: user.completedExams || 0,
+          startedExams: user.startedExams || 0,
+          leaderboardPoints: user.leaderboardPoints || 0,
+          rank: rankInfo,
+          completedChallenges,
+          integrityScore: user.integrityScore || 1,
+        },
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: "performance_fetch_failed",
+        message: err.message || "Failed to fetch performance data",
+      };
+    }
+  },
+});
+
+// ============================================================
+// 4. GET LEADERBOARD (top users by leaderboardPoints)
+// ============================================================
+export const getLeaderboard = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+
+      const limit = args.limit || 50;
+      const users = await ctx.db
+        .query("users")
+        .order("desc")
+        .take(limit);
+
+      const safeUsers = users.map(u => ({
+        _id: u._id,
+        displayName: u.displayName,
+        username: u.username,
+        rating: u.rating || 100,
+        leaderboardPoints: u.leaderboardPoints || 0,
+        completedExams: u.completedExams || 0,
+      }));
+
+      return { success: true, data: safeUsers };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: "leaderboard_fetch_failed",
+        message: err.message || "Failed to fetch leaderboard",
+      };
+    }
+  },
+});
+
+// ============================================================
+// 5. GET PERFORMANCE HISTORY (previous PRs)
+// ============================================================
+export const getPerformanceHistory = action({
+  args: {
+    token: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return {
+          success: false,
+          error: "invalid_token",
+          message: result.message,
+        };
+      }
+      const userId = result.data.userId;
+
+      // Fetch user's challenge results with PR
+      const results = await ctx.db
+        .query("results")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .order("desc")
+        .take(args.limit || 20);
+
+      const history = results.map(r => ({
+        challengeId: r.challengeId,
+        pr: r.pr || 0,
+        percentage: r.percentage,
+        score: r.score,
+        timeSpent: r.timeSpent,
+        submittedAt: r.submittedAt,
+      }));
+
+      return { success: true, data: history };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: "history_fetch_failed",
+        message: err.message || "Failed to fetch performance history",
+      };
+    }
   },
 });

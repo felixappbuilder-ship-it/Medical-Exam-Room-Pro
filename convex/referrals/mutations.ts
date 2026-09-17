@@ -1,4 +1,7 @@
-import { mutation } from "../_generated/server";
+// convex/referrals/mutations.ts
+"use node";
+
+import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 
@@ -10,7 +13,7 @@ async function verifyTokenAndGetUser(ctx: any, token: string) {
   return user;
 }
 
-export const requestWithdrawal = mutation({
+export const requestWithdrawal = action({
   args: {
     token: v.string(),
     amount: v.number(),
@@ -18,28 +21,40 @@ export const requestWithdrawal = mutation({
   },
   handler: async (ctx, args) => {
     const user = await verifyTokenAndGetUser(ctx, args.token);
+
     if (user.referralBalance < args.amount) {
-      return { success: false, error: "insufficient_balance", message: "Not enough balance" };
+      return {
+        success: false,
+        error: "insufficient_balance",
+        message: "Not enough balance",
+      };
     }
+
     if (args.amount < 100) {
-      return { success: false, error: "min_withdrawal", message: "Minimum withdrawal is KSh 100" };
+      return {
+        success: false,
+        error: "min_withdrawal",
+        message: "Minimum withdrawal is KSh 100",
+      };
     }
+
     // Deduct from available balance, add to pending
     const newBalance = user.referralBalance - args.amount;
     const newPending = (user.pendingBalance || 0) + args.amount;
-    await ctx.db.patch(user._id, {
+
+    // ✅ Use internal mutations for all DB writes (R7)
+    await ctx.runMutation(internal.referrals.internal.updateReferralBalances, {
+      userId: user._id,
       referralBalance: newBalance,
       pendingBalance: newPending,
     });
-    // Create withdrawal request
-    await ctx.db.insert("withdrawals", {
+
+    await ctx.runMutation(internal.referrals.internal.createWithdrawal, {
       userId: user._id,
       amount: args.amount,
-      status: "pending",
-      method: "mpesa",
       phoneNumber: args.phoneNumber,
-      requestedAt: Date.now(),
     });
+
     // Audit log (R16)
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
       actorId: user._id,
@@ -47,6 +62,10 @@ export const requestWithdrawal = mutation({
       targetId: user._id,
       details: { amount: args.amount },
     });
-    return { success: true, data: { message: "Withdrawal request submitted" } };
+
+    return {
+      success: true,
+      data: { message: "Withdrawal request submitted" },
+    };
   },
 });

@@ -104,10 +104,15 @@ export const updateProfile = action({
 
 // ============================================================
 // 2. DELETE ACCOUNT (action – full token verification)
+//    Permanently deletes all user data, anonymizing payments & logs.
 // ============================================================
 export const deleteAccount = action({
-  args: { token: v.string() },
+  args: {
+    token: v.string(),
+    password: v.optional(v.string()), // optional re‑authentication
+  },
   handler: async (ctx, args) => {
+    // 1. Verify token
     let payload;
     try {
       const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
@@ -137,6 +142,22 @@ export const deleteAccount = action({
       };
     }
 
+    // 2. Optional: verify password (if provided)
+    if (args.password) {
+      const isValid = await ctx.runAction(internal.auth.helpers.comparePassword, {
+        password: args.password,
+        hash: user.passwordHash,
+      });
+      if (!isValid) {
+        return {
+          success: false,
+          error: "invalid_password",
+          message: "Incorrect password.",
+        };
+      }
+    }
+
+    // 3. Audit log before deletion
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
       actorId: userId,
       action: "delete_account",
@@ -144,8 +165,12 @@ export const deleteAccount = action({
       details: { email: user.email, phone: user.phone },
     });
 
-    await ctx.runMutation(internal.users.internal.deleteUserById, { userId });
-    await ctx.runMutation(internal.auth.internal.revokeAllSessions, { userId });
+    // 4. Delete all user data via internal mutation (hard delete + anonymization)
+    //    This also deletes sessions and the user document.
+    await ctx.runMutation(internal.users.internal.deleteAllUserData, { userId });
+
+    // 5. ✅ REMOVED: revokeAllSessions – already handled inside deleteAllUserData
+    //    Calling it again would try to update a deleted user document.
 
     return {
       success: true,

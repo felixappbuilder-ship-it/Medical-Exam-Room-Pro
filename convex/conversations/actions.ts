@@ -90,7 +90,6 @@ async function getRecentContext(ctx: any, conversationId: any, targetTokens: num
     tokens += chunk.tokenCount;
     if (tokens >= targetTokens) break;
   }
-  // If we have more than targetTokens, we could truncate, but we'll return all collected (bounded by chunks)
   return messages;
 }
 
@@ -99,7 +98,39 @@ async function getChunkCount(ctx: any, conversationId: any): Promise<number> {
   return chunks.length;
 }
 
-// ==================== EXISTING ACTIONS (unchanged) ====================
+/**
+ * Analyze a file via the appropriate AI action based on its MIME type.
+ * Returns a string summary/analysis to be injected into the conversation context.
+ */
+async function analyzeFile(ctx: any, token: string, fileUrl: string, fileType: string): Promise<string | null> {
+  if (!fileUrl || !fileType) return null;
+
+  // Determine which AI action to call
+  if (fileType.startsWith("image/")) {
+    const result = await ctx.runAction(internal.ai.actions.analyzeImage, {
+      token,
+      imageUrl: fileUrl,
+      prompt: "Describe this medical image in detail.",
+    });
+    return result.success ? result.data.analysis : null;
+  } else if (fileType === "application/pdf" || fileType.startsWith("text/") || fileType === "application/msword") {
+    const result = await ctx.runAction(internal.ai.actions.analyzeDocument, {
+      token,
+      documentUrl: fileUrl,
+      prompt: "Provide a summary and key findings from this document.",
+    });
+    return result.success ? result.data.analysis : null;
+  } else if (fileType.startsWith("audio/")) {
+    const result = await ctx.runAction(internal.ai.actions.transcribeAudio, {
+      token,
+      audioUrl: fileUrl,
+    });
+    return result.success ? result.data.transcript : null;
+  }
+  return null; // unsupported file type
+}
+
+// ==================== EXISTING ACTIONS ====================
 
 export const getConversations = action({
   args: {
@@ -317,12 +348,14 @@ export const shareConversation = action({
       if (args.password) {
         passwordHash = await ctx.runAction(internal.auth.helpers.hashPassword, { password: args.password });
       }
+      // ✅ Pass userId to satisfy the sharedLinks schema
       await ctx.runMutation(internal.conversations.internal.createSharedLink, {
         targetType: "conversation",
         targetId: args.conversationId,
         token: shareToken,
         expiry,
         passwordHash,
+        userId: user._id, // ✅ required field
       });
       await ctx.runMutation(internal.auth.internal.logAuditEvent, {
         actorId: user._id,
@@ -330,9 +363,14 @@ export const shareConversation = action({
         targetId: args.conversationId,
         details: { shareToken, expiryHours, hasPassword: !!args.password },
       });
+      // Return absolute URL (use SITE_URL or fallback to relative)
+      const baseUrl = process.env.SITE_URL || "";
+      const shareUrl = baseUrl
+        ? `${baseUrl}/ai.html?ref=shared&token=${shareToken}`
+        : `/ai.html?ref=shared&token=${shareToken}`;
       return {
         success: true,
-        data: { shareToken, shareUrl: `/pages/ai.html?ref=shared&token=${shareToken}`, expiry },
+        data: { shareToken, shareUrl, expiry },
       };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -345,20 +383,23 @@ export const shareConversation = action({
   },
 });
 
-// ==================== NEW: SEND MESSAGE (AI chat with memory) ====================
+// ==================== NEW: SEND MESSAGE (AI chat with memory, file, modes) ====================
 
 export const sendMessage = action({
   args: {
     token: v.string(),
     conversationId: v.optional(v.id("conversations")),
     message: v.string(),
+    fileUrl: v.optional(v.string()),
+    fileType: v.optional(v.string()),
+    modes: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     try {
       const user = await verifyTokenAndGetUser(ctx, args.token);
       const userId = user._id;
 
-      // Rate limit check (R15)
+      // Rate limit check
       const rateOk = await checkRateLimit(ctx, userId, "sendMessage");
       if (!rateOk) {
         return {
@@ -412,7 +453,7 @@ export const sendMessage = action({
           tokenCount: userTokenCount,
           createdAt: now,
           updatedAt: now,
-          embedding: [], // will compute later
+          embedding: [],
         });
         currentChunkId = newChunkId;
         currentChunkNumber = newChunkNumber;
@@ -444,11 +485,72 @@ export const sendMessage = action({
         }
       }
 
-      // Build context (~400 tokens from recent chunks)
+      // --- Process file attachment (if any) ---
+      let fileAnalysis: string | null = null;
+      if (args.fileUrl && args.fileType) {
+        fileAnalysis = await analyzeFile(ctx, args.token, args.fileUrl, args.fileType);
+      }
+
+      // --- Process modes ---
+      let modeContextMessages: Array<{ role: string; content: string }> = [];
+      if (args.modes && args.modes.length > 0) {
+        for (const mode of args.modes) {
+          switch (mode) {
+            case "websearch":
+              // Perform web search and inject results
+              const searchResult = await ctx.runAction(internal.ai.actions.searchWeb, {
+                token: args.token,
+                query: args.message,
+              });
+              if (searchResult.success) {
+                modeContextMessages.push({
+                  role: "system",
+                  content: `Web search results:\n${searchResult.data.result}`,
+                });
+              }
+              break;
+            case "deepthink":
+              // For deepthink, we'll later adjust the system prompt or call a different AI
+              // Add a system message to request deep reasoning
+              modeContextMessages.push({
+                role: "system",
+                content: "Provide a detailed, step-by-step analysis with deep reasoning.",
+              });
+              break;
+            case "references":
+              // Fetch references and inject
+              const refResult = await ctx.runAction(internal.ai.actions.getReferences, {
+                token: args.token,
+                topic: args.message,
+              });
+              if (refResult.success) {
+                modeContextMessages.push({
+                  role: "system",
+                  content: `Relevant references:\n${refResult.data.references}`,
+                });
+              }
+              break;
+            // Add more modes as needed
+          }
+        }
+      }
+
+      // Build context messages
       const contextMessages = await getRecentContext(ctx, conversationId, 400);
 
-      // Call AI (DeepSeek)
-      const aiResponse = await callAIWithContext(contextMessages, args.message);
+      // Add file analysis if present
+      if (fileAnalysis) {
+        contextMessages.push({
+          role: "system",
+          content: `Analysis of the attached file:\n${fileAnalysis}`,
+        });
+      }
+
+      // Add mode-specific context messages (placed before user message)
+      const allMessages = [...modeContextMessages, ...contextMessages];
+
+      // Call AI (DeepSeek) with all context
+      const aiResponse = await callAIWithContext(allMessages, args.message);
 
       // Store AI response
       const aiMessageObj = { role: "assistant" as const, content: aiResponse, timestamp: Date.now() };
@@ -479,7 +581,11 @@ export const sendMessage = action({
         actorId: userId,
         action: "send_message",
         targetId: conversationId,
-        details: { messageLength: args.message.length },
+        details: {
+          messageLength: args.message.length,
+          hasFile: !!args.fileUrl,
+          modes: args.modes || [],
+        },
       });
 
       return {
@@ -504,7 +610,7 @@ export const sendMessage = action({
 
 async function callAIWithContext(contextMessages: Array<{ role: string; content: string }>, userMessage: string): Promise<string> {
   const systemPrompt =
-    "You are a helpful medical exam tutor assistant. Use the provided conversation history to answer the user's question accurately and concisely.";
+    "You are a helpful medical exam tutor assistant. Use the provided conversation history and any additional context to answer the user's question accurately and concisely.";
   const messages = [
     { role: "system", content: systemPrompt },
     ...contextMessages,
@@ -614,7 +720,7 @@ export const requestMoreHistory = action({
   },
 });
 
-// ==================== VECTOR SEARCH (placeholder – will be implemented in ai folder) ====================
+// ==================== VECTOR SEARCH (placeholder) ====================
 
 export const vectorSearchConversations = action({
   args: {

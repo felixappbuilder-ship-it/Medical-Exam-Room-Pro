@@ -34,8 +34,8 @@ export const createShare = mutation({
       details: { token, expiry },
     });
 
-    const baseUrl = process.env.PUBLIC_URL || "https://medhub.edgeone.app";
-    const url = `${baseUrl}/pages/shared-exam.html?token=${token}`;
+    const baseUrl = process.env.PUBLIC_URL || "https://medvix.edgeone.app";
+    const url = `${baseUrl}/shared-exam/?token=${token}`;
     console.log("[createShare] Share created, URL:", url);
     return { success: true, url, token, expiry };
   },

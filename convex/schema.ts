@@ -1,10 +1,10 @@
-// convex/schema.ts – final, with multi‑participant challenges, chat, moods, payments, referrals, and AI memory (chunks + summaries)
+// convex/schema.ts – final, with multi‑participant challenges, chat, moods, payments, referrals, AI memory (chunks + summaries), notifications, and performance tracking
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
   // ============================================================
-  // Users – enhanced for frontend models, challenge system, and referrals
+  // Users – enhanced for frontend models, challenge system, referrals, and performance
   // ============================================================
   users: defineTable({
     name: v.string(),
@@ -68,6 +68,15 @@ export default defineSchema({
     totalEarned: v.number(),
     pendingBalance: v.number(),
     referralRewarded: v.optional(v.boolean()),
+    lastExamEncouragementSentAt: v.optional(v.number()),
+    examEncouragementOptOut: v.optional(v.boolean()),
+    // ✅ NEW: Performance tracking fields
+    rating: v.optional(v.number()),            // default 100
+    historyEWMA: v.optional(v.number()),       // default 0.5
+    completedExams: v.optional(v.number()),    // default 0
+    startedExams: v.optional(v.number()),      // default 0
+    leaderboardPoints: v.optional(v.number()), // default 0
+    integrityScore: v.optional(v.number()),    // default 1
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
@@ -108,13 +117,12 @@ export default defineSchema({
       v.literal("failed"),
       v.literal("expired"),
       v.literal("claimed"),
-      v.literal("reversed")   // added for reversals
+      v.literal("reversed")
     ),
     amount: v.number(),
     userId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
-    // New fields for Buy Goods manual matching
     mpesaCode: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
     checkoutRequestId: v.optional(v.string()),
@@ -134,8 +142,8 @@ export default defineSchema({
   // ============================================================
   paymentEvents: defineTable({
     paymentId: v.optional(v.id("payments")),
-    source: v.string(), // "stk", "c2b", "b2c", "balance", "status", "reversal", "admin", "scheduler"
-    eventType: v.string(), // "STK_INITIATED", "CALLBACK_RECEIVED", "STATUS_QUERY", "PAYMENT_SUCCESS", "PAYMENT_FAILED", "REVERSAL_REQUESTED", "REVERSAL_COMPLETED"
+    source: v.string(),
+    eventType: v.string(),
     payload: v.any(),
     createdAt: v.number(),
   })
@@ -230,7 +238,7 @@ export default defineSchema({
   // Webhook Logs (for debugging and audit)
   // ============================================================
   webhookLogs: defineTable({
-    source: v.string(), // "stk_callback", "c2b_validation", "c2b_confirmation", "b2c_result", "reversal_result", "balance_result", "status_result"
+    source: v.string(),
     payload: v.any(),
     headers: v.any(),
     response: v.optional(v.any()),
@@ -257,7 +265,7 @@ export default defineSchema({
     userId: v.id("users"),
     type: v.union(v.literal("credit"), v.literal("debit")),
     amount: v.number(),
-    source: v.string(), // "referral", "agent_commission", "competition", "bonus", "withdrawal"
+    source: v.string(),
     reference: v.optional(v.string()),
     createdAt: v.number(),
   })
@@ -332,6 +340,9 @@ export default defineSchema({
     ),
     paymentsFrozen: v.boolean(),
     maxRequestsPerMinute: v.number(),
+    autoApproveWithdrawals: v.optional(v.boolean()),
+    // ✅ NEW: Points awarded to challenge winner
+    challengeWinnerPoints: v.optional(v.number()),
   }),
 
   // ============================================================
@@ -431,7 +442,7 @@ export default defineSchema({
     paymentMethod: v.optional(v.string()),
     deviceFingerprint: v.optional(v.string()),
     lastPaymentDate: v.optional(v.number()),
-    updatedAt: v.optional(v.number()), // ✅ added to allow tracking updates
+    updatedAt: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
     .index("by_expiryDate", ["expiryDate"])
@@ -483,21 +494,32 @@ export default defineSchema({
     .index("by_topic", ["topic"]),
 
   // ============================================================
-  // Notifications – admin broadcasts and per‑user events
+  // Notifications – global/group and user-specific
   // ============================================================
   notifications: defineTable({
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // null for global/group
+    targetAll: v.optional(v.boolean()),
+    targetGroups: v.optional(v.array(v.string())),
     type: v.string(),
     title: v.string(),
     message: v.string(),
     data: v.optional(v.any()),
-    read: v.boolean(),
     createdAt: v.number(),
     senderId: v.optional(v.id("users")),
   })
-    .index("by_userId_read", ["userId", "read"])
-    .index("by_userId_createdAt", ["userId", "createdAt"])
+    .index("by_userId", ["userId"])
+    .index("by_targetAll", ["targetAll"])
     .index("by_createdAt", ["createdAt"]),
+
+  notificationReads: defineTable({
+    notificationId: v.id("notifications"),
+    userId: v.id("users"),
+    read: v.boolean(),
+    readAt: v.optional(v.number()),
+  })
+    .index("by_notificationId", ["notificationId"])
+    .index("by_userId", ["userId"])
+    .index("by_notificationId_userId", ["notificationId", "userId"]),
 
   // ============================================================
   // auditLogs – unchanged
@@ -584,9 +606,9 @@ export default defineSchema({
       v.literal("completed"),
       v.literal("archived")
     ),
-    blob: v.string(),               // opaque encoded exam configuration
-    maxParticipants: v.number(),     // 2–100, default 100
-    participantCount: v.number(),    // current count (including creator)
+    blob: v.string(),
+    maxParticipants: v.number(),
+    participantCount: v.number(),
     createdAt: v.number(),
     expiresAt: v.number(),
     winnerId: v.optional(v.id("users")),
@@ -612,8 +634,8 @@ export default defineSchema({
   // ============================================================
   chatMessages: defineTable({
     challengeId: v.id("challenges"),
-    author: v.string(),           // displayName of sender
-    userId: v.id("users"),        // actual user ID
+    author: v.string(),
+    userId: v.id("users"),
     body: v.string(),
     createdAt: v.number(),
   })
@@ -632,7 +654,7 @@ export default defineSchema({
     .index("by_challengeId_mood", ["challengeId", "mood"]),
 
   // ============================================================
-  // Results – challenge results
+  // Results – challenge results (with performance fields)
   // ============================================================
   results: defineTable({
     challengeId: v.id("challenges"),
@@ -641,6 +663,13 @@ export default defineSchema({
     percentage: v.number(),
     timeSpent: v.number(),
     submittedAt: v.number(),
+    // ✅ NEW: Aggregated performance data
+    examResultId: v.optional(v.id("examResults")),
+    difficultyFactor: v.optional(v.number()),
+    totalQuestions: v.optional(v.number()),
+    pr: v.optional(v.number()),
+    ratingBefore: v.optional(v.number()),
+    ratingAfter: v.optional(v.number()),
   })
     .index("by_challenge", ["challengeId"])
     .index("by_user", ["userId"]),
@@ -691,6 +720,13 @@ export default defineSchema({
     reference: v.optional(v.string()),
     requestedAt: v.number(),
     processedAt: v.optional(v.number()),
+    reason: v.optional(v.string()),
+    paymentMethod: v.optional(v.string()),
+    paymentReference: v.optional(v.string()),
+    b2cTransactionId: v.optional(v.string()),
+    b2cResultCode: v.optional(v.string()),
+    b2cResultDesc: v.optional(v.string()),
+    processedBy: v.optional(v.id("users")),
   })
     .index("by_userId", ["userId"])
     .index("by_status", ["status"]),

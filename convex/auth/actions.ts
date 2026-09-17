@@ -4,9 +4,10 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
+import * as notificationTriggers from "../notifications/triggers";
 
 // ============================================================
-// REGISTER (with referral, isAgent, agentVerified)
+// REGISTER (with referral, isAgent, agentVerified) + notification
 // ============================================================
 export const register = action({
   args: {
@@ -81,7 +82,6 @@ export const register = action({
     );
 
     const baseName = args.name.replace(/\s+/g, "");
-    // Ensure username uniqueness – this mutation is defined in challenges/internal.ts
     const username = await ctx.runMutation(internal.challenges.internal.generateUniqueUsername, {
       baseName,
     });
@@ -90,7 +90,6 @@ export const register = action({
     // ============================================================
     // REFERRAL HANDLING
     // ============================================================
-    // Generate a new referral code for the user (always, even if no referrer)
     const referralCode = await ctx.runMutation(internal.users.internal.generateUniqueReferralCode, {});
 
     let referredBy: string | undefined = undefined;
@@ -115,7 +114,7 @@ export const register = action({
       securityQuestions: hashedQuestions,
       username,
       displayName,
-      referralCode,               // always a string (generated)
+      referralCode,
       referredBy,
       isAgent,
       agentVerified,
@@ -144,6 +143,14 @@ export const register = action({
       },
     });
 
+    // 🔔 NOTIFICATION: Account created
+    await notificationTriggers.notifyAccountCreated(
+      ctx,
+      userId,
+      args.name,
+      args.email
+    );
+
     const token = await ctx.runAction(internal.auth.helpers.signJWT, {
       payload: { userId, email: args.email, role: "user" },
       expiresIn: "30d",
@@ -167,7 +174,8 @@ export const register = action({
 });
 
 // ============================================================
-// LOGIN – with session management & single-device enforcement
+// LOGIN – with session management, single-device enforcement,
+// lastLogin/lastSeen tracking, and device change notification
 // ============================================================
 export const login = action({
   args: {
@@ -243,6 +251,12 @@ export const login = action({
       };
     }
 
+    // ---- Update lastLogin and lastSeen for dormancy detection ----
+    await ctx.runMutation(internal.auth.internal.updateUser, {
+      userId: user._id,
+      updates: { lastLogin: now, lastSeen: now },
+    });
+
     // ---- SESSION MANAGEMENT ----
     const existingSession = await ctx.runQuery(internal.auth.internal.getSessionByDeviceId, {
       deviceId: args.deviceFingerprint,
@@ -260,17 +274,28 @@ export const login = action({
       deviceId: args.deviceFingerprint,
       deviceFingerprint: args.deviceFingerprint,
       platform: args.deviceInfo?.platform || "web",
-      expiresAt: now + 30 * 24 * 60 * 60 * 1000,
+      expiresAt: now + 365 * 24 * 60 * 60 * 1000,
     });
 
+    // ---- DEVICE CHANGE DETECTION ----
     const existingDevices = user.devices || [];
     const deviceExists = existingDevices.some((d) => d.fingerprint === args.deviceFingerprint);
+    let isNewDevice = false;
     if (!deviceExists) {
+      isNewDevice = true;
       await ctx.runMutation(internal.auth.internal.logSecurityEvent, {
         userId: user._id,
         eventType: "device_change",
         metadata: { fingerprint: args.deviceFingerprint, timestamp: now },
       });
+
+      // 🔔 NOTIFICATION: New device detected
+      await notificationTriggers.notifyNewDevice(
+        ctx,
+        user._id,
+        args.deviceInfo?.platform || "web",
+        args.deviceFingerprint
+      );
     }
     await ctx.runMutation(internal.auth.internal.addDevice, {
       userId: user._id,
@@ -302,7 +327,7 @@ export const login = action({
         username: user.username,
         displayName: user.displayName,
         sessionId,
-        isNewDevice: !deviceExists,
+        isNewDevice,
       },
     };
   },
@@ -338,7 +363,99 @@ export const verifyToken = action({
 });
 
 // ============================================================
-// CHANGE PASSWORD
+// REFRESH SESSION – obtain a new JWT using a valid sessionId
+// ============================================================
+export const refreshSession = action({
+  args: {
+    sessionId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.runQuery(
+      internal.auth.internal.getSessionBySessionId,
+      { sessionId: args.sessionId }
+    );
+
+    if (!session) {
+      return {
+        success: false,
+        error: "session_not_found",
+        message: "Session no longer exists.",
+      };
+    }
+
+    if (session.revoked) {
+      return {
+        success: false,
+        error: "session_revoked",
+        message: "Session has been revoked.",
+      };
+    }
+
+    if (session.expiresAt <= Date.now()) {
+      return {
+        success: false,
+        error: "session_expired",
+        message: "Session has expired.",
+      };
+    }
+
+    const user = await ctx.runQuery(
+      internal.auth.internal.getUserById,
+      { userId: session.userId }
+    );
+
+    if (!user) {
+      return {
+        success: false,
+        error: "user_not_found",
+        message: "User no longer exists.",
+      };
+    }
+
+    if (user.isLocked) {
+      return {
+        success: false,
+        error: "account_locked",
+        message: "Account is locked.",
+      };
+    }
+
+    const userRole = user.role || "user";
+
+    const token = await ctx.runAction(
+      internal.auth.helpers.signJWT,
+      {
+        payload: {
+          userId: user._id,
+          email: user.email,
+          role: userRole,
+          sessionId: session.sessionId,
+        },
+        expiresIn: "30d",
+      }
+    );
+
+    await ctx.runMutation(
+      internal.auth.internal.updateSessionLastSeen,
+      {
+        sessionId: session.sessionId,
+        lastSeen: Date.now(),
+      }
+    );
+
+    return {
+      success: true,
+      data: {
+        token,
+        userId: user._id,
+        sessionId: session.sessionId,
+      },
+    };
+  },
+});
+
+// ============================================================
+// CHANGE PASSWORD – with notification
 // ============================================================
 export const changePassword = action({
   args: {
@@ -395,12 +512,15 @@ export const changePassword = action({
 
     await ctx.runMutation(internal.auth.internal.revokeAllSessions, { userId });
 
+    // 🔔 NOTIFICATION: Password changed
+    await notificationTriggers.notifyPasswordChanged(ctx, userId);
+
     return { success: true, data: { message: "Password changed successfully. You have been logged out from other devices." } };
   },
 });
 
 // ============================================================
-// PASSWORD RESET FLOW
+// PASSWORD RESET FLOW – with notification
 // ============================================================
 export const resetPasswordRequest = action({
   args: { identifier: v.string(), securityAnswers: v.array(v.string()) },
@@ -443,6 +563,9 @@ export const resetPasswordRequest = action({
         };
       }
     }
+
+    // 🔔 NOTIFICATION: Password reset requested (security event)
+    await notificationTriggers.notifyPasswordResetRequested(ctx, user._id);
 
     const resetToken = await ctx.runAction(internal.auth.helpers.signJWT, {
       payload: { userId: user._id, purpose: "password_reset" },
@@ -493,6 +616,9 @@ export const resetPasswordConfirm = action({
       targetId: userId,
       details: {},
     });
+
+    // 🔔 NOTIFICATION: Password reset completed
+    await notificationTriggers.notifyPasswordResetCompleted(ctx, userId);
 
     return {
       success: true,

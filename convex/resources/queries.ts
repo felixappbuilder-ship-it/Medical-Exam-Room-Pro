@@ -18,7 +18,7 @@ function getPublicThumbnailUrl(r2ThumbnailKey: string | undefined): string | nul
 
 // ------------------------------------------------------------------
 // 1. Get resources list (public – no auth required)
-// Returns thumbnails, metadata, and manifest version for caching
+// Returns all fields the frontend needs for rendering cards.
 // ------------------------------------------------------------------
 export const getResources = query({
   args: {
@@ -46,13 +46,19 @@ export const getResources = query({
     const hasMore = items.length > limit;
     const results = items.slice(0, limit);
 
+    // Return all fields the frontend uses
     const documents = results.map((r) => ({
       _id: r._id,
       title: r.title,
-      thumbnailUrl: getPublicThumbnailUrl(r.r2ThumbnailKey),
-      r2ThumbnailKey: r.r2ThumbnailKey,
+      subject: r.subject,
+      category: r.category,
+      author: r.author,
+      year: r.year,
+      isPremium: r.isPremium ?? false,
       fileType: r.fileType,
       fileSize: r.fileSize,
+      thumbnailUrl: getPublicThumbnailUrl(r.r2ThumbnailKey),
+      r2ThumbnailKey: r.r2ThumbnailKey,
       updatedAt: r.updatedAt,
     }));
 

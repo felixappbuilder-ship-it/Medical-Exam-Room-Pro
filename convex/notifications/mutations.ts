@@ -12,6 +12,9 @@ async function verifyTokenAndGetUser(ctx: any, token: string) {
   return user;
 }
 
+// ============================================================
+// 1. MARK A SINGLE NOTIFICATION AS READ
+// ============================================================
 export const markNotificationRead = mutation({
   args: {
     token: v.string(),
@@ -23,13 +26,19 @@ export const markNotificationRead = mutation({
     if (!notif) {
       return { success: false, error: "not_found", message: "Notification not found" };
     }
-    if (notif.userId !== user._id) {
+
+    // For user‑specific notifications, the userId must match.
+    // For global/group notifications, any user can mark them read.
+    if (notif.userId && notif.userId !== user._id) {
       return { success: false, error: "unauthorized", message: "You do not own this notification" };
     }
+
+    // Use the internal mutation that handles both types.
     await ctx.runMutation(internal.notifications.internal.markNotificationRead, {
       notificationId: args.notificationId,
+      userId: user._id,
     });
-    // Audit log (R16) – not required for user action, but we log it
+
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
       actorId: user._id,
       action: "mark_notification_read",
@@ -40,6 +49,9 @@ export const markNotificationRead = mutation({
   },
 });
 
+// ============================================================
+// 2. MARK ALL NOTIFICATIONS AS READ
+// ============================================================
 export const markAllNotificationsRead = mutation({
   args: { token: v.string() },
   handler: async (ctx, args) => {
@@ -57,7 +69,9 @@ export const markAllNotificationsRead = mutation({
   },
 });
 
-// Optional: delete a notification (if frontend allows)
+// ============================================================
+// 3. DELETE A NOTIFICATION (user‑specific only)
+// ============================================================
 export const deleteNotification = mutation({
   args: {
     token: v.string(),
@@ -69,9 +83,16 @@ export const deleteNotification = mutation({
     if (!notif) {
       return { success: false, error: "not_found", message: "Notification not found" };
     }
-    if (notif.userId !== user._id) {
-      return { success: false, error: "unauthorized", message: "You do not own this notification" };
+
+    // Only allow deletion of user‑specific notifications owned by the user.
+    if (!notif.userId || notif.userId !== user._id) {
+      return {
+        success: false,
+        error: "unauthorized",
+        message: "You cannot delete this notification",
+      };
     }
+
     await ctx.db.delete(args.notificationId);
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
       actorId: user._id,

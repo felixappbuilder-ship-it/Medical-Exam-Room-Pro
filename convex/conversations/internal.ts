@@ -129,7 +129,7 @@ export const getMessages = internalQuery({
 });
 
 // ============================================================
-// SHARED LINKS (unchanged)
+// SHARED LINKS
 // ============================================================
 
 export const createSharedLink = internalMutation({
@@ -139,6 +139,7 @@ export const createSharedLink = internalMutation({
     token: v.string(),
     expiry: v.number(),
     passwordHash: v.optional(v.string()),
+    userId: v.id("users"), // ✅ added required field
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("sharedLinks", {
@@ -147,6 +148,7 @@ export const createSharedLink = internalMutation({
       token: args.token,
       expiry: args.expiry,
       passwordHash: args.passwordHash,
+      userId: args.userId, // ✅ include it
     });
   },
 });

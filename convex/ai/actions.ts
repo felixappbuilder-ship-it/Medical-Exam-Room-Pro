@@ -125,12 +125,12 @@ async function callAIWithRichData(
   return { text, richData, meta };
 }
 
-// ==================== CONCISE SYSTEM PROMPT (MedHub AI) ====================
+// ==================== CONCISE SYSTEM PROMPT (MedVix AI) ====================
 const MEDHUB_SYSTEM_PROMPT = `
-You are MedHub AI, a medical educator for students. Prioritize correctness, understanding, and educational value. Adapt depth, tone, and structure to each query: simple greetings → brief; complex topics → detailed with relevant assets (tables, mnemonics, references) only when useful. Never be repetitive or robotic. Return JSON with:
+You are MedVix AI, a medical educator for students. Prioritize correctness, understanding, and educational value. Adapt depth, tone, and structure to each query: simple greetings → brief; complex topics → detailed with relevant assets (tables, mnemonics, references) only when useful. Never be repetitive or robotic. Return JSON with:
 - "text": main answer (Markdown)
 - "richData": structured extras (formulas, mnemonics, references, sources, thinkingTime, modelUsed, images, etc.)
-- "meta": short summary (e.g., "🧠 12.5s · MedHub AI")
+- "meta": short summary (e.g., "🧠 12.5s · MedVix AI")
 Include modelUsed always; omit cost estimation. Omit references unless requested or clinically important.
 `;
 
@@ -618,7 +618,7 @@ export const deepthink = action({
         thinkingTime: elapsed,
         modelUsed: "gemini-2.0-flash-thinking-exp",
       };
-      const fullMeta = meta || `🧠 ${elapsed.toFixed(1)}s · MedHub AI`;
+      const fullMeta = meta || `🧠 ${elapsed.toFixed(1)}s · MedVix AI`;
       return { success: true, data: { answer: text, richData: fullRich, meta: fullMeta } };
     } catch (err: any) {
       throw new ConvexError(`DeepThink failed: ${err.message}`);
@@ -653,7 +653,7 @@ export const searchWeb = action({
         webPagesRead: richData?.webPagesRead || 0,
         ...richData,
       };
-      const fullMeta = meta || `🌐 ${fullRich.webPagesRead} pages read · MedHub AI`;
+      const fullMeta = meta || `🌐 ${fullRich.webPagesRead} pages read · MedVix AI`;
       return { success: true, data: { results: text, richData: fullRich, meta: fullMeta } };
     } catch (err: any) {
       throw new ConvexError(`Web search failed: ${err.message}`);
@@ -687,7 +687,7 @@ export const getReferences = action({
         references: richData?.references || [],
         ...richData,
       };
-      const fullMeta = meta || `📚 ${fullRich.references.length} references · MedHub AI`;
+      const fullMeta = meta || `📚 ${fullRich.references.length} references · MedVix AI`;
       return { success: true, data: { references: text, richData: fullRich, meta: fullMeta } };
     } catch (err: any) {
       throw new ConvexError(`References retrieval failed: ${err.message}`);

@@ -22,7 +22,7 @@ export const insertUser = internalMutation({
     username: v.string(),
     displayName: v.string(),
     // Referral fields – referralCode is optional (frontend may not send it)
-    referralCode: v.optional(v.string()),  // ✅ changed to optional
+    referralCode: v.optional(v.string()),
     referredBy: v.optional(v.id("users")),
     isAgent: v.boolean(),
     agentVerified: v.optional(v.boolean()),
@@ -54,6 +54,13 @@ export const insertUser = internalMutation({
       totalEarned: args.totalEarned,
       pendingBalance: args.pendingBalance,
       referralRewarded: false,
+      // ✅ Performance tracking defaults
+      rating: 100,
+      historyEWMA: 0.5,
+      completedExams: 0,
+      startedExams: 0,
+      leaderboardPoints: 0,
+      integrityScore: 1,
     });
     return userId;
   },
@@ -111,6 +118,8 @@ export const updateUser = internalMutation({
       username: v.optional(v.string()),
       displayName: v.optional(v.string()),
       status: v.optional(v.union(v.literal("online"), v.literal("offline"))),
+      lastLogin: v.optional(v.number()),
+      lastSeen: v.optional(v.number()),
       preferences: v.optional(
         v.object({
           theme: v.optional(v.string()),
@@ -124,6 +133,13 @@ export const updateUser = internalMutation({
       pendingBalance: v.optional(v.number()),
       totalEarned: v.optional(v.number()),
       referralRewarded: v.optional(v.boolean()),
+      // ✅ Performance fields (admin or internal updates)
+      rating: v.optional(v.number()),
+      historyEWMA: v.optional(v.number()),
+      completedExams: v.optional(v.number()),
+      startedExams: v.optional(v.number()),
+      leaderboardPoints: v.optional(v.number()),
+      integrityScore: v.optional(v.number()),
     }),
   },
   handler: async (ctx, args) => {

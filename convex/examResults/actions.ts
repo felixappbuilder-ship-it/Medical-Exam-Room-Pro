@@ -1,3 +1,4 @@
+// convex/examResults/actions.ts
 "use node";
 
 import { action } from "../_generated/server";
@@ -12,12 +13,15 @@ async function verifyTokenAndGetUser(ctx: any, token: string) {
   return user;
 }
 
+// ============================================================
+// 1. GET EXAM HISTORY
+// ============================================================
 export const getExamHistory = action({
   args: {
     token: v.string(),
     limit: v.optional(v.number()),
     cursor: v.optional(v.id("examResults")),
-    since: v.optional(v.number()), // new: fetch only items updated after this timestamp
+    since: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     try {
@@ -27,7 +31,6 @@ export const getExamHistory = action({
         internal.examResults.internal.getExamResultsByUser,
         { userId: user._id, limit, cursor: args.cursor }
       );
-      // Filter by `since` if provided
       const filtered = args.since
         ? items.filter(r => (r.updatedAt || r.createdAt) > args.since)
         : items;
@@ -57,6 +60,9 @@ export const getExamHistory = action({
   },
 });
 
+// ============================================================
+// 2. GET EXAM RESULT (fixed: uses internal query for answers)
+// ============================================================
 export const getExamResult = action({
   args: { token: v.string(), examResultId: v.id("examResults") },
   handler: async (ctx, args) => {
@@ -68,10 +74,9 @@ export const getExamResult = action({
       if (!examResult || examResult.userId !== user._id) {
         return { success: false, error: "unauthorized", message: "You do not have access to this exam result." };
       }
-      const answers = await ctx.db
-        .query("examAnswers")
-        .withIndex("by_examResultId", (q) => q.eq("examResultId", args.examResultId))
-        .collect();
+      const answers = await ctx.runQuery(internal.examResults.internal.getExamAnswersByResultId, {
+        examResultId: args.examResultId,
+      });
       const resultData = {
         _id: examResult._id,
         examId: examResult.examId,
@@ -100,6 +105,100 @@ export const getExamResult = action({
     } catch (err) {
       console.error("[getExamResult] Error:", err);
       return { success: false, error: err.message || "Failed to fetch exam result", message: err.message };
+    }
+  },
+});
+
+// ============================================================
+// 3. SEND EXAM ENCOURAGEMENT NOTIFICATIONS (fixed: no ctx.db)
+// ============================================================
+export const sendExamEncouragementNotifications = action({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const minInterval = 4 * 24 * 60 * 60 * 1000; // 4 days
+    const users = await ctx.runQuery(internal.users.internal.getAllUsers, {});
+    let sentCount = 0;
+
+    for (const user of users) {
+      if (user.examEncouragementOptOut) continue;
+      const lastSent = user.lastExamEncouragementSentAt || 0;
+      if (now - lastSent < minInterval) continue;
+
+      const examHistory = await ctx.runQuery(
+        internal.examResults.internal.getExamResultsByUser,
+        { userId: user._id, limit: 1000 }
+      );
+      if (examHistory.items.length === 0) continue;
+
+      const totalExams = examHistory.items.length;
+      const averageScore = examHistory.items.reduce((sum, e) => sum + (e.scorePercentage || 0), 0) / totalExams;
+      const weakAreas = examHistory.items.flatMap(e => e.weakAreas || []);
+      const topWeak = weakAreas.length > 0
+        ? weakAreas
+            .sort((a, b) => weakAreas.filter(v => v === a).length - weakAreas.filter(v => v === b).length)
+            .slice(0, 3)
+        : [];
+
+      const encouragement = averageScore > 70
+        ? "Great job! Keep up the excellent work."
+        : averageScore > 50
+        ? "You're making progress! Stay consistent."
+        : "Keep going! Every practice brings you closer to mastery.";
+
+      const message = `
+        <p><strong>📚 Keep Practicing, ${user.displayName || user.name}!</strong></p>
+        <p>You've completed <strong>${totalExams}</strong> exams with an average score of <strong>${Math.round(averageScore)}%</strong>.</p>
+        ${topWeak.length > 0 ? `<p>Focus on <strong>${topWeak.join(', ')}</strong> for improvement.</p>` : ''}
+        <p>${encouragement}</p>
+        <p>Ready for another challenge?</p>
+        <button data-action="navigate" data-route="subjects">Start an Exam</button>
+        <button data-action="api:examResults/actions:toggleExamEncouragementOptOut" data-optOut="true" data-dismiss="true">Opt Out</button>
+      `;
+
+      await ctx.runMutation(internal.notifications.internal.insertNotification, {
+        userId: user._id,
+        type: "exam_encouragement",
+        title: "Exam Practice Encouragement",
+        message,
+        data: { route: "subjects" },
+      });
+
+      // Update last sent timestamp via internal mutation
+      await ctx.runMutation(internal.users.internal.updateUserById, {
+        userId: user._id,
+        updates: { lastExamEncouragementSentAt: now },
+      });
+
+      sentCount++;
+    }
+    return { sent: sentCount };
+  },
+});
+
+// ============================================================
+// 4. TOGGLE EXAM ENCOURAGEMENT OPT‑OUT (fixed: uses internal mutation)
+// ============================================================
+export const toggleExamEncouragementOptOut = action({
+  args: {
+    token: v.string(),
+    optOut: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const user = await verifyTokenAndGetUser(ctx, args.token);
+      await ctx.runMutation(internal.users.internal.updateUserById, {
+        userId: user._id,
+        updates: { examEncouragementOptOut: args.optOut },
+      });
+      return { success: true, data: { optOut: args.optOut } };
+    } catch (err) {
+      console.error("[toggleExamEncouragementOptOut] Error:", err);
+      return {
+        success: false,
+        error: err.message || "Failed to update preference",
+        message: err.message,
+      };
     }
   },
 });

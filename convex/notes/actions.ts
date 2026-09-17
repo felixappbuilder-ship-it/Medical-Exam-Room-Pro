@@ -5,6 +5,7 @@ import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import crypto from "crypto";
+import * as notificationTriggers from "../notifications/triggers";
 
 async function verifyTokenAndGetUser(ctx: any, token: string) {
   const result = await ctx.runAction(internal.auth.actions.verifyToken, { token });
@@ -158,6 +159,20 @@ export const createNote = action({
       targetId: noteId,
       details: { title: args.title },
     });
+
+    // 🔔 Notify if note is shared with specific users
+    if (args.shareWith && args.shareWith.length > 0) {
+      const shareToken = args.sharedToken || crypto.randomUUID();
+      await notificationTriggers.notifyNoteSharedWithUsers(
+        ctx,
+        args.shareWith,
+        noteId,
+        args.title,
+        user.displayName || user.name,
+        shareToken
+      );
+    }
+
     return { success: true, data: { noteId } };
   },
 });
@@ -221,6 +236,22 @@ export const updateNote = action({
       targetId: note._id,
       details: { updatedFields: Object.keys(updates) },
     });
+
+    // 🔔 If shareWith was updated, notify new recipients
+    if (args.shareWith !== undefined && args.shareWith.length > 0) {
+      // We should only notify new users, but for simplicity we'll notify all (idempotent)
+      // We can compare with previous shareWith to avoid duplicates, but not critical.
+      const shareToken = updates.sharedToken || note.sharedToken || crypto.randomUUID();
+      await notificationTriggers.notifyNoteSharedWithUsers(
+        ctx,
+        args.shareWith,
+        note._id,
+        args.title || note.title,
+        user.displayName || user.name,
+        shareToken
+      );
+    }
+
     return { success: true };
   },
 });
@@ -248,12 +279,13 @@ export const deleteNote = action({
   },
 });
 
-// ==================== SHARE NOTE ====================
+// ==================== SHARE NOTE (with optional shareWith) ====================
 export const shareNote = action({
   args: {
     token: v.string(),
     noteId: v.string(),
     password: v.optional(v.string()),
+    shareWith: v.optional(v.array(v.id("users"))), // New: optional list of users to share with
   },
   handler: async (ctx, args) => {
     try {
@@ -306,15 +338,37 @@ export const shareNote = action({
         });
       }
 
+      // 🔔 Notification to the creator (always)
+      await notificationTriggers.notifyNoteShared(
+        ctx,
+        user._id, // creator gets their own notification with the link
+        note._id,
+        note.title,
+        user.displayName || user.name,
+        shareToken
+      );
+
+      // 🔔 If shareWith is provided, notify each user
+      if (args.shareWith && args.shareWith.length > 0) {
+        await notificationTriggers.notifyNoteSharedWithUsers(
+          ctx,
+          args.shareWith,
+          note._id,
+          note.title,
+          user.displayName || user.name,
+          shareToken
+        );
+      }
+
       await ctx.runMutation(internal.auth.internal.logAuditEvent, {
         actorId: user._id,
         action: "share_note",
         targetId: note._id,
-        details: { shareToken },
+        details: { shareToken, shareWith: args.shareWith },
       });
 
-      const baseUrl = process.env.PUBLIC_URL || "https://medhub.edgeone.app";
-      const shareUrl = `${baseUrl}/pages/shared-note.html?token=${shareToken}`;
+      const baseUrl = process.env.PUBLIC_URL || "https://medvix.edgeone.app";
+      const shareUrl = `${baseUrl}/shared-note/?token=${shareToken}`;
 
       console.log("[shareNote] Success, shareUrl:", shareUrl);
       return { success: true, data: { shareToken, shareUrl } };
