@@ -1,10 +1,10 @@
-// convex/schema.ts – final, with multi‑participant challenges, chat, moods, payments, referrals, AI memory (chunks + summaries), notifications, and performance tracking
-import { defineSchema, defineTable } from "convex/server";
+// convex/schema.ts – final, with multi‑participant challenges, chat, moods, payments, referrals, AI memory (chunks + summaries), notifications, performance tracking, multi-provider authentication identities, dynamic pricing, dual-device subscriptions, and enriched device tracking
+import { defineSchema, defineTable } from "convex/values";
 import { v } from "convex/values";
 
 export default defineSchema({
   // ============================================================
-  // Users – enhanced for frontend models, challenge system, referrals, and performance
+  // Users – enhanced for frontend models, challenge system, referrals, performance
   // ============================================================
   users: defineTable({
     name: v.string(),
@@ -20,14 +20,30 @@ export default defineSchema({
     isLocked: v.boolean(),
     lockReason: v.optional(v.string()),
     trialUsed: v.boolean(),
+    // ------------------------------------------------------------
+    // Device array – enriched with stable deviceCode + metadata.
+    // deviceCode is generated once per physical device by the frontend
+    // and stored in localStorage. It is the constant identifier we use
+    // to bind subscriptions to specific devices.
+    // ------------------------------------------------------------
     devices: v.array(
       v.object({
-        fingerprint: v.string(),
+        deviceCode: v.string(),                 // ✅ stable device identifier (constant)
+        fingerprint: v.string(),                // legacy fingerprint (kept for compatibility)
         lastUsed: v.number(),
-        platform: v.optional(v.string()),
+        firstSeen: v.optional(v.number()),
+        platform: v.optional(v.string()),       // "web" | "android" | "ios" | "desktop"
+        os: v.optional(v.string()),             // "Windows 11", "Android 14", ...
+        browser: v.optional(v.string()),        // "Chrome 120", "Firefox 121", ...
+        model: v.optional(v.string()),          // "Samsung SM-G998B", ...
+        manufacturer: v.optional(v.string()),   // "Samsung", "Apple", ...
+        appVersion: v.optional(v.string()),     // "1.0.0"
+        userAgent: v.optional(v.string()),      // raw UA (truncated)
+        nickname: v.optional(v.string()),       // user-assigned label
+        isSubscribed: v.optional(v.boolean()),  // derived: covered by active dual subscription
       })
     ),
-    deviceFingerprint: v.optional(v.string()),
+    deviceFingerprint: v.optional(v.string()),  // legacy single-device field
     institution: v.optional(v.string()),
     yearOfStudy: v.optional(v.number()),
     createdAt: v.optional(v.number()),
@@ -70,30 +86,64 @@ export default defineSchema({
     referralRewarded: v.optional(v.boolean()),
     lastExamEncouragementSentAt: v.optional(v.number()),
     examEncouragementOptOut: v.optional(v.boolean()),
-    // ✅ NEW: Performance tracking fields
+    // Performance tracking fields
     rating: v.optional(v.number()),            // default 100
     historyEWMA: v.optional(v.number()),       // default 0.5
     completedExams: v.optional(v.number()),    // default 0
     startedExams: v.optional(v.number()),      // default 0
     leaderboardPoints: v.optional(v.number()), // default 0
     integrityScore: v.optional(v.number()),    // default 1
+    // Google OAuth fields (denormalized)
+    googleSubject: v.optional(v.string()),
+    googleEmail: v.optional(v.string()),
+    googlePicture: v.optional(v.string()),
   })
     .index("by_email", ["email"])
     .index("by_phone", ["phone"])
     .index("by_username", ["username"])
     .index("by_activeSessionId", ["activeSessionId"])
     .index("by_referralCode", ["referralCode"])
-    .index("by_referredBy", ["referredBy"]),
+    .index("by_referredBy", ["referredBy"])
+    .index("by_googleSubject", ["googleSubject"]),
 
   // ============================================================
-  // Sessions – for device session management (single-device enforcement)
+  // Auth Identities – one row per authentication method per user
+  // ============================================================
+  authIdentities: defineTable({
+    userId: v.id("users"),
+    provider: v.union(v.literal("password"), v.literal("google")),
+    providerSubject: v.string(),
+    createdAt: v.number(),
+    lastUsedAt: v.number(),
+  })
+    .index("by_provider_subject", ["provider", "providerSubject"])
+    .index("by_userId", ["userId"])
+    .index("by_userId_provider", ["userId", "provider"]),
+
+  // ============================================================
+  // Sessions – device-aware session management
   // ============================================================
   sessions: defineTable({
     sessionId: v.string(),
     userId: v.id("users"),
-    deviceId: v.string(),
-    deviceFingerprint: v.optional(v.string()),
+    // ------------------------------------------------------------
+    // Stable identifier supplied by the frontend, tied to the physical
+    // device. Enables us to know which device a subscription covers and
+    // to prevent duplicated device slots.
+    // ------------------------------------------------------------
+    deviceCode: v.string(),                    // ✅ stable device identifier
+    deviceId: v.string(),                      // legacy field (kept in sync with deviceCode)
+    deviceFingerprint: v.optional(v.string()), // legacy
+    // Enriched device metadata
     platform: v.optional(v.string()),
+    os: v.optional(v.string()),
+    browser: v.optional(v.string()),
+    model: v.optional(v.string()),
+    manufacturer: v.optional(v.string()),
+    appVersion: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    nickname: v.optional(v.string()),
+    // Lifecycle
     createdAt: v.number(),
     expiresAt: v.number(),
     lastSeen: v.number(),
@@ -102,10 +152,43 @@ export default defineSchema({
     .index("by_sessionId", ["sessionId"])
     .index("by_userId", ["userId"])
     .index("by_deviceId", ["deviceId"])
+    .index("by_deviceCode", ["deviceCode"])    // ✅
     .index("by_expiresAt", ["expiresAt"]),
 
   // ============================================================
-  // Payments – extended for Buy Goods hybrid payment engine + financial ledger
+  // Devices – dedicated table (one row per user-device pair)
+  // Enables: "which devices are subscribed", per-device revocation,
+  // nickname assignment, and coverage under dual subscriptions.
+  // ============================================================
+  devices: defineTable({
+    userId: v.id("users"),
+    deviceCode: v.string(),                    // ✅ stable device identifier
+    fingerprint: v.string(),                   // legacy – kept in sync
+    // Metadata captured at registration / login
+    platform: v.optional(v.string()),
+    os: v.optional(v.string()),
+    browser: v.optional(v.string()),
+    model: v.optional(v.string()),
+    manufacturer: v.optional(v.string()),
+    appVersion: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    nickname: v.optional(v.string()),
+    // Lifecycle
+    firstSeen: v.number(),
+    lastUsed: v.number(),
+    // Subscription coverage
+    isSubscribed: v.optional(v.boolean()),     // covered by active subscription
+    subscriptionId: v.optional(v.id("subscriptions")),
+    revoked: v.optional(v.boolean()),          // user manually revoked this device
+  })
+    .index("by_userId", ["userId"])
+    .index("by_fingerprint", ["fingerprint"])
+    .index("by_deviceCode", ["deviceCode"])    // ✅
+    .index("by_userId_deviceCode", ["userId", "deviceCode"]) // ✅
+    .index("by_userId_subscribed", ["userId", "isSubscribed"]),
+
+  // ============================================================
+  // Payments – extended for Buy Goods hybrid payment engine + ledger
   // ============================================================
   payments: defineTable({
     transactionId: v.string(),
@@ -128,6 +211,18 @@ export default defineSchema({
     checkoutRequestId: v.optional(v.string()),
     claimedAt: v.optional(v.number()),
     claimedByUserId: v.optional(v.id("users")),
+    // ------------------------------------------------------------
+    // Subscription intent carried by the payment so the activator can
+    // award the correct number of days, device tier, and track discounts.
+    // ------------------------------------------------------------
+    planId: v.optional(v.string()),            // "monthly" | "quarterly" | "yearly" | "custom"
+    deviceTier: v.optional(
+      v.union(v.literal("single"), v.literal("dual"), v.literal("custom"))
+    ),
+    priceBeforeDiscount: v.optional(v.number()),
+    discountPercent: v.optional(v.number()),
+    // The device the purchase is being initiated from
+    initiatingDeviceCode: v.optional(v.string()),
   })
     .index("by_transactionId", ["transactionId"])
     .index("by_merchantRequestId", ["merchantRequestId"])
@@ -273,7 +368,7 @@ export default defineSchema({
     .index("by_userId", ["userId"]),
 
   // ============================================================
-  // Questions – unchanged
+  // Questions
   // ============================================================
   questions: defineTable({
     text: v.string(),
@@ -296,7 +391,7 @@ export default defineSchema({
     }),
 
   // ============================================================
-  // examResults – stores full questions array
+  // examResults
   // ============================================================
   examResults: defineTable({
     userId: v.id("users"),
@@ -326,27 +421,51 @@ export default defineSchema({
     .index("by_createdAt", ["createdAt"]),
 
   // ============================================================
-  // appConfig – unchanged
+  // appConfig – dynamic pricing + dual-device discount + 24h trial
   // ============================================================
   appConfig: defineTable({
+    // Default trial duration – 24 hours
     trialDurationHours: v.number(),
+
     maintenanceMode: v.boolean(),
+
+    // Dynamic subscription plans – fully admin-editable
     subscriptionPlans: v.array(
       v.object({
+        id: v.string(),                 // "monthly" | "quarterly" | "yearly"
         name: v.string(),
         price: v.number(),
         days: v.number(),
+        popular: v.optional(v.boolean()),
+        savings: v.optional(v.string()),
+        features: v.optional(v.array(v.string())),
+        isActive: v.optional(v.boolean()),
       })
     ),
+
+    // ------------------------------------------------------------
+    // Dual-device discount – applies to standard plans only.
+    // The custom-amount path never uses this value.
+    // ------------------------------------------------------------
+    deviceDiscountPercent: v.optional(v.number()), // default 15
+
     paymentsFrozen: v.boolean(),
     maxRequestsPerMinute: v.number(),
     autoApproveWithdrawals: v.optional(v.boolean()),
-    // ✅ NEW: Points awarded to challenge winner
     challengeWinnerPoints: v.optional(v.number()),
+
+    // Pricing governance
+    pricingVersion: v.optional(v.number()),
+    pricingLastUpdatedAt: v.optional(v.number()),
+    pricingLastUpdatedBy: v.optional(v.id("users")),
+
+    // Device policy constants (informational for the frontend)
+    maxStandardDevices: v.optional(v.number()),    // default 2
+    deviceBindingRequired: v.optional(v.boolean()) // default true
   }),
 
   // ============================================================
-  // seenQuestions – unchanged
+  // seenQuestions
   // ============================================================
   seenQuestions: defineTable({
     userId: v.id("users"),
@@ -356,7 +475,7 @@ export default defineSchema({
   }).index("by_user_subject_topic", ["userId", "subject", "topic"]),
 
   // ============================================================
-  // messages – DEPRECATED: use conversation_chunks instead (kept for compatibility)
+  // messages – DEPRECATED (use conversation_chunks)
   // ============================================================
   messages: defineTable({
     conversationId: v.id("conversations"),
@@ -366,7 +485,7 @@ export default defineSchema({
   }).index("by_conversationId_timestamp", ["conversationId", "timestamp"]),
 
   // ============================================================
-  // examAnswers – unchanged
+  // examAnswers
   // ============================================================
   examAnswers: defineTable({
     examResultId: v.id("examResults"),
@@ -377,18 +496,7 @@ export default defineSchema({
   }).index("by_examResultId", ["examResultId"]),
 
   // ============================================================
-  // devices – unchanged
-  // ============================================================
-  devices: defineTable({
-    userId: v.id("users"),
-    fingerprint: v.string(),
-    lastUsed: v.number(),
-  })
-    .index("by_userId", ["userId"])
-    .index("by_fingerprint", ["fingerprint"]),
-
-  // ============================================================
-  // securityEvents – temporary with old fields
+  // securityEvents
   // ============================================================
   securityEvents: defineTable({
     userId: v.optional(v.any()),
@@ -403,7 +511,7 @@ export default defineSchema({
     .index("by_eventType_timestamp", ["eventType", "timestamp"]),
 
   // ============================================================
-  // sharedLinks – includes userId for ownership
+  // sharedLinks
   // ============================================================
   sharedLinks: defineTable({
     userId: v.id("users"),
@@ -418,7 +526,7 @@ export default defineSchema({
     .index("by_user_target", ["userId", "targetType"]),
 
   // ============================================================
-  // conversations – unchanged (metadata only)
+  // conversations (metadata only)
   // ============================================================
   conversations: defineTable({
     userId: v.id("users"),
@@ -430,14 +538,33 @@ export default defineSchema({
     .index("by_createdAt", ["createdAt"]),
 
   // ============================================================
-  // subscriptions – extended with autoRenew, paymentMethod, etc., plus updatedAt
+  // subscriptions – dual-device + dynamic pricing aware
   // ============================================================
   subscriptions: defineTable({
     userId: v.id("users"),
-    plan: v.string(),
+    plan: v.string(),                            // plan.id at purchase time
+    planName: v.string(),                        // display name snapshot
     startDate: v.number(),
     expiryDate: v.number(),
     status: v.union(v.literal("active"), v.literal("expired"), v.literal("cancelled")),
+
+    // ------------------------------------------------------------
+    // Device coverage – number of device slots granted by this purchase
+    // ------------------------------------------------------------
+    maxDevices: v.optional(v.number()),          // 1 for single, 2 for dual
+    deviceTier: v.optional(
+      v.union(v.literal("single"), v.literal("dual"), v.literal("custom"))
+    ),
+    // Device codes currently covered by this subscription
+    coveredDeviceCodes: v.optional(v.array(v.string())),
+
+    // ------------------------------------------------------------
+    // Pricing snapshot – preserved even if admin later changes prices
+    // ------------------------------------------------------------
+    pricePaid: v.optional(v.number()),
+    priceBeforeDiscount: v.optional(v.number()),
+    discountPercent: v.optional(v.number()),
+
     autoRenew: v.optional(v.boolean()),
     paymentMethod: v.optional(v.string()),
     deviceFingerprint: v.optional(v.string()),
@@ -449,7 +576,7 @@ export default defineSchema({
     .index("by_status_expiryDate", ["status", "expiryDate"]),
 
   // ============================================================
-  // notes – extended with all frontend fields + clientId
+  // notes
   // ============================================================
   notes: defineTable({
     userId: v.id("users"),
@@ -494,10 +621,10 @@ export default defineSchema({
     .index("by_topic", ["topic"]),
 
   // ============================================================
-  // Notifications – global/group and user-specific
+  // Notifications
   // ============================================================
   notifications: defineTable({
-    userId: v.optional(v.id("users")), // null for global/group
+    userId: v.optional(v.id("users")),
     targetAll: v.optional(v.boolean()),
     targetGroups: v.optional(v.array(v.string())),
     type: v.string(),
@@ -522,7 +649,7 @@ export default defineSchema({
     .index("by_notificationId_userId", ["notificationId", "userId"]),
 
   // ============================================================
-  // auditLogs – unchanged
+  // auditLogs
   // ============================================================
   auditLogs: defineTable({
     actorId: v.string(),
@@ -536,7 +663,7 @@ export default defineSchema({
     .index("by_timestamp", ["timestamp"]),
 
   // ============================================================
-  // rateLimit – unchanged
+  // rateLimit
   // ============================================================
   rateLimit: defineTable({
     key: v.string(),
@@ -548,7 +675,7 @@ export default defineSchema({
     .index("by_resetAt", ["resetAt"]),
 
   // ============================================================
-  // resources – uses R2
+  // resources (R2)
   // ============================================================
   resources: defineTable({
     title: v.string(),
@@ -580,7 +707,7 @@ export default defineSchema({
     .index("by_originalPath", ["originalPath"]),
 
   // ============================================================
-  // sharedExams – unchanged
+  // sharedExams
   // ============================================================
   sharedExams: defineTable({
     token: v.string(),
@@ -593,7 +720,7 @@ export default defineSchema({
     .index("by_expiry", ["expiry"]),
 
   // ============================================================
-  // Challenges – updated for multi‑participant (up to 100)
+  // Challenges – multi-participant (up to 100)
   // ============================================================
   challenges: defineTable({
     challengeCode: v.string(),
@@ -617,9 +744,6 @@ export default defineSchema({
     .index("by_creator", ["creatorId"])
     .index("by_status_expires", ["status", "expiresAt"]),
 
-  // ============================================================
-  // Challenge Participants – tracks all users in a challenge
-  // ============================================================
   challengeParticipants: defineTable({
     challengeId: v.id("challenges"),
     userId: v.id("users"),
@@ -629,9 +753,6 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_challengeId_userId", ["challengeId", "userId"]),
 
-  // ============================================================
-  // Chat Messages – persistent chat for shared rooms (2‑hour cleanup)
-  // ============================================================
   chatMessages: defineTable({
     challengeId: v.id("challenges"),
     author: v.string(),
@@ -642,9 +763,6 @@ export default defineSchema({
     .index("by_challengeId_createdAt", ["challengeId", "createdAt"])
     .index("by_createdAt", ["createdAt"]),
 
-  // ============================================================
-  // Room Moods – community mood votes
-  // ============================================================
   roomMoods: defineTable({
     challengeId: v.id("challenges"),
     userId: v.id("users"),
@@ -653,9 +771,6 @@ export default defineSchema({
   })
     .index("by_challengeId_mood", ["challengeId", "mood"]),
 
-  // ============================================================
-  // Results – challenge results (with performance fields)
-  // ============================================================
   results: defineTable({
     challengeId: v.id("challenges"),
     userId: v.id("users"),
@@ -663,7 +778,6 @@ export default defineSchema({
     percentage: v.number(),
     timeSpent: v.number(),
     submittedAt: v.number(),
-    // ✅ NEW: Aggregated performance data
     examResultId: v.optional(v.id("examResults")),
     difficultyFactor: v.optional(v.number()),
     totalQuestions: v.optional(v.number()),
@@ -674,9 +788,6 @@ export default defineSchema({
     .index("by_challenge", ["challengeId"])
     .index("by_user", ["userId"]),
 
-  // ============================================================
-  // Invitations – friend invites
-  // ============================================================
   invitations: defineTable({
     challengeId: v.id("challenges"),
     inviterId: v.id("users"),
@@ -691,7 +802,7 @@ export default defineSchema({
     .index("by_challenge", ["challengeId"]),
 
   // ============================================================
-  // Public Assets – for user manual, resources updates, and other public files
+  // Public Assets
   // ============================================================
   publicAssets: defineTable({
     key: v.string(),
@@ -732,7 +843,7 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
   // ============================================================
-  // CONVERSATION MEMORY – chunked storage with vector search (AI long-term memory)
+  // CONVERSATION MEMORY – chunked storage with vector search
   // ============================================================
   conversation_chunks: defineTable({
     conversationId: v.id("conversations"),

@@ -19,6 +19,7 @@ import type * as ai_router from "../ai/router.js";
 import type * as analytics_internal from "../analytics/internal.js";
 import type * as analytics_queries from "../analytics/queries.js";
 import type * as auth_actions from "../auth/actions.js";
+import type * as auth_googleHelpers from "../auth/googleHelpers.js";
 import type * as auth_helpers from "../auth/helpers.js";
 import type * as auth_internal from "../auth/internal.js";
 import type * as auth_queries from "../auth/queries.js";
@@ -110,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   "analytics/internal": typeof analytics_internal;
   "analytics/queries": typeof analytics_queries;
   "auth/actions": typeof auth_actions;
+  "auth/googleHelpers": typeof auth_googleHelpers;
   "auth/helpers": typeof auth_helpers;
   "auth/internal": typeof auth_internal;
   "auth/queries": typeof auth_queries;

@@ -54,13 +54,14 @@ export const insertUser = internalMutation({
       totalEarned: args.totalEarned,
       pendingBalance: args.pendingBalance,
       referralRewarded: false,
-      // ✅ Performance tracking defaults
+      // Performance tracking defaults
       rating: 100,
       historyEWMA: 0.5,
       completedExams: 0,
       startedExams: 0,
       leaderboardPoints: 0,
       integrityScore: 1,
+      // Google fields left undefined until linked
     });
     return userId;
   },
@@ -133,17 +134,30 @@ export const updateUser = internalMutation({
       pendingBalance: v.optional(v.number()),
       totalEarned: v.optional(v.number()),
       referralRewarded: v.optional(v.boolean()),
-      // ✅ Performance fields (admin or internal updates)
+      // Performance fields (admin or internal updates)
       rating: v.optional(v.number()),
       historyEWMA: v.optional(v.number()),
       completedExams: v.optional(v.number()),
       startedExams: v.optional(v.number()),
       leaderboardPoints: v.optional(v.number()),
       integrityScore: v.optional(v.number()),
+      // Google fields (denormalized)
+      googleSubject: v.optional(v.union(v.string(), v.null())),
+      googleEmail: v.optional(v.union(v.string(), v.null())),
+      googlePicture: v.optional(v.union(v.string(), v.null())),
     }),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.userId, args.updates);
+    // Convert explicit nulls to undefined so we can clear optional fields
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(args.updates)) {
+      if (value === null) {
+        cleaned[key] = undefined;
+      } else if (value !== undefined) {
+        cleaned[key] = value;
+      }
+    }
+    await ctx.db.patch(args.userId, cleaned);
   },
 });
 
@@ -207,6 +221,239 @@ export const updateUserPreferences = internalMutation({
     if (!user) return;
     await ctx.db.patch(args.userId, {
       preferences: args.preferences,
+    });
+  },
+});
+
+export const deleteUserById = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    // Clean up sessions
+    const sessions = await ctx.db
+      .query("sessions")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    for (const s of sessions) {
+      await ctx.db.delete(s._id);
+    }
+    // Clean up devices
+    const devices = await ctx.db
+      .query("devices")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    for (const d of devices) {
+      await ctx.db.delete(d._id);
+    }
+    // Clean up auth identities
+    const identities = await ctx.db
+      .query("authIdentities")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    for (const id of identities) {
+      await ctx.db.delete(id._id);
+    }
+    // Finally delete the user
+    await ctx.db.delete(args.userId);
+  },
+});
+
+// ============================================================
+// AUTH IDENTITY HELPERS (multi-provider model)
+// ============================================================
+
+export const getAuthIdentity = internalQuery({
+  args: { provider: v.union(v.literal("password"), v.literal("google")), providerSubject: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("authIdentities")
+      .withIndex("by_provider_subject", (q) =>
+        q.eq("provider", args.provider).eq("providerSubject", args.providerSubject)
+      )
+      .first();
+  },
+});
+
+export const getAuthIdentitiesForUser = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("authIdentities")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+  },
+});
+
+export const getUserAuthIdentityByProvider = internalQuery({
+  args: { userId: v.id("users"), provider: v.union(v.literal("password"), v.literal("google")) },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("authIdentities")
+      .withIndex("by_userId_provider", (q) =>
+        q.eq("userId", args.userId).eq("provider", args.provider)
+      )
+      .first();
+  },
+});
+
+export const createAuthIdentity = internalMutation({
+  args: {
+    userId: v.id("users"),
+    provider: v.union(v.literal("password"), v.literal("google")),
+    providerSubject: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Manual uniqueness enforcement (R2 – Convex has no unique constraints)
+    const existing = await ctx.db
+      .query("authIdentities")
+      .withIndex("by_provider_subject", (q) =>
+        q.eq("provider", args.provider).eq("providerSubject", args.providerSubject)
+      )
+      .first();
+    if (existing) {
+      throw new Error(
+        `Auth identity already exists for ${args.provider}:${args.providerSubject}`
+      );
+    }
+    const now = Date.now();
+    return await ctx.db.insert("authIdentities", {
+      userId: args.userId,
+      provider: args.provider,
+      providerSubject: args.providerSubject,
+      createdAt: now,
+      lastUsedAt: now,
+    });
+  },
+});
+
+export const createPasswordIdentity = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("authIdentities")
+      .withIndex("by_userId_provider", (q) =>
+        q.eq("userId", args.userId).eq("provider", "password")
+      )
+      .first();
+    if (existing) return existing._id;
+    const now = Date.now();
+    return await ctx.db.insert("authIdentities", {
+      userId: args.userId,
+      provider: "password",
+      providerSubject: String(args.userId),
+      createdAt: now,
+      lastUsedAt: now,
+    });
+  },
+});
+
+export const touchAuthIdentity = internalMutation({
+  args: { identityId: v.id("authIdentities") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.identityId, { lastUsedAt: Date.now() });
+  },
+});
+
+export const deleteAuthIdentityById = internalMutation({
+  args: { identityId: v.id("authIdentities") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.identityId);
+  },
+});
+
+export const deleteAuthIdentitiesForUser = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const identities = await ctx.db
+      .query("authIdentities")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    for (const id of identities) {
+      await ctx.db.delete(id._id);
+    }
+    return identities.length;
+  },
+});
+
+// ============================================================
+// GOOGLE OAUTH HELPERS (used by googleSignIn / link flows)
+// ============================================================
+
+export const getUserByGoogleSubject = internalQuery({
+  args: { googleSubject: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_googleSubject", (q) => q.eq("googleSubject", args.googleSubject))
+      .first();
+  },
+});
+
+export const insertGoogleUser = internalMutation({
+  args: {
+    email: v.string(),
+    name: v.string(),
+    phone: v.optional(v.string()),
+    googleSubject: v.string(),
+    googleEmail: v.string(),
+    googlePicture: v.optional(v.string()),
+    username: v.string(),
+    displayName: v.string(),
+    referralCode: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const userId = await ctx.db.insert("users", {
+      name: args.name,
+      email: args.email,
+      phone: args.phone || "",
+      // Google-only users get a placeholder hash that cannot match any real password
+      passwordHash: `GOOGLE_OAUTH_ONLY_NO_PASSWORD_${Math.random().toString(36).slice(2)}`,
+      securityQuestions: [],
+      isLocked: false,
+      trialUsed: false,
+      devices: [],
+      role: "user",
+      username: args.username,
+      displayName: args.displayName,
+      lastSeen: now,
+      status: "online",
+      referralCode: args.referralCode,
+      referredBy: undefined,
+      isAgent: false,
+      agentVerified: false,
+      referralBalance: 0,
+      totalEarned: 0,
+      pendingBalance: 0,
+      referralRewarded: false,
+      createdAt: now,
+      // Performance defaults
+      rating: 100,
+      historyEWMA: 0.5,
+      completedExams: 0,
+      startedExams: 0,
+      leaderboardPoints: 0,
+      integrityScore: 1,
+      // Google denormalized fields
+      googleSubject: args.googleSubject,
+      googleEmail: args.googleEmail,
+      googlePicture: args.googlePicture,
+    });
+    return userId;
+  },
+});
+
+export const linkGoogleAccount = internalMutation({
+  args: {
+    userId: v.id("users"),
+    googleSubject: v.string(),
+    googleEmail: v.string(),
+    googlePicture: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      googleSubject: args.googleSubject,
+      googleEmail: args.googleEmail,
+      googlePicture: args.googlePicture,
     });
   },
 });
@@ -325,7 +572,10 @@ export const createSession = internalMutation({
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
-    const sessionId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+    const sessionId =
+      typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function"
+        ? (crypto as any).randomUUID()
+        : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     const now = Date.now();
     await ctx.db.insert("sessions", {
       sessionId,
@@ -456,7 +706,10 @@ export const cleanupExpiredSessions = internalMutation({
           .withIndex("by_sessionId", (q) => q.eq("sessionId", user.activeSessionId))
           .first();
         if (!session || session.revoked || session.expiresAt < now) {
-          await ctx.db.patch(user._id, { activeSessionId: undefined, activeDeviceId: undefined });
+          await ctx.db.patch(user._id, {
+            activeSessionId: undefined,
+            activeDeviceId: undefined,
+          });
         }
       }
     }

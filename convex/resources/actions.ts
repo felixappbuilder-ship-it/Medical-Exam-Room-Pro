@@ -45,7 +45,23 @@ async function hasActiveAccess(ctx: any, userId: string) {
 
 // ------------------------------------------------------------------
 // Generate presigned download URLs for the main file AND its thumbnail.
-// Requires valid JWT and active subscription/trial.
+//
+// Access policy (deliberately different for free vs premium):
+//
+//   • FREE resources      — any authenticated user may download.
+//                           No subscription required.
+//   • PREMIUM resources   — active subscription or free trial required.
+//                           Verified via hasActiveAccess().
+//
+// The order of checks matters:
+//   1. Verify the JWT first  — identifies the caller (attribution, audit).
+//   2. Fetch the resource    — tells us whether it is premium.
+//   3. Gate on subscription  — ONLY when the resource is premium.
+//   4. Generate signed URLs.
+//
+// Checking the subscription before step 2 would (and previously did) block
+// free downloads for users with no active subscription — the exact bug this
+// action was rewritten to fix.
 // ------------------------------------------------------------------
 export const getDownloadUrl = action({
   args: {
@@ -53,7 +69,10 @@ export const getDownloadUrl = action({
     resourceId: v.id("resources"),
   },
   handler: async (ctx, args) => {
-    // 1. Verify JWT
+    // ── 1. Verify JWT — always required, even for free resources --------
+    //
+    // Every download is attributed to a user so we can log it, bump the
+    // download counter accurately, and audit against abusive traffic.
     let payload;
     try {
       payload = await verifyToken(ctx, args.token);
@@ -67,26 +86,7 @@ export const getDownloadUrl = action({
 
     const userId = payload.userId;
 
-    // 2. Check subscription or trial
-    try {
-      const hasAccess = await hasActiveAccess(ctx, userId);
-      if (!hasAccess) {
-        return {
-          success: false,
-          error: "subscription_required",
-          message: "An active subscription or free trial is required to download this file.",
-        };
-      }
-    } catch (err: any) {
-      console.error("[getDownloadUrl] Subscription check error:", err);
-      return {
-        success: false,
-        error: "subscription_check_failed",
-        message: "Failed to verify subscription status. Please try again.",
-      };
-    }
-
-    // 3. Get resource metadata
+    // ── 2. Fetch the resource FIRST, so we know if it is premium ---------
     let resource;
     try {
       resource = await ctx.runQuery(internal.resources.internal.getResourceById, {
@@ -117,7 +117,45 @@ export const getDownloadUrl = action({
       };
     }
 
-    // 4. Generate signed URLs for BOTH the main file and thumbnail
+    // ── 3. Subscription gate — ONLY for premium resources ---------------
+    //
+    // `isPremium` is coerced with `=== true` so anything other than a
+    // strict boolean true (undefined, null, false) is treated as free.
+    // This is deliberate: existing records inserted before the sync script
+    // started writing the field must not accidentally become gated.
+    const isPremium = resource.isPremium === true;
+
+    if (isPremium) {
+      try {
+        const hasAccess = await hasActiveAccess(ctx, userId);
+        if (!hasAccess) {
+          console.log(
+            `[getDownloadUrl] Premium resource blocked for user ${userId}: ${resource.title}`
+          );
+          return {
+            success: false,
+            error: "subscription_required",
+            message:
+              "An active subscription or free trial is required to download this premium resource.",
+          };
+        }
+      } catch (err: any) {
+        console.error("[getDownloadUrl] Subscription check error:", err);
+        return {
+          success: false,
+          error: "subscription_check_failed",
+          message: "Failed to verify subscription status. Please try again.",
+        };
+      }
+    } else {
+      // Free resource: no subscription required. Log the access for
+      // auditability but do not gate on it.
+      console.log(
+        `[getDownloadUrl] Free resource download by user ${userId}: ${resource.title}`
+      );
+    }
+
+    // ── 4. Generate signed URLs for BOTH the main file and thumbnail ----
     try {
       // Main file
       const fileCommand = new GetObjectCommand({
@@ -141,7 +179,10 @@ export const getDownloadUrl = action({
         }
       }
 
-      // 5. Increment download count (fire and forget – don't fail if this fails)
+      // ── 5. Increment download count (fire and forget) -----------------
+      //
+      // Failing to bump the counter must not fail the download itself. The
+      // user got their URL; the metric is secondary.
       try {
         await ctx.runMutation(internal.resources.internal.updateResourceInternal, {
           resourceId: args.resourceId,
@@ -156,6 +197,9 @@ export const getDownloadUrl = action({
         data: {
           downloadUrl,
           thumbnailUrl, // may be null
+          // Pass the premium flag back so the frontend can log/telemetry
+          // without a second round-trip if it ever needs it.
+          isPremium,
         },
       };
     } catch (err: any) {

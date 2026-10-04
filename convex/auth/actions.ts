@@ -7,7 +7,7 @@ import { internal } from "../_generated/api";
 import * as notificationTriggers from "../notifications/triggers";
 
 // ============================================================
-// REGISTER (with referral, isAgent, agentVerified) + notification
+// REGISTER – with referral, isAgent, agentVerified, password identity
 // ============================================================
 export const register = action({
   args: {
@@ -87,9 +87,7 @@ export const register = action({
     });
     const displayName = args.name;
 
-    // ============================================================
-    // REFERRAL HANDLING
-    // ============================================================
+    // Referral handling
     const referralCode = await ctx.runMutation(internal.users.internal.generateUniqueReferralCode, {});
 
     let referredBy: string | undefined = undefined;
@@ -105,7 +103,7 @@ export const register = action({
     const isAgent = args.isAgent || false;
     const agentVerified = args.agentVerified || false;
 
-    // Insert user with all fields
+    // Insert user
     const userId = await ctx.runMutation(internal.auth.internal.insertUser, {
       name: args.name,
       email: args.email,
@@ -122,6 +120,9 @@ export const register = action({
       totalEarned: 0,
       pendingBalance: 0,
     });
+
+    // ✅ Register password auth identity (multi-provider model)
+    await ctx.runMutation(internal.auth.internal.createPasswordIdentity, { userId });
 
     await ctx.runMutation(internal.auth.internal.addDevice, {
       userId,
@@ -144,12 +145,7 @@ export const register = action({
     });
 
     // 🔔 NOTIFICATION: Account created
-    await notificationTriggers.notifyAccountCreated(
-      ctx,
-      userId,
-      args.name,
-      args.email
-    );
+    await notificationTriggers.notifyAccountCreated(ctx, userId, args.name, args.email);
 
     const token = await ctx.runAction(internal.auth.helpers.signJWT, {
       payload: { userId, email: args.email, role: "user" },
@@ -174,8 +170,8 @@ export const register = action({
 });
 
 // ============================================================
-// LOGIN – with session management, single-device enforcement,
-// lastLogin/lastSeen tracking, and device change notification
+// LOGIN – session management, single-device enforcement,
+// lastLogin/lastSeen tracking, device change notification
 // ============================================================
 export const login = action({
   args: {
@@ -251,13 +247,24 @@ export const login = action({
       };
     }
 
-    // ---- Update lastLogin and lastSeen for dormancy detection ----
+    // ✅ Touch password identity if it exists (multi-provider model)
+    const pwIdentity = await ctx.runQuery(
+      internal.auth.internal.getUserAuthIdentityByProvider,
+      { userId: user._id, provider: "password" }
+    );
+    if (pwIdentity) {
+      await ctx.runMutation(internal.auth.internal.touchAuthIdentity, {
+        identityId: pwIdentity._id,
+      });
+    }
+
+    // Update lastLogin and lastSeen
     await ctx.runMutation(internal.auth.internal.updateUser, {
       userId: user._id,
       updates: { lastLogin: now, lastSeen: now },
     });
 
-    // ---- SESSION MANAGEMENT ----
+    // Session management
     const existingSession = await ctx.runQuery(internal.auth.internal.getSessionByDeviceId, {
       deviceId: args.deviceFingerprint,
     });
@@ -277,7 +284,7 @@ export const login = action({
       expiresAt: now + 365 * 24 * 60 * 60 * 1000,
     });
 
-    // ---- DEVICE CHANGE DETECTION ----
+    // Device change detection
     const existingDevices = user.devices || [];
     const deviceExists = existingDevices.some((d) => d.fingerprint === args.deviceFingerprint);
     let isNewDevice = false;
@@ -288,8 +295,6 @@ export const login = action({
         eventType: "device_change",
         metadata: { fingerprint: args.deviceFingerprint, timestamp: now },
       });
-
-      // 🔔 NOTIFICATION: New device detected
       await notificationTriggers.notifyNewDevice(
         ctx,
         user._id,
@@ -363,7 +368,7 @@ export const verifyToken = action({
 });
 
 // ============================================================
-// REFRESH SESSION – obtain a new JWT using a valid sessionId
+// REFRESH SESSION
 // ============================================================
 export const refreshSession = action({
   args: {
@@ -376,52 +381,27 @@ export const refreshSession = action({
     );
 
     if (!session) {
-      return {
-        success: false,
-        error: "session_not_found",
-        message: "Session no longer exists.",
-      };
+      return { success: false, error: "session_not_found", message: "Session no longer exists." };
     }
-
     if (session.revoked) {
-      return {
-        success: false,
-        error: "session_revoked",
-        message: "Session has been revoked.",
-      };
+      return { success: false, error: "session_revoked", message: "Session has been revoked." };
     }
-
     if (session.expiresAt <= Date.now()) {
-      return {
-        success: false,
-        error: "session_expired",
-        message: "Session has expired.",
-      };
+      return { success: false, error: "session_expired", message: "Session has expired." };
     }
 
     const user = await ctx.runQuery(
       internal.auth.internal.getUserById,
       { userId: session.userId }
     );
-
     if (!user) {
-      return {
-        success: false,
-        error: "user_not_found",
-        message: "User no longer exists.",
-      };
+      return { success: false, error: "user_not_found", message: "User no longer exists." };
     }
-
     if (user.isLocked) {
-      return {
-        success: false,
-        error: "account_locked",
-        message: "Account is locked.",
-      };
+      return { success: false, error: "account_locked", message: "Account is locked." };
     }
 
     const userRole = user.role || "user";
-
     const token = await ctx.runAction(
       internal.auth.helpers.signJWT,
       {
@@ -503,6 +483,9 @@ export const changePassword = action({
       updates: { passwordHash: newHash },
     });
 
+    // ✅ Ensure password identity exists (in case account was Google-only before)
+    await ctx.runMutation(internal.auth.internal.createPasswordIdentity, { userId });
+
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
       actorId: userId,
       action: "change_password",
@@ -512,7 +495,6 @@ export const changePassword = action({
 
     await ctx.runMutation(internal.auth.internal.revokeAllSessions, { userId });
 
-    // 🔔 NOTIFICATION: Password changed
     await notificationTriggers.notifyPasswordChanged(ctx, userId);
 
     return { success: true, data: { message: "Password changed successfully. You have been logged out from other devices." } };
@@ -530,20 +512,12 @@ export const resetPasswordRequest = action({
       user = await ctx.runQuery(internal.auth.internal.getUserByPhone, { phone: args.identifier });
     }
     if (!user) {
-      return {
-        success: false,
-        error: "user_not_found",
-        message: "No account found with that email or phone.",
-      };
+      return { success: false, error: "user_not_found", message: "No account found with that email or phone." };
     }
 
     const storedQuestions = user.securityQuestions || [];
     if (storedQuestions.length !== args.securityAnswers.length) {
-      return {
-        success: false,
-        error: "invalid_answers",
-        message: "Security answer verification failed.",
-      };
+      return { success: false, error: "invalid_answers", message: "Security answer verification failed." };
     }
     for (let i = 0; i < storedQuestions.length; i++) {
       const isValid = await ctx.runAction(internal.auth.helpers.compareSecurityAnswer, {
@@ -556,15 +530,10 @@ export const resetPasswordRequest = action({
           eventType: "failed_password_reset",
           metadata: { identifier: args.identifier },
         });
-        return {
-          success: false,
-          error: "invalid_answers",
-          message: "Security answer verification failed.",
-        };
+        return { success: false, error: "invalid_answers", message: "Security answer verification failed." };
       }
     }
 
-    // 🔔 NOTIFICATION: Password reset requested (security event)
     await notificationTriggers.notifyPasswordResetRequested(ctx, user._id);
 
     const resetToken = await ctx.runAction(internal.auth.helpers.signJWT, {
@@ -572,10 +541,7 @@ export const resetPasswordRequest = action({
       expiresIn: "15m",
     });
 
-    return {
-      success: true,
-      data: { resetToken },
-    };
+    return { success: true, data: { resetToken } };
   },
 });
 
@@ -588,18 +554,10 @@ export const resetPasswordConfirm = action({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Reset token is invalid or expired.";
       console.error("[resetPasswordConfirm] Token verification failed:", errorMessage);
-      return {
-        success: false,
-        error: "invalid_token",
-        message: errorMessage,
-      };
+      return { success: false, error: "invalid_token", message: errorMessage };
     }
     if (payload.purpose !== "password_reset") {
-      return {
-        success: false,
-        error: "invalid_token",
-        message: "Invalid token purpose.",
-      };
+      return { success: false, error: "invalid_token", message: "Invalid token purpose." };
     }
 
     const userId = payload.userId;
@@ -610,6 +568,10 @@ export const resetPasswordConfirm = action({
       userId,
       updates: { passwordHash: newHash },
     });
+
+    // ✅ Ensure password identity exists
+    await ctx.runMutation(internal.auth.internal.createPasswordIdentity, { userId });
+
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
       actorId: userId,
       action: "password_reset",
@@ -617,13 +579,9 @@ export const resetPasswordConfirm = action({
       details: {},
     });
 
-    // 🔔 NOTIFICATION: Password reset completed
     await notificationTriggers.notifyPasswordResetCompleted(ctx, userId);
 
-    return {
-      success: true,
-      data: { message: "Password has been reset successfully." },
-    };
+    return { success: true, data: { message: "Password has been reset successfully." } };
   },
 });
 
@@ -638,10 +596,7 @@ export const verifySecurityAnswers = action({
       securityAnswers: args.answers,
     });
     if (!result.success) return result;
-    return {
-      success: true,
-      data: { resetToken: result.data.resetToken },
-    };
+    return { success: true, data: { resetToken: result.data.resetToken } };
   },
 });
 
@@ -657,5 +612,710 @@ export const resetPassword = action({
       newPassword: args.newPassword,
     });
     return result;
+  },
+});
+
+// ============================================================
+// GOOGLE SIGN-IN – Identity resolution
+// ============================================================
+export const googleSignIn = action({
+  args: {
+    idToken: v.string(),
+    deviceFingerprint: v.string(),
+    deviceInfo: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+    if (!googleClientId) {
+      return {
+        success: false,
+        status: "SERVER_ERROR",
+        error: "google_not_configured",
+        message: "Google sign-in is not configured on the server.",
+      };
+    }
+
+    // Rate limiting
+    const now = Date.now();
+    const resetAt = now + 60 * 1000;
+    const rateKey = `google_signin_${args.deviceFingerprint}`;
+    const rateRecord = await ctx.runQuery(internal.auth.internal.getRateLimit, {
+      key: rateKey,
+      endpoint: "google_signin",
+    });
+    if (rateRecord && rateRecord.count >= 10 && rateRecord.resetAt > now) {
+      return {
+        success: false,
+        status: "RATE_LIMITED",
+        error: "rate_limit_exceeded",
+        message: "Too many Google sign-in attempts. Please try again later.",
+      };
+    }
+    await ctx.runMutation(internal.auth.internal.incrementRateLimit, {
+      key: rateKey,
+      endpoint: "google_signin",
+      resetAt,
+    });
+
+    // Verify Google ID token server-side
+    let googlePayload;
+    try {
+      googlePayload = await ctx.runAction(
+        internal.auth.googleHelpers.verifyGoogleIdToken,
+        { idToken: args.idToken, clientId: googleClientId }
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Verification failed";
+      console.error("[googleSignIn] Token verification error:", msg);
+      await ctx.runMutation(internal.auth.internal.logSecurityEvent, {
+        userId: undefined,
+        eventType: "invalid_google_token",
+        metadata: { reason: msg },
+      });
+      return {
+        success: false,
+        status: "INVALID_GOOGLE_TOKEN",
+        error: "invalid_google_token",
+        message: "Google authentication failed. Please try again.",
+      };
+    }
+
+    const {
+      sub: googleSubject,
+      email: googleEmail,
+      emailVerified,
+      name,
+      picture,
+    } = googlePayload;
+
+    if (!emailVerified) {
+      return {
+        success: false,
+        status: "INVALID_GOOGLE_TOKEN",
+        error: "email_not_verified",
+        message: "Your Google email is not verified. Please verify it with Google first.",
+      };
+    }
+
+    // ============================================================
+    // CASE A: Google identity already exists → LOGIN
+    // ============================================================
+    const existingIdentity = await ctx.runQuery(
+      internal.auth.internal.getAuthIdentity,
+      { provider: "google", providerSubject: googleSubject }
+    );
+
+    if (existingIdentity) {
+      const user = await ctx.runQuery(internal.auth.internal.getUserById, {
+        userId: existingIdentity.userId,
+      });
+      if (!user) {
+        await ctx.runMutation(internal.auth.internal.logSecurityEvent, {
+          userId: undefined,
+          eventType: "orphaned_google_identity",
+          metadata: { googleSubject },
+        });
+        return {
+          success: false,
+          status: "GOOGLE_IDENTITY_CONFLICT",
+          error: "identity_orphaned",
+          message: "Account not found. Please contact support.",
+        };
+      }
+      if (user.isLocked) {
+        return {
+          success: false,
+          status: "ACCOUNT_DISABLED",
+          error: "account_locked",
+          message: `Account is locked. Reason: ${user.lockReason || "suspicious activity"}.`,
+        };
+      }
+
+      await ctx.runMutation(internal.auth.internal.touchAuthIdentity, {
+        identityId: existingIdentity._id,
+      });
+
+      const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
+        userId: user._id,
+        deviceId: args.deviceFingerprint,
+        deviceFingerprint: args.deviceFingerprint,
+        platform: args.deviceInfo?.platform || "web",
+        expiresAt: now + 365 * 24 * 60 * 60 * 1000,
+      });
+      await ctx.runMutation(internal.auth.internal.updateUser, {
+        userId: user._id,
+        updates: { lastLogin: now, lastSeen: now },
+      });
+      const existingDevices = user.devices || [];
+      const deviceExists = existingDevices.some(
+        (d) => d.fingerprint === args.deviceFingerprint
+      );
+      if (!deviceExists) {
+        await ctx.runMutation(internal.auth.internal.logSecurityEvent, {
+          userId: user._id,
+          eventType: "device_change",
+          metadata: { fingerprint: args.deviceFingerprint, via: "google" },
+        });
+      }
+      await ctx.runMutation(internal.auth.internal.addDevice, {
+        userId: user._id,
+        fingerprint: args.deviceFingerprint,
+        lastUsed: now,
+      });
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: user._id,
+        action: "google_login_success",
+        targetId: user._id,
+        details: { email: googleEmail, sessionId },
+      });
+
+      const userRole = user.role || "user";
+      const token = await ctx.runAction(internal.auth.helpers.signJWT, {
+        payload: { userId: user._id, email: user.email, role: userRole, sessionId },
+        expiresIn: "30d",
+      });
+
+      return {
+        success: true,
+        status: "SUCCESS",
+        data: {
+          token,
+          userId: user._id,
+          name: user.name,
+          email: user.email,
+          username: user.username,
+          displayName: user.displayName,
+          sessionId,
+          isNewDevice: !deviceExists,
+        },
+      };
+    }
+
+    // Look up by email (only for account discovery / conflict detection)
+    const existingUser = await ctx.runQuery(internal.auth.internal.getUserByEmail, {
+      email: googleEmail,
+    });
+
+    // ============================================================
+    // CASE B: No existing account → CREATE
+    // ============================================================
+    if (!existingUser) {
+      const baseName = (name || googleEmail.split("@")[0]).replace(/\s+/g, "");
+      const username = await ctx.runMutation(
+        internal.challenges.internal.generateUniqueUsername,
+        { baseName }
+      );
+      const referralCode = await ctx.runMutation(
+        internal.users.internal.generateUniqueReferralCode,
+        {}
+      );
+
+      const userId = await ctx.runMutation(internal.auth.internal.insertGoogleUser, {
+        email: googleEmail,
+        name,
+        phone: "",
+        googleSubject,
+        googleEmail,
+        googlePicture: picture,
+        username,
+        displayName: name,
+        referralCode,
+      });
+
+      // Race protection: if a concurrent request won, adopt winner
+      const winner = await ctx.runQuery(internal.auth.internal.getUserByEmail, {
+        email: googleEmail,
+      });
+      let finalUserId = userId;
+      if (winner && winner._id !== userId) {
+        await ctx.runMutation(internal.auth.internal.deleteUserById, { userId });
+        finalUserId = winner._id;
+      }
+
+      try {
+        await ctx.runMutation(internal.auth.internal.createAuthIdentity, {
+          userId: finalUserId,
+          provider: "google",
+          providerSubject: googleSubject,
+        });
+      } catch (err) {
+        console.warn("[googleSignIn] createAuthIdentity race:", err);
+      }
+
+      const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
+        userId: finalUserId,
+        deviceId: args.deviceFingerprint,
+        deviceFingerprint: args.deviceFingerprint,
+        platform: args.deviceInfo?.platform || "web",
+        expiresAt: now + 365 * 24 * 60 * 60 * 1000,
+      });
+      await ctx.runMutation(internal.auth.internal.updateUser, {
+        userId: finalUserId,
+        updates: { lastLogin: now, lastSeen: now },
+      });
+      await ctx.runMutation(internal.auth.internal.addDevice, {
+        userId: finalUserId,
+        fingerprint: args.deviceFingerprint,
+        lastUsed: now,
+      });
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: finalUserId,
+        action: "google_account_created",
+        targetId: finalUserId,
+        details: { email: googleEmail },
+      });
+
+      try {
+        await ctx.runMutation(internal.notifications.internal.insertNotification, {
+          userId: finalUserId,
+          type: "account_created",
+          title: "Welcome to MedVix! 🎉",
+          message: `Welcome, ${name}! Your account was created via Google.`,
+          data: { route: "subjects" },
+        });
+      } catch (e) {
+        console.warn("[googleSignIn] Welcome notification failed", e);
+      }
+
+      const newUser = await ctx.runQuery(internal.auth.internal.getUserById, {
+        userId: finalUserId,
+      });
+      const userRole = newUser?.role || "user";
+      const token = await ctx.runAction(internal.auth.helpers.signJWT, {
+        payload: { userId: finalUserId, email: googleEmail, role: userRole, sessionId },
+        expiresIn: "30d",
+      });
+
+      return {
+        success: true,
+        status: "NEW_ACCOUNT",
+        data: {
+          token,
+          userId: finalUserId,
+          name: newUser?.name || name,
+          email: newUser?.email || googleEmail,
+          username: newUser?.username,
+          displayName: newUser?.displayName || name,
+          sessionId,
+          isNewDevice: true,
+        },
+      };
+    }
+
+    // ============================================================
+    // CASE C: Existing email account, NO Google identity → LINK REQUIRED
+    // ============================================================
+    if (existingUser.isLocked) {
+      return {
+        success: false,
+        status: "ACCOUNT_DISABLED",
+        error: "account_locked",
+        message: `Account is locked. Reason: ${existingUser.lockReason || "suspicious activity"}.`,
+      };
+    }
+
+    // Rate limit linking attempts
+    const linkRateKey = `google_link_${args.deviceFingerprint}`;
+    const linkRate = await ctx.runQuery(internal.auth.internal.getRateLimit, {
+      key: linkRateKey,
+      endpoint: "google_link",
+    });
+    if (linkRate && linkRate.count >= 5 && linkRate.resetAt > now) {
+      return {
+        success: false,
+        status: "RATE_LIMITED",
+        error: "rate_limit_exceeded",
+        message: "Too many linking attempts. Please wait a minute.",
+      };
+    }
+    await ctx.runMutation(internal.auth.internal.incrementRateLimit, {
+      key: linkRateKey,
+      endpoint: "google_link",
+      resetAt: now + 60 * 1000,
+    });
+
+    // Short-lived link token bound to Google identity + existing user
+    const linkToken = await ctx.runAction(internal.auth.helpers.signJWT, {
+      payload: {
+        purpose: "google_link",
+        googleSub: googleSubject,
+        googleEmail,
+        googlePicture: picture || null,
+        existingUserId: existingUser._id,
+      },
+      expiresIn: "10m",
+    });
+
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: existingUser._id,
+      action: "google_link_required",
+      targetId: existingUser._id,
+      details: { googleEmail, via: "sign_in" },
+    });
+
+    return {
+      success: false,
+      status: "EXISTING_ACCOUNT_REQUIRES_LINK",
+      error: "link_required",
+      message:
+        "An account already exists with this email. Please sign in to link Google Sign-In.",
+      data: {
+        linkToken,
+        email: googleEmail,
+      },
+    };
+  },
+});
+
+// ============================================================
+// LINK GOOGLE ACCOUNT (proves ownership of existing account)
+// ============================================================
+export const linkGoogleAccount = action({
+  args: {
+    linkToken: v.string(),
+    password: v.string(),
+    deviceFingerprint: v.string(),
+    deviceInfo: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    // Verify link token
+    let payload;
+    try {
+      payload = await ctx.runAction(internal.auth.helpers.verifyJWT, {
+        token: args.linkToken,
+      });
+    } catch (err) {
+      return {
+        success: false,
+        status: "INVALID_GOOGLE_TOKEN",
+        error: "invalid_link_token",
+        message: "Link session expired. Please try Google sign-in again.",
+      };
+    }
+
+    if (payload.purpose !== "google_link") {
+      return {
+        success: false,
+        status: "INVALID_GOOGLE_TOKEN",
+        error: "invalid_token_purpose",
+        message: "Invalid link token.",
+      };
+    }
+
+    const { googleSub, googleEmail, googlePicture, existingUserId } = payload;
+
+    const now = Date.now();
+    const rateKey = `google_link_${args.deviceFingerprint}`;
+    const rateRecord = await ctx.runQuery(internal.auth.internal.getRateLimit, {
+      key: rateKey,
+      endpoint: "google_link",
+    });
+    if (rateRecord && rateRecord.count >= 5 && rateRecord.resetAt > now) {
+      return {
+        success: false,
+        status: "RATE_LIMITED",
+        error: "rate_limit_exceeded",
+        message: "Too many attempts. Please wait a minute.",
+      };
+    }
+    await ctx.runMutation(internal.auth.internal.incrementRateLimit, {
+      key: rateKey,
+      endpoint: "google_link",
+      resetAt: now + 60 * 1000,
+    });
+
+    const user = await ctx.runQuery(internal.auth.internal.getUserById, {
+      userId: existingUserId,
+    });
+    if (!user) {
+      return {
+        success: false,
+        status: "SERVER_ERROR",
+        error: "user_not_found",
+        message: "Account no longer exists.",
+      };
+    }
+    if (user.isLocked) {
+      return {
+        success: false,
+        status: "ACCOUNT_DISABLED",
+        error: "account_locked",
+        message: `Account is locked.`,
+      };
+    }
+
+    // Verify password
+    const passwordValid = await ctx.runAction(internal.auth.helpers.comparePassword, {
+      password: args.password,
+      hash: user.passwordHash,
+    });
+
+    if (!passwordValid) {
+      await ctx.runMutation(internal.auth.internal.logSecurityEvent, {
+        userId: user._id,
+        eventType: "failed_google_link_attempt",
+        metadata: { googleEmail },
+      });
+      return {
+        success: false,
+        status: "INVALID_PASSWORD",
+        error: "invalid_password",
+        message: "Incorrect password.",
+      };
+    }
+
+    // Ensure Google identity not already claimed
+    const existingIdentity = await ctx.runQuery(
+      internal.auth.internal.getAuthIdentity,
+      { provider: "google", providerSubject: googleSub }
+    );
+    if (existingIdentity && existingIdentity.userId !== user._id) {
+      return {
+        success: false,
+        status: "GOOGLE_IDENTITY_CONFLICT",
+        error: "google_conflict",
+        message: "This Google account is already linked to another MedVix account.",
+      };
+    }
+
+    if (!existingIdentity) {
+      try {
+        await ctx.runMutation(internal.auth.internal.createAuthIdentity, {
+          userId: user._id,
+          provider: "google",
+          providerSubject: googleSub,
+        });
+      } catch (err) {
+        return {
+          success: false,
+          status: "GOOGLE_IDENTITY_CONFLICT",
+          error: "link_failed",
+          message: "Could not link Google account. Please try again.",
+        };
+      }
+    } else {
+      await ctx.runMutation(internal.auth.internal.touchAuthIdentity, {
+        identityId: existingIdentity._id,
+      });
+    }
+
+    // Update denormalized Google fields on the user
+    await ctx.runMutation(internal.auth.internal.linkGoogleAccount, {
+      userId: user._id,
+      googleSubject: googleSub,
+      googleEmail,
+      googlePicture: googlePicture || undefined,
+    });
+
+    const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
+      userId: user._id,
+      deviceId: args.deviceFingerprint,
+      deviceFingerprint: args.deviceFingerprint,
+      platform: args.deviceInfo?.platform || "web",
+      expiresAt: now + 365 * 24 * 60 * 60 * 1000,
+    });
+    await ctx.runMutation(internal.auth.internal.updateUser, {
+      userId: user._id,
+      updates: { lastLogin: now, lastSeen: now },
+    });
+    await ctx.runMutation(internal.auth.internal.addDevice, {
+      userId: user._id,
+      fingerprint: args.deviceFingerprint,
+      lastUsed: now,
+    });
+
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: user._id,
+      action: "google_account_linked",
+      targetId: user._id,
+      details: { googleEmail, via: "sign_in" },
+    });
+
+    const userRole = user.role || "user";
+    const token = await ctx.runAction(internal.auth.helpers.signJWT, {
+      payload: { userId: user._id, email: user.email, role: userRole, sessionId },
+      expiresIn: "30d",
+    });
+
+    return {
+      success: true,
+      status: "ACCOUNT_LINKED",
+      data: {
+        token,
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        username: user.username,
+        displayName: user.displayName,
+        sessionId,
+      },
+    };
+  },
+});
+
+// ============================================================
+// LINK GOOGLE AFTER LOGIN (from settings page)
+// ============================================================
+export const linkGoogleAfterLogin = action({
+  args: {
+    token: v.string(),
+    idToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const medvixResult = await ctx.runAction(internal.auth.actions.verifyToken, {
+      token: args.token,
+    });
+    if (!medvixResult.success) {
+      return {
+        success: false,
+        status: "INVALID_GOOGLE_TOKEN",
+        error: "invalid_token",
+        message: medvixResult.message,
+      };
+    }
+    const userId = medvixResult.data.userId;
+
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+    if (!googleClientId) {
+      return {
+        success: false,
+        status: "SERVER_ERROR",
+        error: "google_not_configured",
+        message: "Google is not configured.",
+      };
+    }
+
+    let googlePayload;
+    try {
+      googlePayload = await ctx.runAction(
+        internal.auth.googleHelpers.verifyGoogleIdToken,
+        { idToken: args.idToken, clientId: googleClientId }
+      );
+    } catch (err) {
+      return {
+        success: false,
+        status: "INVALID_GOOGLE_TOKEN",
+        error: "invalid_google_token",
+        message: "Google verification failed.",
+      };
+    }
+
+    const { sub, email, emailVerified, picture } = googlePayload;
+    if (!emailVerified) {
+      return {
+        success: false,
+        status: "INVALID_GOOGLE_TOKEN",
+        error: "email_not_verified",
+        message: "Your Google email is not verified.",
+      };
+    }
+
+    const existingIdentity = await ctx.runQuery(
+      internal.auth.internal.getAuthIdentity,
+      { provider: "google", providerSubject: sub }
+    );
+
+    if (existingIdentity) {
+      if (existingIdentity.userId === userId) {
+        return {
+          success: true,
+          status: "ACCOUNT_LINKED",
+          data: { alreadyLinked: true, email },
+        };
+      }
+      return {
+        success: false,
+        status: "GOOGLE_IDENTITY_CONFLICT",
+        error: "google_conflict",
+        message: "This Google account is already linked to another MedVix account.",
+      };
+    }
+
+    try {
+      await ctx.runMutation(internal.auth.internal.createAuthIdentity, {
+        userId,
+        provider: "google",
+        providerSubject: sub,
+      });
+    } catch (err) {
+      return {
+        success: false,
+        status: "GOOGLE_IDENTITY_CONFLICT",
+        error: "link_failed",
+        message: "Could not link Google account.",
+      };
+    }
+
+    await ctx.runMutation(internal.auth.internal.linkGoogleAccount, {
+      userId,
+      googleSubject: sub,
+      googleEmail: email,
+      googlePicture: picture,
+    });
+
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "google_account_linked",
+      targetId: userId,
+      details: { googleEmail: email, via: "settings" },
+    });
+
+    return {
+      success: true,
+      status: "ACCOUNT_LINKED",
+      data: { email },
+    };
+  },
+});
+
+// ============================================================
+// UNLINK GOOGLE ACCOUNT
+// ============================================================
+export const unlinkGoogleAccount = action({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const medvixResult = await ctx.runAction(internal.auth.actions.verifyToken, {
+      token: args.token,
+    });
+    if (!medvixResult.success) {
+      return { success: false, error: "invalid_token", message: medvixResult.message };
+    }
+    const userId = medvixResult.data.userId;
+
+    const identities = await ctx.runQuery(
+      internal.auth.internal.getAuthIdentitiesForUser,
+      { userId }
+    );
+    const googleIdentity = identities.find((i) => i.provider === "google");
+    if (!googleIdentity) {
+      return { success: false, error: "not_linked", message: "Google is not linked to this account." };
+    }
+    const hasPassword = identities.some((i) => i.provider === "password");
+    if (!hasPassword) {
+      return {
+        success: false,
+        error: "only_auth_method",
+        message: "Cannot unlink Google because it is your only sign-in method. Set a password first.",
+      };
+    }
+
+    await ctx.runMutation(internal.auth.internal.deleteAuthIdentityById, {
+      identityId: googleIdentity._id,
+    });
+
+    // Clear denormalized Google fields on the user
+    await ctx.runMutation(internal.auth.internal.updateUser, {
+      userId,
+      updates: { googleSubject: undefined, googleEmail: undefined, googlePicture: undefined },
+    });
+
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "google_account_unlinked",
+      targetId: userId,
+      details: {},
+    });
+
+    return { success: true, data: { message: "Google account unlinked." } };
   },
 });
