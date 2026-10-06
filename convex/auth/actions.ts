@@ -7,7 +7,44 @@ import { internal } from "../_generated/api";
 import * as notificationTriggers from "../notifications/triggers";
 
 // ============================================================
-// REGISTER – with referral, isAgent, agentVerified, password identity
+// DEVICE NORMALIZER
+// ------------------------------------------------------------
+// Old app-store clients send: { deviceFingerprint }
+// New clients send:           { deviceId, deviceInfo }
+// Both may also send their respective `deviceInfo`.
+// This helper makes the two shapes equivalent everywhere below.
+// ============================================================
+function normalizeDevice(args: {
+  deviceId?: string | null;
+  deviceFingerprint?: string | null;
+  deviceInfo?: any;
+}): { deviceId: string; deviceFingerprint: string; deviceInfo: any } {
+  const id =
+    (typeof args.deviceId === "string" && args.deviceId.trim()) ||
+    (typeof args.deviceFingerprint === "string" && args.deviceFingerprint.trim()) ||
+    "";
+
+  if (!id) {
+    throw new Error("DEVICE_ID_REQUIRED");
+  }
+
+  let info: any = {};
+  if (args.deviceInfo && typeof args.deviceInfo === "object") {
+    info = { ...args.deviceInfo };
+  } else if (typeof args.deviceInfo === "string") {
+    info = { platform: args.deviceInfo };
+  }
+  if (!info.platform) info.platform = "unknown";
+
+  return {
+    deviceId: id,
+    deviceFingerprint: id,   // same value — for legacy columns / indexes
+    deviceInfo: info,
+  };
+}
+
+// ============================================================
+// REGISTER
 // ============================================================
 export const register = action({
   args: {
@@ -21,16 +58,33 @@ export const register = action({
         answer: v.string(),
       })
     ),
-    deviceFingerprint: v.string(),
+    deviceId: v.optional(v.string()),
+    deviceFingerprint: v.optional(v.string()),
     deviceInfo: v.optional(v.any()),
     referralCode: v.optional(v.string()),
     isAgent: v.optional(v.boolean()),
     agentVerified: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    let device;
+    try {
+      device = normalizeDevice({
+        deviceId: args.deviceId,
+        deviceFingerprint: args.deviceFingerprint,
+        deviceInfo: args.deviceInfo,
+      });
+    } catch {
+      return {
+        success: false,
+        error: "device_id_required",
+        message: "A device identifier is required.",
+      };
+    }
+    const { deviceId, deviceFingerprint, deviceInfo } = device;
+
     const now = Date.now();
     const resetAt = now + 60 * 1000;
-    const rateKey = `register_${args.deviceFingerprint}`;
+    const rateKey = `register_${deviceId}`;
     const rateRecord = await ctx.runQuery(internal.auth.internal.getRateLimit, {
       key: rateKey,
       endpoint: "register",
@@ -87,7 +141,6 @@ export const register = action({
     });
     const displayName = args.name;
 
-    // Referral handling
     const referralCode = await ctx.runMutation(internal.users.internal.generateUniqueReferralCode, {});
 
     let referredBy: string | undefined = undefined;
@@ -95,15 +148,12 @@ export const register = action({
       const referrer = await ctx.runQuery(internal.users.internal.getUserByReferralCode, {
         referralCode: args.referralCode,
       });
-      if (referrer) {
-        referredBy = referrer._id;
-      }
+      if (referrer) referredBy = referrer._id;
     }
 
     const isAgent = args.isAgent || false;
     const agentVerified = args.agentVerified || false;
 
-    // Insert user
     const userId = await ctx.runMutation(internal.auth.internal.insertUser, {
       name: args.name,
       email: args.email,
@@ -121,13 +171,35 @@ export const register = action({
       pendingBalance: 0,
     });
 
-    // ✅ Register password auth identity (multi-provider model)
+    // Password identity (multi-provider model)
     await ctx.runMutation(internal.auth.internal.createPasswordIdentity, { userId });
 
+    // Register device (dual-write into arrays + users.devices mirror)
     await ctx.runMutation(internal.auth.internal.addDevice, {
       userId,
-      fingerprint: args.deviceFingerprint,
+      fingerprint: deviceFingerprint,
+      deviceId,
       lastUsed: now,
+      platform: deviceInfo?.platform,
+      deviceInfo,
+    });
+
+    // Also persist the full info blob
+    await ctx.runMutation(internal.devices.internal.upsertDeviceInfo, {
+      deviceId,
+      userId,
+      info: deviceInfo,
+      platform: deviceInfo?.platform,
+      userAgent: deviceInfo?.userAgent,
+    });
+
+    // Create initial session
+    const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
+      userId,
+      deviceId,
+      deviceFingerprint,
+      platform: deviceInfo?.platform || "web",
+      expiresAt: now + 365 * 24 * 60 * 60 * 1000,
     });
 
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
@@ -137,18 +209,19 @@ export const register = action({
       details: {
         email: args.email,
         phone: args.phone,
-        deviceInfo: args.deviceInfo,
+        deviceInfo,
+        deviceId,
         referralCode: args.referralCode,
+        referredBy: referredBy ?? null,
         isAgent: args.isAgent,
         agentVerified: args.agentVerified,
       },
     });
 
-    // 🔔 NOTIFICATION: Account created
     await notificationTriggers.notifyAccountCreated(ctx, userId, args.name, args.email);
 
     const token = await ctx.runAction(internal.auth.helpers.signJWT, {
-      payload: { userId, email: args.email, role: "user" },
+      payload: { userId, email: args.email, role: "user", sessionId, deviceId },
       expiresIn: "30d",
     });
 
@@ -164,23 +237,46 @@ export const register = action({
         referralCode,
         isAgent,
         agentVerified,
+        sessionId,
+        deviceId,
       },
     };
   },
 });
 
 // ============================================================
-// LOGIN – session management, single-device enforcement,
-// lastLogin/lastSeen tracking, device change notification
+// LOGIN – blocking device-limit enforcement
+// ------------------------------------------------------------
+// BEFORE building the device list:
+//   1. purgeRevokedSessions(userId)  — deletes every dead row
+//   2. pruneUserDevicesArray(userId) — trims users.devices[]
+// This guarantees the list contains ONLY live devices.
 // ============================================================
 export const login = action({
   args: {
     identifier: v.string(),
     password: v.string(),
-    deviceFingerprint: v.string(),
+    deviceId: v.optional(v.string()),
+    deviceFingerprint: v.optional(v.string()),
     deviceInfo: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    let device;
+    try {
+      device = normalizeDevice({
+        deviceId: args.deviceId,
+        deviceFingerprint: args.deviceFingerprint,
+        deviceInfo: args.deviceInfo,
+      });
+    } catch {
+      return {
+        success: false,
+        error: "device_id_required",
+        message: "A device identifier is required.",
+      };
+    }
+    const { deviceId, deviceFingerprint, deviceInfo } = device;
+
     const now = Date.now();
     const rateKey = `login_${args.identifier}`;
     const rateRecord = await ctx.runQuery(internal.auth.internal.getRateLimit, {
@@ -247,7 +343,7 @@ export const login = action({
       };
     }
 
-    // ✅ Touch password identity if it exists (multi-provider model)
+    // Touch password identity
     const pwIdentity = await ctx.runQuery(
       internal.auth.internal.getUserAuthIdentityByProvider,
       { userId: user._id, provider: "password" }
@@ -258,71 +354,156 @@ export const login = action({
       });
     }
 
-    // Update lastLogin and lastSeen
+    // ============================================================
+    // CLEANUP DEAD SESSIONS BEFORE LISTING DEVICES
+    // ------------------------------------------------------------
+    // This is what prevents the "500 devices" symptom. Every revoked
+    // or expired session is physically deleted, and users.devices[]
+    // is trimmed to match.
+    // ============================================================
+    await ctx.runMutation(internal.auth.internal.purgeRevokedSessions, {
+      userId: user._id,
+    });
+    await ctx.runMutation(internal.auth.internal.pruneUserDevicesArray, {
+      userId: user._id,
+    });
+
+    // ============================================================
+    // DEVICE LIMIT CHECK — now sees ONLY active devices
+    // ============================================================
+    const devicesList = await ctx.runQuery(internal.auth.internal.getUserDevicesForUI, {
+      userId: user._id,
+      currentDeviceId: deviceId,
+    });
+
+    const activeSub = await ctx.runQuery(
+      internal.subscriptions.internal.getActiveSubscriptionByUserId,
+      { userId: user._id }
+    );
+    const maxDevices = activeSub?.maxDevices ?? 1;
+
+    const thisDeviceAlreadyActive = devicesList.some((d) => d.deviceId === deviceId);
+    const atLimit = devicesList.length >= maxDevices;
+    const blockedByLimit = !thisDeviceAlreadyActive && atLimit;
+
+    if (blockedByLimit) {
+      const switchToken = await ctx.runAction(internal.auth.helpers.signJWT, {
+        payload: {
+          purpose: "device_switch",
+          userId: user._id,
+          email: user.email,
+          role: user.role || "user",
+          newDeviceId: deviceId,
+          newDeviceFingerprint: deviceFingerprint,
+          newDeviceInfo: deviceInfo,
+        },
+        expiresIn: "10m",
+      });
+
+      await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+        actorId: user._id,
+        action: "login_blocked_device_limit",
+        targetId: user._id,
+        details: {
+          deviceId,
+          activeDevices: devicesList.length,
+          maxDevices,
+        },
+      });
+
+      return {
+        success: false,
+        status: "DEVICE_LIMIT_REACHED",
+        error: "device_limit_reached",
+        message: `You're already signed in on ${maxDevices} device${maxDevices === 1 ? "" : "s"}. Remove one to continue on this device.`,
+        data: {
+          devices: devicesList,
+          maxDevices,
+          devicesUsed: devicesList.length,
+          switchToken,
+          newDevice: {
+            deviceId,
+            platform: deviceInfo?.platform || "unknown",
+          },
+          via: "password",
+        },
+      };
+    }
+
+    // ============================================================
+    // PROCEED: create session
+    // ============================================================
     await ctx.runMutation(internal.auth.internal.updateUser, {
       userId: user._id,
       updates: { lastLogin: now, lastSeen: now },
     });
 
-    // Session management
-    const existingSession = await ctx.runQuery(internal.auth.internal.getSessionByDeviceId, {
-      deviceId: args.deviceFingerprint,
-    });
-    if (existingSession && existingSession.userId !== user._id) {
-      await ctx.runMutation(internal.auth.internal.revokeAllSessions, { userId: existingSession.userId });
-    }
-    const activeSession = await ctx.runQuery(internal.auth.internal.getActiveSession, { userId: user._id });
-    if (activeSession && activeSession.deviceId !== args.deviceFingerprint) {
-      await ctx.runMutation(internal.auth.internal.revokeSession, { sessionId: activeSession.sessionId });
-    }
-
     const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
       userId: user._id,
-      deviceId: args.deviceFingerprint,
-      deviceFingerprint: args.deviceFingerprint,
-      platform: args.deviceInfo?.platform || "web",
+      deviceId,
+      deviceFingerprint,
+      platform: deviceInfo?.platform || "web",
       expiresAt: now + 365 * 24 * 60 * 60 * 1000,
     });
 
-    // Device change detection
-    const existingDevices = user.devices || [];
-    const deviceExists = existingDevices.some((d) => d.fingerprint === args.deviceFingerprint);
-    let isNewDevice = false;
+    const deviceExists = (user.devices || []).some(
+      (d) => d.deviceId === deviceId || d.fingerprint === deviceFingerprint
+    );
+
+    await ctx.runMutation(internal.auth.internal.addDevice, {
+      userId: user._id,
+      fingerprint: deviceFingerprint,
+      deviceId,
+      lastUsed: now,
+      platform: deviceInfo?.platform,
+      deviceInfo,
+    });
+
+    await ctx.runMutation(internal.devices.internal.upsertDeviceInfo, {
+      deviceId,
+      userId: user._id,
+      info: deviceInfo,
+      platform: deviceInfo?.platform,
+      userAgent: deviceInfo?.userAgent,
+    });
+
     if (!deviceExists) {
-      isNewDevice = true;
       await ctx.runMutation(internal.auth.internal.logSecurityEvent, {
         userId: user._id,
         eventType: "device_change",
-        metadata: { fingerprint: args.deviceFingerprint, timestamp: now },
+        metadata: { fingerprint: deviceFingerprint, deviceId, timestamp: now },
       });
       await notificationTriggers.notifyNewDevice(
         ctx,
         user._id,
-        args.deviceInfo?.platform || "web",
-        args.deviceFingerprint
+        deviceInfo?.platform || "unknown",
+        deviceId
       );
     }
-    await ctx.runMutation(internal.auth.internal.addDevice, {
-      userId: user._id,
-      fingerprint: args.deviceFingerprint,
-      lastUsed: now,
-    });
 
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
       actorId: user._id,
       action: "user_login",
       targetId: user._id,
-      details: { deviceFingerprint: args.deviceFingerprint, sessionId },
+      details: {
+        deviceFingerprint,
+        deviceId,
+        sessionId,
+        isNewDevice: !deviceExists,
+        deviceCount: devicesList.length,
+        maxDevices,
+      },
     });
 
     const userRole = user.role || "user";
     const token = await ctx.runAction(internal.auth.helpers.signJWT, {
-      payload: { userId: user._id, email: user.email, role: userRole, sessionId },
+      payload: { userId: user._id, email: user.email, role: userRole, sessionId, deviceId },
       expiresIn: "30d",
     });
 
     return {
       success: true,
+      status: "SUCCESS",
       data: {
         token,
         userId: user._id,
@@ -332,7 +513,292 @@ export const login = action({
         username: user.username,
         displayName: user.displayName,
         sessionId,
-        isNewDevice,
+        deviceId,
+        isNewDevice: !deviceExists,
+      },
+    };
+  },
+});
+
+// ============================================================
+// REMOVE DEVICE AND CONTINUE
+// ------------------------------------------------------------
+// Internally this now DELETES the removed device's session row
+// (rather than marking it revoked). Everything else stays the same.
+// ============================================================
+export const removeDeviceAndContinue = action({
+  args: {
+    switchToken: v.string(),
+    deviceToRemoveId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    let payload;
+    try {
+      payload = await ctx.runAction(internal.auth.helpers.verifyJWT, {
+        token: args.switchToken,
+      });
+    } catch (err) {
+      return {
+        success: false,
+        status: "INVALID_TOKEN",
+        error: "invalid_switch_token",
+        message: "Session expired. Please log in again.",
+      };
+    }
+
+    if (payload.purpose !== "device_switch") {
+      return {
+        success: false,
+        status: "INVALID_TOKEN",
+        error: "invalid_token_purpose",
+        message: "Invalid token.",
+      };
+    }
+
+    const {
+      userId,
+      email,
+      role,
+      newDeviceId,
+      newDeviceFingerprint,
+      newDeviceInfo,
+    } = payload;
+
+    if (args.deviceToRemoveId === newDeviceId) {
+      return {
+        success: false,
+        error: "cannot_remove_current",
+        message: "You cannot remove the device you are currently signing in on.",
+      };
+    }
+
+    const now = Date.now();
+
+    // This mutation now deletes the session row and all mirrored entries.
+    await ctx.runMutation(internal.auth.internal.removeDeviceByFingerprint, {
+      userId,
+      deviceId: args.deviceToRemoveId,
+    });
+
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "user_login_removed_device",
+      targetId: args.deviceToRemoveId,
+      details: { newDeviceId },
+    });
+
+    const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
+      userId,
+      deviceId: newDeviceId,
+      deviceFingerprint: newDeviceFingerprint || newDeviceId,
+      platform: newDeviceInfo?.platform || "web",
+      expiresAt: now + 365 * 24 * 60 * 60 * 1000,
+    });
+
+    await ctx.runMutation(internal.auth.internal.updateUser, {
+      userId,
+      updates: { lastLogin: now, lastSeen: now },
+    });
+
+    await ctx.runMutation(internal.auth.internal.addDevice, {
+      userId,
+      fingerprint: newDeviceFingerprint || newDeviceId,
+      deviceId: newDeviceId,
+      lastUsed: now,
+      platform: newDeviceInfo?.platform,
+      deviceInfo: newDeviceInfo,
+    });
+
+    await ctx.runMutation(internal.devices.internal.upsertDeviceInfo, {
+      deviceId: newDeviceId,
+      userId,
+      info: newDeviceInfo || {},
+      platform: newDeviceInfo?.platform,
+      userAgent: newDeviceInfo?.userAgent,
+    });
+
+    await notificationTriggers.notifyNewDevice(
+      ctx,
+      userId,
+      newDeviceInfo?.platform || "unknown",
+      newDeviceId
+    );
+
+    const user = await ctx.runQuery(internal.auth.internal.getUserById, { userId });
+    if (!user) {
+      return { success: false, error: "user_not_found", message: "User no longer exists." };
+    }
+
+    const userRole = role || user.role || "user";
+    const token = await ctx.runAction(internal.auth.helpers.signJWT, {
+      payload: { userId, email: email || user.email, role: userRole, sessionId, deviceId: newDeviceId },
+      expiresIn: "30d",
+    });
+
+    return {
+      success: true,
+      status: "SUCCESS",
+      data: {
+        token,
+        userId,
+        name: user.name,
+        email: user.email,
+        role: userRole,
+        username: user.username,
+        displayName: user.displayName,
+        sessionId,
+        deviceId: newDeviceId,
+        isNewDevice: true,
+      },
+    };
+  },
+});
+
+// ============================================================
+// LIST ACTIVE DEVICES
+// ------------------------------------------------------------
+// Purges dead sessions before returning the list so the UI never
+// sees ghost devices.
+// ============================================================
+export const listActiveDevices = action({
+  args: {
+    token: v.string(),
+    currentDeviceId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch (err) {
+      return { success: false, error: "token_verification_failed", message: "Authentication failed." };
+    }
+
+    const userId = payload.userId;
+
+    // Purge dead sessions before listing
+    await ctx.runMutation(internal.auth.internal.purgeRevokedSessions, { userId });
+    await ctx.runMutation(internal.auth.internal.pruneUserDevicesArray, { userId });
+
+    const activeSub = await ctx.runQuery(
+      internal.subscriptions.internal.getActiveSubscriptionByUserId,
+      { userId }
+    );
+    const maxDevices = activeSub?.maxDevices ?? 1;
+
+    const devices = await ctx.runQuery(internal.auth.internal.getUserDevicesForUI, {
+      userId,
+      currentDeviceId: args.currentDeviceId,
+    });
+
+    return {
+      success: true,
+      data: {
+        devices,
+        maxDevices,
+        devicesUsed: devices.length,
+        overLimit: devices.length > maxDevices,
+      },
+    };
+  },
+});
+
+// ============================================================
+// REMOVE OTHER DEVICE
+// ------------------------------------------------------------
+// This now physically deletes the session row internally.
+// ============================================================
+export const removeOtherDevice = action({
+  args: {
+    token: v.string(),
+    deviceId: v.string(),
+    currentDeviceId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch (err) {
+      return { success: false, error: "token_verification_failed", message: "Auth failed." };
+    }
+
+    const userId = payload.userId;
+
+    if (args.deviceId === args.currentDeviceId) {
+      return {
+        success: false,
+        error: "cannot_remove_current",
+        message: "You cannot remove the device you are currently using. Logout instead.",
+      };
+    }
+
+    await ctx.runMutation(internal.auth.internal.removeDeviceByFingerprint, {
+      userId,
+      deviceId: args.deviceId,
+    });
+
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "user_remove_device",
+      targetId: args.deviceId,
+      details: {},
+    });
+
+    return { success: true, data: { message: "Device removed." } };
+  },
+});
+
+// ============================================================
+// REMOVE ALL OTHER DEVICES
+// ------------------------------------------------------------
+// revokeAllOtherSessions now DELETES rows. Response shape unchanged.
+// ============================================================
+export const removeOtherDevices = action({
+  args: {
+    token: v.string(),
+    currentSessionId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    let payload;
+    try {
+      const result = await ctx.runAction(internal.auth.actions.verifyToken, { token: args.token });
+      if (!result.success) {
+        return { success: false, error: "invalid_token", message: result.message };
+      }
+      payload = result.data;
+    } catch (err) {
+      return { success: false, error: "token_verification_failed", message: "Auth failed." };
+    }
+
+    const userId = payload.userId;
+
+    const result = await ctx.runMutation(internal.auth.internal.revokeAllOtherSessions, {
+      userId,
+      keepSessionId: args.currentSessionId,
+    });
+
+    // Trim users.devices[] to the remaining active set
+    await ctx.runMutation(internal.auth.internal.pruneUserDevicesArray, { userId });
+
+    await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+      actorId: userId,
+      action: "user_logout_other_devices",
+      targetId: userId,
+      details: { revoked: result.revokedCount },
+    });
+
+    return {
+      success: true,
+      data: {
+        message: `Logged out from ${result.revokedCount} other device${result.revokedCount === 1 ? "" : "s"}.`,
+        revokedCount: result.revokedCount,
       },
     };
   },
@@ -340,6 +806,9 @@ export const login = action({
 
 // ============================================================
 // VERIFY TOKEN
+// ------------------------------------------------------------
+// Since revoked sessions are now DELETED, "not found" means the
+// session is no longer valid.
 // ============================================================
 export const verifyToken = action({
   args: { token: v.string() },
@@ -371,15 +840,12 @@ export const verifyToken = action({
 // REFRESH SESSION
 // ============================================================
 export const refreshSession = action({
-  args: {
-    sessionId: v.string(),
-  },
+  args: { sessionId: v.string() },
   handler: async (ctx, args) => {
     const session = await ctx.runQuery(
       internal.auth.internal.getSessionBySessionId,
       { sessionId: args.sessionId }
     );
-
     if (!session) {
       return { success: false, error: "session_not_found", message: "Session no longer exists." };
     }
@@ -390,10 +856,9 @@ export const refreshSession = action({
       return { success: false, error: "session_expired", message: "Session has expired." };
     }
 
-    const user = await ctx.runQuery(
-      internal.auth.internal.getUserById,
-      { userId: session.userId }
-    );
+    const user = await ctx.runQuery(internal.auth.internal.getUserById, {
+      userId: session.userId,
+    });
     if (!user) {
       return { success: false, error: "user_not_found", message: "User no longer exists." };
     }
@@ -402,40 +867,31 @@ export const refreshSession = action({
     }
 
     const userRole = user.role || "user";
-    const token = await ctx.runAction(
-      internal.auth.helpers.signJWT,
-      {
-        payload: {
-          userId: user._id,
-          email: user.email,
-          role: userRole,
-          sessionId: session.sessionId,
-        },
-        expiresIn: "30d",
-      }
-    );
-
-    await ctx.runMutation(
-      internal.auth.internal.updateSessionLastSeen,
-      {
+    const token = await ctx.runAction(internal.auth.helpers.signJWT, {
+      payload: {
+        userId: user._id,
+        email: user.email,
+        role: userRole,
         sessionId: session.sessionId,
-        lastSeen: Date.now(),
-      }
-    );
+        deviceId: session.deviceId,
+      },
+      expiresIn: "30d",
+    });
+
+    await ctx.runMutation(internal.auth.internal.updateSessionLastSeen, {
+      sessionId: session.sessionId,
+      lastSeen: Date.now(),
+    });
 
     return {
       success: true,
-      data: {
-        token,
-        userId: user._id,
-        sessionId: session.sessionId,
-      },
+      data: { token, userId: user._id, sessionId: session.sessionId, deviceId: session.deviceId },
     };
   },
 });
 
 // ============================================================
-// CHANGE PASSWORD – with notification
+// CHANGE PASSWORD
 // ============================================================
 export const changePassword = action({
   args: {
@@ -483,7 +939,6 @@ export const changePassword = action({
       updates: { passwordHash: newHash },
     });
 
-    // ✅ Ensure password identity exists (in case account was Google-only before)
     await ctx.runMutation(internal.auth.internal.createPasswordIdentity, { userId });
 
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
@@ -493,16 +948,20 @@ export const changePassword = action({
       details: {},
     });
 
+    // Deletes every session (revokeAllSessions now deletes rows)
     await ctx.runMutation(internal.auth.internal.revokeAllSessions, { userId });
 
     await notificationTriggers.notifyPasswordChanged(ctx, userId);
 
-    return { success: true, data: { message: "Password changed successfully. You have been logged out from other devices." } };
+    return {
+      success: true,
+      data: { message: "Password changed successfully. You have been logged out from other devices." },
+    };
   },
 });
 
 // ============================================================
-// PASSWORD RESET FLOW – with notification
+// PASSWORD RESET FLOW
 // ============================================================
 export const resetPasswordRequest = action({
   args: { identifier: v.string(), securityAnswers: v.array(v.string()) },
@@ -569,7 +1028,6 @@ export const resetPasswordConfirm = action({
       updates: { passwordHash: newHash },
     });
 
-    // ✅ Ensure password identity exists
     await ctx.runMutation(internal.auth.internal.createPasswordIdentity, { userId });
 
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
@@ -586,10 +1044,7 @@ export const resetPasswordConfirm = action({
 });
 
 export const verifySecurityAnswers = action({
-  args: {
-    identifier: v.string(),
-    answers: v.array(v.string()),
-  },
+  args: { identifier: v.string(), answers: v.array(v.string()) },
   handler: async (ctx, args) => {
     const result = await resetPasswordRequest(ctx, {
       identifier: args.identifier,
@@ -616,13 +1071,17 @@ export const resetPassword = action({
 });
 
 // ============================================================
-// GOOGLE SIGN-IN – Identity resolution
+// GOOGLE SIGN-IN
+// ------------------------------------------------------------
+// Same purge-before-listing pattern as password login (CASE A).
 // ============================================================
 export const googleSignIn = action({
   args: {
     idToken: v.string(),
-    deviceFingerprint: v.string(),
+    deviceId: v.optional(v.string()),
+    deviceFingerprint: v.optional(v.string()),
     deviceInfo: v.optional(v.any()),
+    referralCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const googleClientId = process.env.GOOGLE_CLIENT_ID;
@@ -635,10 +1094,26 @@ export const googleSignIn = action({
       };
     }
 
-    // Rate limiting
+    let device;
+    try {
+      device = normalizeDevice({
+        deviceId: args.deviceId,
+        deviceFingerprint: args.deviceFingerprint,
+        deviceInfo: args.deviceInfo,
+      });
+    } catch {
+      return {
+        success: false,
+        status: "SERVER_ERROR",
+        error: "device_id_required",
+        message: "A device identifier is required.",
+      };
+    }
+    const { deviceId, deviceFingerprint, deviceInfo } = device;
+
     const now = Date.now();
     const resetAt = now + 60 * 1000;
-    const rateKey = `google_signin_${args.deviceFingerprint}`;
+    const rateKey = `google_signin_${deviceId}`;
     const rateRecord = await ctx.runQuery(internal.auth.internal.getRateLimit, {
       key: rateKey,
       endpoint: "google_signin",
@@ -657,7 +1132,6 @@ export const googleSignIn = action({
       resetAt,
     });
 
-    // Verify Google ID token server-side
     let googlePayload;
     try {
       googlePayload = await ctx.runAction(
@@ -697,9 +1171,7 @@ export const googleSignIn = action({
       };
     }
 
-    // ============================================================
-    // CASE A: Google identity already exists → LOGIN
-    // ============================================================
+    // CASE A — existing Google identity → LOGIN (with device gate)
     const existingIdentity = await ctx.runQuery(
       internal.auth.internal.getAuthIdentity,
       { provider: "google", providerSubject: googleSubject }
@@ -735,43 +1207,121 @@ export const googleSignIn = action({
         identityId: existingIdentity._id,
       });
 
+      // Purge dead sessions before listing
+      await ctx.runMutation(internal.auth.internal.purgeRevokedSessions, {
+        userId: user._id,
+      });
+      await ctx.runMutation(internal.auth.internal.pruneUserDevicesArray, {
+        userId: user._id,
+      });
+
+      const devicesList = await ctx.runQuery(internal.auth.internal.getUserDevicesForUI, {
+        userId: user._id,
+        currentDeviceId: deviceId,
+      });
+
+      const activeSub = await ctx.runQuery(
+        internal.subscriptions.internal.getActiveSubscriptionByUserId,
+        { userId: user._id }
+      );
+      const maxDevices = activeSub?.maxDevices ?? 1;
+
+      const thisDeviceAlreadyActive = devicesList.some((d) => d.deviceId === deviceId);
+      const atLimit = devicesList.length >= maxDevices;
+      const blockedByLimit = !thisDeviceAlreadyActive && atLimit;
+
+      if (blockedByLimit) {
+        const switchToken = await ctx.runAction(internal.auth.helpers.signJWT, {
+          payload: {
+            purpose: "device_switch",
+            userId: user._id,
+            email: user.email,
+            role: user.role || "user",
+            newDeviceId: deviceId,
+            newDeviceFingerprint: deviceFingerprint,
+            newDeviceInfo: deviceInfo,
+          },
+          expiresIn: "10m",
+        });
+
+        await ctx.runMutation(internal.auth.internal.logAuditEvent, {
+          actorId: user._id,
+          action: "google_login_blocked_device_limit",
+          targetId: user._id,
+          details: { deviceId, activeDevices: devicesList.length, maxDevices },
+        });
+
+        return {
+          success: false,
+          status: "DEVICE_LIMIT_REACHED",
+          error: "device_limit_reached",
+          message: `You're already signed in on ${maxDevices} device${maxDevices === 1 ? "" : "s"}. Remove one to continue on this device.`,
+          data: {
+            devices: devicesList,
+            maxDevices,
+            devicesUsed: devicesList.length,
+            switchToken,
+            newDevice: {
+              deviceId,
+              platform: deviceInfo?.platform || "unknown",
+            },
+            via: "google",
+          },
+        };
+      }
+
       const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
         userId: user._id,
-        deviceId: args.deviceFingerprint,
-        deviceFingerprint: args.deviceFingerprint,
-        platform: args.deviceInfo?.platform || "web",
+        deviceId,
+        deviceFingerprint,
+        platform: deviceInfo?.platform || "web",
         expiresAt: now + 365 * 24 * 60 * 60 * 1000,
       });
+
       await ctx.runMutation(internal.auth.internal.updateUser, {
         userId: user._id,
         updates: { lastLogin: now, lastSeen: now },
       });
-      const existingDevices = user.devices || [];
-      const deviceExists = existingDevices.some(
-        (d) => d.fingerprint === args.deviceFingerprint
+
+      const deviceExists = (user.devices || []).some(
+        (d) => d.deviceId === deviceId || d.fingerprint === deviceFingerprint
       );
+
       if (!deviceExists) {
         await ctx.runMutation(internal.auth.internal.logSecurityEvent, {
           userId: user._id,
           eventType: "device_change",
-          metadata: { fingerprint: args.deviceFingerprint, via: "google" },
+          metadata: { fingerprint: deviceFingerprint, deviceId, via: "google" },
         });
       }
+
       await ctx.runMutation(internal.auth.internal.addDevice, {
         userId: user._id,
-        fingerprint: args.deviceFingerprint,
+        fingerprint: deviceFingerprint,
+        deviceId,
         lastUsed: now,
+        platform: deviceInfo?.platform,
+        deviceInfo,
       });
+
+      await ctx.runMutation(internal.devices.internal.upsertDeviceInfo, {
+        deviceId,
+        userId: user._id,
+        info: deviceInfo,
+        platform: deviceInfo?.platform,
+        userAgent: deviceInfo?.userAgent,
+      });
+
       await ctx.runMutation(internal.auth.internal.logAuditEvent, {
         actorId: user._id,
         action: "google_login_success",
         targetId: user._id,
-        details: { email: googleEmail, sessionId },
+        details: { email: googleEmail, sessionId, deviceCount: devicesList.length, maxDevices },
       });
 
       const userRole = user.role || "user";
       const token = await ctx.runAction(internal.auth.helpers.signJWT, {
-        payload: { userId: user._id, email: user.email, role: userRole, sessionId },
+        payload: { userId: user._id, email: user.email, role: userRole, sessionId, deviceId },
         expiresIn: "30d",
       });
 
@@ -786,19 +1336,17 @@ export const googleSignIn = action({
           username: user.username,
           displayName: user.displayName,
           sessionId,
+          deviceId,
           isNewDevice: !deviceExists,
         },
       };
     }
 
-    // Look up by email (only for account discovery / conflict detection)
     const existingUser = await ctx.runQuery(internal.auth.internal.getUserByEmail, {
       email: googleEmail,
     });
 
-    // ============================================================
-    // CASE B: No existing account → CREATE
-    // ============================================================
+    // CASE B — no existing account → CREATE
     if (!existingUser) {
       const baseName = (name || googleEmail.split("@")[0]).replace(/\s+/g, "");
       const username = await ctx.runMutation(
@@ -810,6 +1358,15 @@ export const googleSignIn = action({
         {}
       );
 
+      let referredBy: string | undefined = undefined;
+      if (args.referralCode) {
+        const referrer = await ctx.runQuery(
+          internal.users.internal.getUserByReferralCode,
+          { referralCode: args.referralCode }
+        );
+        if (referrer) referredBy = referrer._id;
+      }
+
       const userId = await ctx.runMutation(internal.auth.internal.insertGoogleUser, {
         email: googleEmail,
         name,
@@ -820,9 +1377,9 @@ export const googleSignIn = action({
         username,
         displayName: name,
         referralCode,
+        referredBy,
       });
 
-      // Race protection: if a concurrent request won, adopt winner
       const winner = await ctx.runQuery(internal.auth.internal.getUserByEmail, {
         email: googleEmail,
       });
@@ -844,35 +1401,47 @@ export const googleSignIn = action({
 
       const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
         userId: finalUserId,
-        deviceId: args.deviceFingerprint,
-        deviceFingerprint: args.deviceFingerprint,
-        platform: args.deviceInfo?.platform || "web",
+        deviceId,
+        deviceFingerprint,
+        platform: deviceInfo?.platform || "web",
         expiresAt: now + 365 * 24 * 60 * 60 * 1000,
       });
+
       await ctx.runMutation(internal.auth.internal.updateUser, {
         userId: finalUserId,
         updates: { lastLogin: now, lastSeen: now },
       });
+
       await ctx.runMutation(internal.auth.internal.addDevice, {
         userId: finalUserId,
-        fingerprint: args.deviceFingerprint,
+        fingerprint: deviceFingerprint,
+        deviceId,
         lastUsed: now,
+        platform: deviceInfo?.platform,
+        deviceInfo,
       });
+
+      await ctx.runMutation(internal.devices.internal.upsertDeviceInfo, {
+        deviceId,
+        userId: finalUserId,
+        info: deviceInfo,
+        platform: deviceInfo?.platform,
+        userAgent: deviceInfo?.userAgent,
+      });
+
       await ctx.runMutation(internal.auth.internal.logAuditEvent, {
         actorId: finalUserId,
         action: "google_account_created",
         targetId: finalUserId,
-        details: { email: googleEmail },
+        details: {
+          email: googleEmail,
+          incomingReferralCode: args.referralCode ?? null,
+          referredBy: referredBy ?? null,
+        },
       });
 
       try {
-        await ctx.runMutation(internal.notifications.internal.insertNotification, {
-          userId: finalUserId,
-          type: "account_created",
-          title: "Welcome to MedVix! 🎉",
-          message: `Welcome, ${name}! Your account was created via Google.`,
-          data: { route: "subjects" },
-        });
+        await notificationTriggers.notifyAccountCreated(ctx, finalUserId, name, googleEmail);
       } catch (e) {
         console.warn("[googleSignIn] Welcome notification failed", e);
       }
@@ -882,7 +1451,7 @@ export const googleSignIn = action({
       });
       const userRole = newUser?.role || "user";
       const token = await ctx.runAction(internal.auth.helpers.signJWT, {
-        payload: { userId: finalUserId, email: googleEmail, role: userRole, sessionId },
+        payload: { userId: finalUserId, email: googleEmail, role: userRole, sessionId, deviceId },
         expiresIn: "30d",
       });
 
@@ -897,14 +1466,13 @@ export const googleSignIn = action({
           username: newUser?.username,
           displayName: newUser?.displayName || name,
           sessionId,
+          deviceId,
           isNewDevice: true,
         },
       };
     }
 
-    // ============================================================
-    // CASE C: Existing email account, NO Google identity → LINK REQUIRED
-    // ============================================================
+    // CASE C — existing email account, no Google identity → LINK REQUIRED
     if (existingUser.isLocked) {
       return {
         success: false,
@@ -914,8 +1482,7 @@ export const googleSignIn = action({
       };
     }
 
-    // Rate limit linking attempts
-    const linkRateKey = `google_link_${args.deviceFingerprint}`;
+    const linkRateKey = `google_link_${deviceId}`;
     const linkRate = await ctx.runQuery(internal.auth.internal.getRateLimit, {
       key: linkRateKey,
       endpoint: "google_link",
@@ -934,7 +1501,6 @@ export const googleSignIn = action({
       resetAt: now + 60 * 1000,
     });
 
-    // Short-lived link token bound to Google identity + existing user
     const linkToken = await ctx.runAction(internal.auth.helpers.signJWT, {
       payload: {
         purpose: "google_link",
@@ -959,26 +1525,40 @@ export const googleSignIn = action({
       error: "link_required",
       message:
         "An account already exists with this email. Please sign in to link Google Sign-In.",
-      data: {
-        linkToken,
-        email: googleEmail,
-      },
+      data: { linkToken, email: googleEmail },
     };
   },
 });
 
 // ============================================================
-// LINK GOOGLE ACCOUNT (proves ownership of existing account)
+// LINK GOOGLE ACCOUNT
 // ============================================================
 export const linkGoogleAccount = action({
   args: {
     linkToken: v.string(),
     password: v.string(),
-    deviceFingerprint: v.string(),
+    deviceId: v.optional(v.string()),
+    deviceFingerprint: v.optional(v.string()),
     deviceInfo: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    // Verify link token
+    let device;
+    try {
+      device = normalizeDevice({
+        deviceId: args.deviceId,
+        deviceFingerprint: args.deviceFingerprint,
+        deviceInfo: args.deviceInfo,
+      });
+    } catch {
+      return {
+        success: false,
+        status: "SERVER_ERROR",
+        error: "device_id_required",
+        message: "A device identifier is required.",
+      };
+    }
+    const { deviceId, deviceFingerprint, deviceInfo } = device;
+
     let payload;
     try {
       payload = await ctx.runAction(internal.auth.helpers.verifyJWT, {
@@ -1003,9 +1583,9 @@ export const linkGoogleAccount = action({
     }
 
     const { googleSub, googleEmail, googlePicture, existingUserId } = payload;
-
     const now = Date.now();
-    const rateKey = `google_link_${args.deviceFingerprint}`;
+
+    const rateKey = `google_link_${deviceId}`;
     const rateRecord = await ctx.runQuery(internal.auth.internal.getRateLimit, {
       key: rateKey,
       endpoint: "google_link",
@@ -1044,7 +1624,6 @@ export const linkGoogleAccount = action({
       };
     }
 
-    // Verify password
     const passwordValid = await ctx.runAction(internal.auth.helpers.comparePassword, {
       password: args.password,
       hash: user.passwordHash,
@@ -1064,7 +1643,6 @@ export const linkGoogleAccount = action({
       };
     }
 
-    // Ensure Google identity not already claimed
     const existingIdentity = await ctx.runQuery(
       internal.auth.internal.getAuthIdentity,
       { provider: "google", providerSubject: googleSub }
@@ -1099,7 +1677,6 @@ export const linkGoogleAccount = action({
       });
     }
 
-    // Update denormalized Google fields on the user
     await ctx.runMutation(internal.auth.internal.linkGoogleAccount, {
       userId: user._id,
       googleSubject: googleSub,
@@ -1109,9 +1686,9 @@ export const linkGoogleAccount = action({
 
     const sessionId = await ctx.runMutation(internal.auth.internal.createSession, {
       userId: user._id,
-      deviceId: args.deviceFingerprint,
-      deviceFingerprint: args.deviceFingerprint,
-      platform: args.deviceInfo?.platform || "web",
+      deviceId,
+      deviceFingerprint,
+      platform: deviceInfo?.platform || "web",
       expiresAt: now + 365 * 24 * 60 * 60 * 1000,
     });
     await ctx.runMutation(internal.auth.internal.updateUser, {
@@ -1120,8 +1697,19 @@ export const linkGoogleAccount = action({
     });
     await ctx.runMutation(internal.auth.internal.addDevice, {
       userId: user._id,
-      fingerprint: args.deviceFingerprint,
+      fingerprint: deviceFingerprint,
+      deviceId,
       lastUsed: now,
+      platform: deviceInfo?.platform,
+      deviceInfo,
+    });
+
+    await ctx.runMutation(internal.devices.internal.upsertDeviceInfo, {
+      deviceId,
+      userId: user._id,
+      info: deviceInfo,
+      platform: deviceInfo?.platform,
+      userAgent: deviceInfo?.userAgent,
     });
 
     await ctx.runMutation(internal.auth.internal.logAuditEvent, {
@@ -1133,7 +1721,7 @@ export const linkGoogleAccount = action({
 
     const userRole = user.role || "user";
     const token = await ctx.runAction(internal.auth.helpers.signJWT, {
-      payload: { userId: user._id, email: user.email, role: userRole, sessionId },
+      payload: { userId: user._id, email: user.email, role: userRole, sessionId, deviceId },
       expiresIn: "30d",
     });
 
@@ -1148,13 +1736,14 @@ export const linkGoogleAccount = action({
         username: user.username,
         displayName: user.displayName,
         sessionId,
+        deviceId,
       },
     };
   },
 });
 
 // ============================================================
-// LINK GOOGLE AFTER LOGIN (from settings page)
+// LINK GOOGLE AFTER LOGIN (settings page)
 // ============================================================
 export const linkGoogleAfterLogin = action({
   args: {
@@ -1303,7 +1892,6 @@ export const unlinkGoogleAccount = action({
       identityId: googleIdentity._id,
     });
 
-    // Clear denormalized Google fields on the user
     await ctx.runMutation(internal.auth.internal.updateUser, {
       userId,
       updates: { googleSubject: undefined, googleEmail: undefined, googlePicture: undefined },

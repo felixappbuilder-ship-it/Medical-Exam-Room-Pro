@@ -165,7 +165,6 @@ export const adminForceLogout = action({
     try {
       const admin = await verifyAdmin(ctx, args.token);
       await notificationTriggers.notifyAdminForceLogout(ctx, args.userId);
-      // Increment tokenVersion to invalidate all sessions
       const user = await ctx.runQuery(internal.admin.internal.getUserById, { userId: args.userId });
       if (user) {
         const currentVersion = (user as any).tokenVersion || 0;
@@ -338,8 +337,11 @@ export const adminGrantTrial = action({
   handler: async (ctx, args) => {
     try {
       const admin = await verifyAdmin(ctx, args.token);
-      const hours = args.hours || 3;
+      // Default to config value if hours not passed
+      const config = await ctx.runQuery(internal.system.internal.getAppConfig, {});
+      const hours = args.hours || config?.trialDurationHours || 24;
       const expiryDate = Date.now() + hours * 60 * 60 * 1000;
+
       const existingSub = await ctx.runQuery(
         internal.subscriptions.internal.getActiveSubscriptionByUserId,
         { userId: args.userId }
@@ -347,6 +349,7 @@ export const adminGrantTrial = action({
       if (existingSub && existingSub.expiryDate > Date.now()) {
         return { success: false, message: "User already has an active subscription" };
       }
+
       await ctx.runMutation(internal.subscriptions.internal.createSubscription, {
         userId: args.userId,
         plan: "trial",
@@ -494,6 +497,7 @@ export const adminRecordManualPayment = action({
         createdAt: Date.now(),
         updatedAt: Date.now(),
         mpesaReceipt: `manual_${args.reference}`,
+        selectedPlanId: args.planName,
       });
       await ctx.runMutation(internal.payments.internal.activateSubscriptionFromPayment, {
         paymentId,
@@ -804,7 +808,7 @@ export const adminBulkApproveWithdrawals = action({
                 "B2C M-Pesa"
               );
             }
-          } catch (err) {
+          } catch (err: any) {
             await ctx.runMutation(internal.admin.internal.processWithdrawal, {
               withdrawalId: w._id,
               status: "failed",
@@ -842,7 +846,7 @@ export const adminSetAutoApprove = action({
   handler: async (ctx, args) => {
     try {
       const admin = await verifyAdmin(ctx, args.token);
-      await ctx.runMutation(internal.admin.internal.updateAppConfig, {
+      await ctx.runMutation(internal.system.internal.updateAppConfigInternal, {
         updates: { autoApproveWithdrawals: args.enabled },
       });
       await ctx.runMutation(internal.admin.internal.logAuditEntry, {
@@ -940,32 +944,218 @@ export const adminSystemLockdown = action({
   },
 });
 
+// ------------------------------------------------------------
+// ADMIN: UPDATE APP CONFIG (full schema, admin-editable pricing)
+// ------------------------------------------------------------
 export const adminUpdateAppConfig = action({
   args: {
     token: v.string(),
     updates: v.object({
       trialDurationHours: v.optional(v.number()),
       maintenanceMode: v.optional(v.boolean()),
-      subscriptionPlans: v.optional(
-        v.array(v.object({ name: v.string(), price: v.number(), days: v.number() }))
-      ),
       paymentsFrozen: v.optional(v.boolean()),
       maxRequestsPerMinute: v.optional(v.number()),
       autoApproveWithdrawals: v.optional(v.boolean()),
+      challengeWinnerPoints: v.optional(v.number()),
+      twoDeviceDiscountPercent: v.optional(v.number()),
+      customPenaltyPerDay: v.optional(v.number()),
+      maxDevicesPerSubscription: v.optional(v.number()),
+      subscriptionPlans: v.optional(
+        v.array(
+          v.object({
+            id: v.string(),
+            name: v.string(),
+            price: v.number(),
+            days: v.number(),
+            popular: v.optional(v.boolean()),
+            features: v.array(v.string()),
+            limitations: v.optional(v.array(v.string())),
+            savings: v.optional(v.string()),
+            ctaText: v.optional(v.string()),
+            ctaColor: v.optional(v.string()),
+            durationText: v.optional(v.string()),
+          })
+        )
+      ),
     }),
+    reason: v.optional(v.string()),
+    notifyUsers: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     try {
       const admin = await verifyAdmin(ctx, args.token);
+      const u = args.updates;
+
+      // ---- Validation ----
+      if (u.trialDurationHours !== undefined) {
+        if (u.trialDurationHours < 1 || u.trialDurationHours > 720) {
+          return {
+            success: false,
+            error: "invalid_trial_duration",
+            message: "Trial duration must be between 1 and 720 hours (30 days).",
+          };
+        }
+      }
+      if (u.twoDeviceDiscountPercent !== undefined) {
+        if (u.twoDeviceDiscountPercent < 0 || u.twoDeviceDiscountPercent > 90) {
+          return {
+            success: false,
+            error: "invalid_discount",
+            message: "Two-device discount must be between 0% and 90%.",
+          };
+        }
+      }
+      if (u.customPenaltyPerDay !== undefined) {
+        if (u.customPenaltyPerDay < 0 || u.customPenaltyPerDay > 100) {
+          return {
+            success: false,
+            error: "invalid_penalty",
+            message: "Custom penalty per day must be between 0 and 100 KES.",
+          };
+        }
+      }
+      if (u.maxDevicesPerSubscription !== undefined) {
+        if (u.maxDevicesPerSubscription < 1 || u.maxDevicesPerSubscription > 10) {
+          return {
+            success: false,
+            error: "invalid_max_devices",
+            message: "Max devices per subscription must be between 1 and 10.",
+          };
+        }
+      }
+      if (u.maxRequestsPerMinute !== undefined) {
+        if (u.maxRequestsPerMinute < 1 || u.maxRequestsPerMinute > 1000) {
+          return {
+            success: false,
+            error: "invalid_rate_limit",
+            message: "Max requests per minute must be between 1 and 1000.",
+          };
+        }
+      }
+
+      if (u.subscriptionPlans !== undefined) {
+        if (u.subscriptionPlans.length === 0) {
+          return {
+            success: false,
+            error: "invalid_plans",
+            message: "At least one subscription plan is required.",
+          };
+        }
+        const validPlanIds = new Set(["monthly", "quarterly", "yearly"]);
+        const seenIds = new Set<string>();
+        for (const plan of u.subscriptionPlans) {
+          if (!validPlanIds.has(plan.id)) {
+            return {
+              success: false,
+              error: "invalid_plan_id",
+              message: `Invalid plan ID "${plan.id}". Allowed: monthly, quarterly, yearly.`,
+            };
+          }
+          if (seenIds.has(plan.id)) {
+            return {
+              success: false,
+              error: "duplicate_plan_id",
+              message: `Duplicate plan ID "${plan.id}".`,
+            };
+          }
+          seenIds.add(plan.id);
+          if (plan.price <= 0) {
+            return {
+              success: false,
+              error: "invalid_plan_price",
+              message: `Plan "${plan.id}" price must be greater than 0.`,
+            };
+          }
+          if (plan.days <= 0) {
+            return {
+              success: false,
+              error: "invalid_plan_days",
+              message: `Plan "${plan.id}" days must be greater than 0.`,
+            };
+          }
+        }
+      }
+
+      // ---- Ensure config exists ----
+      await ctx.runMutation(internal.system.internal.ensureAppConfig, {});
+
+      // ---- Snapshot old config ----
+      const previousConfig = await ctx.runQuery(internal.system.internal.getAppConfig, {});
+      if (!previousConfig) {
+        return { success: false, error: "config_missing", message: "AppConfig could not be initialised." };
+      }
+
+      // ---- Apply update ----
       await ctx.runMutation(internal.system.internal.updateAppConfigInternal, {
         updates: args.updates,
       });
+
+      // ---- Read new config ----
+      const newConfig = await ctx.runQuery(internal.system.internal.getAppConfig, {});
+
+      // ---- Audit log ----
       await ctx.runMutation(internal.admin.internal.logAuditEntry, {
         actorId: admin.userId,
         action: "admin_update_app_config",
-        details: args.updates,
+        targetId: "appConfig",
+        details: {
+          reason: args.reason ?? "No reason provided",
+          changedFields: Object.keys(args.updates),
+          previous: {
+            trialDurationHours: previousConfig.trialDurationHours,
+            twoDeviceDiscountPercent: previousConfig.twoDeviceDiscountPercent,
+            customPenaltyPerDay: previousConfig.customPenaltyPerDay,
+            maxDevicesPerSubscription: previousConfig.maxDevicesPerSubscription,
+            maintenanceMode: previousConfig.maintenanceMode,
+            paymentsFrozen: previousConfig.paymentsFrozen,
+            subscriptionPlans: previousConfig.subscriptionPlans.map((p) => ({
+              id: p.id,
+              price: p.price,
+              days: p.days,
+            })),
+          },
+          updated: args.updates,
+        },
       });
-      return { success: true, data: { message: "App config updated" } };
+
+      // ---- Optional broadcast ----
+      if (args.notifyUsers && (u.subscriptionPlans || u.trialDurationHours !== undefined)) {
+        const bodyParts: string[] = [];
+        if (u.trialDurationHours !== undefined) {
+          bodyParts.push(`Trial duration is now <strong>${u.trialDurationHours} hours</strong>.`);
+        }
+        if (u.subscriptionPlans) {
+          bodyParts.push("New subscription prices are live. Check the subscription page for details.");
+        }
+        await notificationTriggers.notifyAdminBroadcastToAll(
+          ctx,
+          "Subscription Update",
+          `<p>${bodyParts.join(" ")}</p>
+           <button class="btn-primary notif-action-btn" data-action="navigate" data-route="subscription">View Plans</button>`,
+          admin.userId
+        );
+      }
+
+      return {
+        success: true,
+        data: {
+          message: "App configuration updated successfully.",
+          config: newConfig
+            ? {
+                trialDurationHours: newConfig.trialDurationHours,
+                maintenanceMode: newConfig.maintenanceMode,
+                paymentsFrozen: newConfig.paymentsFrozen,
+                maxRequestsPerMinute: newConfig.maxRequestsPerMinute,
+                autoApproveWithdrawals: newConfig.autoApproveWithdrawals ?? false,
+                challengeWinnerPoints: newConfig.challengeWinnerPoints ?? 10,
+                twoDeviceDiscountPercent: newConfig.twoDeviceDiscountPercent ?? 15,
+                customPenaltyPerDay: newConfig.customPenaltyPerDay ?? 1.75,
+                maxDevicesPerSubscription: newConfig.maxDevicesPerSubscription ?? 2,
+                subscriptionPlans: newConfig.subscriptionPlans,
+              }
+            : null,
+        },
+      };
     } catch (err: any) {
       return { success: false, message: err.message };
     }
@@ -1009,7 +1199,6 @@ export const adminBroadcastNotification = action({
 
       const target = args.target || "all";
 
-      // If targeting specific users, use per‑user notifications.
       if (target === "specific") {
         if (!args.targetUserIds || args.targetUserIds.length === 0) {
           return {
@@ -1041,7 +1230,6 @@ export const adminBroadcastNotification = action({
         };
       }
 
-      // For "all", use a global notification (single document).
       if (target === "all") {
         await notificationTriggers.notifyAdminBroadcastToAll(
           ctx,
@@ -1065,8 +1253,6 @@ export const adminBroadcastNotification = action({
         };
       }
 
-      // For group targeting (subscribed, trial), use a group notification.
-      // We need to resolve group name to a string.
       let groupName = "";
       if (target === "subscribed") groupName = "subscribed";
       else if (target === "trial") groupName = "trial";

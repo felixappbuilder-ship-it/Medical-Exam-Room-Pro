@@ -3,6 +3,20 @@ import { internalMutation, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 
 // ============================================================
+// SCHEMA REMINDER
+// ------------------------------------------------------------
+// notifications table fields:
+//   userId?      – optional (undefined for global/group)
+//   targetAll?   – boolean (true for global)
+//   targetGroups?– array of group names
+//   type, title, message, data?, createdAt, senderId?
+//
+// Read status is ALWAYS stored in notificationReads, never
+// on the notification itself. This keeps global broadcasts to
+// a single document and avoids per-user write storms.
+// ============================================================
+
+// ============================================================
 // 1. INSERT USER-SPECIFIC NOTIFICATION
 // ============================================================
 export const insertNotification = internalMutation({
@@ -15,7 +29,7 @@ export const insertNotification = internalMutation({
     senderId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    const id = await ctx.db.insert("notifications", {
+    return await ctx.db.insert("notifications", {
       userId: args.userId,
       type: args.type,
       title: args.title,
@@ -26,12 +40,11 @@ export const insertNotification = internalMutation({
       targetGroups: [],
       createdAt: Date.now(),
     });
-    return id;
   },
 });
 
 // ============================================================
-// 2. INSERT NOTIFICATIONS FOR SPECIFIC USERS (user-specific)
+// 2. INSERT NOTIFICATIONS FOR MULTIPLE SPECIFIC USERS
 // ============================================================
 export const insertNotificationsForUsers = internalMutation({
   args: {
@@ -64,7 +77,7 @@ export const insertNotificationsForUsers = internalMutation({
 });
 
 // ============================================================
-// 3. INSERT GLOBAL NOTIFICATION (single document, no userId)
+// 3. INSERT GLOBAL NOTIFICATION (single document)
 // ============================================================
 export const insertGlobalNotification = internalMutation({
   args: {
@@ -77,8 +90,8 @@ export const insertGlobalNotification = internalMutation({
     targetGroups: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const id = await ctx.db.insert("notifications", {
-      userId: undefined,
+    return await ctx.db.insert("notifications", {
+      // userId omitted intentionally
       type: args.type,
       title: args.title,
       message: args.message,
@@ -88,12 +101,11 @@ export const insertGlobalNotification = internalMutation({
       targetGroups: args.targetGroups ?? [],
       createdAt: Date.now(),
     });
-    return id;
   },
 });
 
 // ============================================================
-// 4. INSERT NOTIFICATION FOR GROUP (e.g., "subscribed", "free")
+// 4. INSERT GROUP NOTIFICATION (single document, groups array)
 // ============================================================
 export const insertGroupNotification = internalMutation({
   args: {
@@ -105,8 +117,7 @@ export const insertGroupNotification = internalMutation({
     senderId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    const id = await ctx.db.insert("notifications", {
-      userId: undefined,
+    return await ctx.db.insert("notifications", {
       type: args.type,
       title: args.title,
       message: args.message,
@@ -116,175 +127,182 @@ export const insertGroupNotification = internalMutation({
       targetGroups: [args.groupName],
       createdAt: Date.now(),
     });
-    return id;
   },
 });
 
 // ============================================================
-// 5. QUERY NOTIFICATIONS FOR USER (user-specific + global/group)
+// 5. GET NOTIFICATIONS FOR USER
+//    Merges user-specific + global + group, then attaches read status.
+//    Assumes `userGroups` is an array of group names the user belongs to.
 // ============================================================
 export const getNotificationsForUser = internalQuery({
   args: {
     userId: v.id("users"),
+    userGroups: v.optional(v.array(v.string())),
     limit: v.number(),
     cursor: v.optional(v.id("notifications")),
     unreadOnly: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    // Fetch all notifications that are either:
-    // - user-specific (userId == args.userId)
-    // - global (targetAll == true)
-    // - group (targetGroups contains a group the user belongs to)
-    // For simplicity, we'll first fetch all global and group notifications,
-    // then join with user-specific ones.
+    const groups = args.userGroups ?? [];
 
-    // Step 1: Fetch user-specific notifications
+    // ---- 1. User-specific notifications ----
     let userQuery = ctx.db
       .query("notifications")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .order("desc");
-    if (args.cursor) {
-      userQuery = userQuery.filter((q) => q.lt(q.field("_id"), args.cursor));
-    }
-    const userNotifs = await userQuery.take(args.limit + 1);
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId));
+    const userNotifs = await userQuery.collect();
 
-    // Step 2: Fetch global notifications
-    let globalQuery = ctx.db
+    // ---- 2. Global notifications ----
+    const globalNotifs = await ctx.db
       .query("notifications")
-      .filter((q) => q.eq(q.field("targetAll"), true))
-      .order("desc");
-    const globalNotifs = await globalQuery.take(args.limit + 1);
+      .withIndex("by_targetAll", (q) => q.eq("targetAll", true))
+      .collect();
 
-    // Step 3: Fetch group notifications (if user belongs to any groups)
-    // For now, we'll assume we know the user's groups. In production, we'd fetch from user record.
-    // We'll fetch all group notifications and filter later.
-    let groupQuery = ctx.db
-      .query("notifications")
-      .filter((q) => q.and(
-        q.eq(q.field("targetAll"), false),
-        q.isNotNull(q.field("targetGroups")),
-        q.gt(q.field("targetGroups"), [])
-      ))
-      .order("desc");
-    const groupNotifs = await groupQuery.take(args.limit + 1);
-
-    // Combine and sort by createdAt desc
-    const allNotifs = [...userNotifs, ...globalNotifs, ...groupNotifs];
-    allNotifs.sort((a, b) => b.createdAt - a.createdAt);
-
-    // Apply cursor again after merge (if needed)
-    let final = allNotifs;
-    if (args.cursor) {
-      const cursorIdx = final.findIndex(n => n._id === args.cursor);
-      if (cursorIdx !== -1) final = final.slice(cursorIdx + 1);
+    // ---- 3. Group notifications matching user's groups ----
+    let groupNotifs: any[] = [];
+    if (groups.length > 0) {
+      const allGroupNotifs = await ctx.db
+        .query("notifications")
+        .withIndex("by_targetAll", (q) => q.eq("targetAll", false))
+        .collect();
+      groupNotifs = allGroupNotifs.filter((n) => {
+        const tg = n.targetGroups ?? [];
+        return tg.some((g) => groups.includes(g));
+      });
     }
 
-    // Paginate
-    const hasMore = final.length > args.limit;
-    const result = final.slice(0, args.limit);
-    const nextCursor = hasMore ? result[result.length - 1]._id : null;
+    // ---- 4. Merge + sort by createdAt desc ----
+    const merged = [...userNotifs, ...globalNotifs, ...groupNotifs];
+    merged.sort((a, b) => b.createdAt - a.createdAt);
 
-    // For each notification, determine read status
-    const enhanced = await Promise.all(
-      result.map(async (notif) => {
-        if (notif.userId) {
-          // User-specific: read flag is on the notification itself
-          return { ...notif, read: (notif as any).read || false };
-        } else {
-          // Global/group: read status from notificationReads
-          const readEntry = await ctx.db
-            .query("notificationReads")
-            .withIndex("by_notificationId_userId", (q) =>
-              q.eq("notificationId", notif._id).eq("userId", args.userId)
-            )
-            .first();
-          return { ...notif, read: readEntry?.read || false };
-        }
+    // ---- 5. Attach read status from notificationReads ----
+    const enriched = await Promise.all(
+      merged.map(async (n) => {
+        const readEntry = await ctx.db
+          .query("notificationReads")
+          .withIndex("by_notificationId_userId", (q) =>
+            q.eq("notificationId", n._id).eq("userId", args.userId)
+          )
+          .first();
+        return { ...n, read: readEntry?.read ?? false };
       })
     );
 
-    // Apply unreadOnly filter
-    const filtered = args.unreadOnly ? enhanced.filter(n => !n.read) : enhanced;
+    // ---- 6. Unread filter ----
+    let filtered = args.unreadOnly ? enriched.filter((n) => !n.read) : enriched;
 
-    return {
-      notifications: filtered,
-      nextCursor,
-      hasMore,
-    };
+    // ---- 7. Cursor (skip past the cursor _id) ----
+    if (args.cursor) {
+      const idx = filtered.findIndex((n) => n._id === args.cursor);
+      if (idx !== -1) filtered = filtered.slice(idx + 1);
+    }
+
+    // ---- 8. Paginate ----
+    const hasMore = filtered.length > args.limit;
+    const result = filtered.slice(0, args.limit);
+    const nextCursor = hasMore ? result[result.length - 1]._id : null;
+
+    return { notifications: result, nextCursor, hasMore };
   },
 });
 
 // ============================================================
-// 6. GET UNREAD COUNT
+// 6. UNREAD COUNT (user-specific + global + group)
 // ============================================================
 export const getUnreadCount = internalQuery({
-  args: { userId: v.id("users") },
+  args: {
+    userId: v.id("users"),
+    userGroups: v.optional(v.array(v.string())),
+  },
   handler: async (ctx, args) => {
-    // Unread user-specific
-    const userUnread = await ctx.db
+    const groups = args.userGroups ?? [];
+
+    // User-specific
+    const userNotifs = await ctx.db
       .query("notifications")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .filter((q) => q.eq(q.field("read"), false))
       .collect();
 
-    // Unread global/group
+    // Global
     const globalNotifs = await ctx.db
       .query("notifications")
-      .filter((q) => q.or(
-        q.eq(q.field("targetAll"), true),
-        q.gt(q.field("targetGroups"), [])
-      ))
+      .withIndex("by_targetAll", (q) => q.eq("targetAll", true))
       .collect();
 
-    let globalUnread = 0;
-    for (const n of globalNotifs) {
+    // Group
+    let groupNotifs: any[] = [];
+    if (groups.length > 0) {
+      const allGroupNotifs = await ctx.db
+        .query("notifications")
+        .withIndex("by_targetAll", (q) => q.eq("targetAll", false))
+        .collect();
+      groupNotifs = allGroupNotifs.filter((n) => {
+        const tg = n.targetGroups ?? [];
+        return tg.some((g) => groups.includes(g));
+      });
+    }
+
+    const all = [...userNotifs, ...globalNotifs, ...groupNotifs];
+    let unread = 0;
+    for (const n of all) {
       const readEntry = await ctx.db
         .query("notificationReads")
         .withIndex("by_notificationId_userId", (q) =>
           q.eq("notificationId", n._id).eq("userId", args.userId)
         )
         .first();
-      if (!readEntry || !readEntry.read) globalUnread++;
+      if (!readEntry || !readEntry.read) unread++;
     }
-
-    return userUnread.length + globalUnread;
+    return unread;
   },
 });
 
 // ============================================================
-// 7. GET NOTIFICATIONS SINCE TIMESTAMP
+// 7. GET NOTIFICATIONS SINCE A TIMESTAMP
 // ============================================================
 export const getNotificationsSince = internalQuery({
-  args: { userId: v.id("users"), since: v.number(), limit: v.number() },
+  args: {
+    userId: v.id("users"),
+    userGroups: v.optional(v.array(v.string())),
+    since: v.number(),
+    limit: v.number(),
+  },
   handler: async (ctx, args) => {
-    // Simplified: get user-specific + global/group since timestamp
+    const groups = args.userGroups ?? [];
+
     const userNotifs = await ctx.db
       .query("notifications")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .filter((q) => q.gt(q.field("createdAt"), args.since))
-      .order("desc")
-      .take(args.limit);
+      .collect();
 
     const globalNotifs = await ctx.db
       .query("notifications")
-      .filter((q) => q.and(
-        q.or(
-          q.eq(q.field("targetAll"), true),
-          q.gt(q.field("targetGroups"), [])
-        ),
-        q.gt(q.field("createdAt"), args.since)
-      ))
-      .order("desc")
-      .take(args.limit);
+      .withIndex("by_targetAll", (q) => q.eq("targetAll", true))
+      .collect();
 
-    const all = [...userNotifs, ...globalNotifs];
-    all.sort((a, b) => b.createdAt - a.createdAt);
-    return all.slice(0, args.limit);
+    let groupNotifs: any[] = [];
+    if (groups.length > 0) {
+      const allGroupNotifs = await ctx.db
+        .query("notifications")
+        .withIndex("by_targetAll", (q) => q.eq("targetAll", false))
+        .collect();
+      groupNotifs = allGroupNotifs.filter((n) => {
+        const tg = n.targetGroups ?? [];
+        return tg.some((g) => groups.includes(g));
+      });
+    }
+
+    const merged = [...userNotifs, ...globalNotifs, ...groupNotifs]
+      .filter((n) => n.createdAt > args.since)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, args.limit);
+
+    return merged;
   },
 });
 
 // ============================================================
-// 8. MARK NOTIFICATION READ (handles both types)
+// 8. MARK ONE NOTIFICATION READ
 // ============================================================
 export const markNotificationRead = internalMutation({
   args: { notificationId: v.id("notifications"), userId: v.id("users") },
@@ -292,61 +310,53 @@ export const markNotificationRead = internalMutation({
     const notif = await ctx.db.get(args.notificationId);
     if (!notif) throw new Error("Notification not found");
 
-    if (notif.userId) {
-      // User-specific: patch read flag
-      if (!(notif as any).read) {
-        await ctx.db.patch(args.notificationId, { read: true });
+    const existing = await ctx.db
+      .query("notificationReads")
+      .withIndex("by_notificationId_userId", (q) =>
+        q.eq("notificationId", args.notificationId).eq("userId", args.userId)
+      )
+      .first();
+
+    if (existing) {
+      if (!existing.read) {
+        await ctx.db.patch(existing._id, { read: true, readAt: Date.now() });
       }
     } else {
-      // Global/group: upsert into notificationReads
-      const existing = await ctx.db
-        .query("notificationReads")
-        .withIndex("by_notificationId_userId", (q) =>
-          q.eq("notificationId", args.notificationId).eq("userId", args.userId)
-        )
-        .first();
-      if (existing) {
-        if (!existing.read) {
-          await ctx.db.patch(existing._id, { read: true, readAt: Date.now() });
-        }
-      } else {
-        await ctx.db.insert("notificationReads", {
-          notificationId: args.notificationId,
-          userId: args.userId,
-          read: true,
-          readAt: Date.now(),
-        });
-      }
+      await ctx.db.insert("notificationReads", {
+        notificationId: args.notificationId,
+        userId: args.userId,
+        read: true,
+        readAt: Date.now(),
+      });
     }
   },
 });
 
 // ============================================================
-// 9. MARK ALL NOTIFICATIONS READ
+// 9. MARK ALL NOTIFICATIONS READ FOR USER
 // ============================================================
 export const markAllNotificationsRead = internalMutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    // Mark user-specific notifications as read
+    // Gather all notifications visible to this user
     const userNotifs = await ctx.db
       .query("notifications")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .filter((q) => q.eq(q.field("read"), false))
       .collect();
-    for (const n of userNotifs) {
-      await ctx.db.patch(n._id, { read: true });
-    }
-
-    // Mark global/group notifications as read via notificationReads
     const globalNotifs = await ctx.db
       .query("notifications")
-      .filter((q) => q.or(
-        q.eq(q.field("targetAll"), true),
-        q.gt(q.field("targetGroups"), [])
-      ))
+      .withIndex("by_targetAll", (q) => q.eq("targetAll", true))
       .collect();
-    let count = 0;
-    for (const n of globalNotifs) {
+    const groupNotifs = await ctx.db
+      .query("notifications")
+      .withIndex("by_targetAll", (q) => q.eq("targetAll", false))
+      .collect();
+
+    const all = [...userNotifs, ...globalNotifs, ...groupNotifs];
+    const now = Date.now();
+    let updated = 0;
+
+    for (const n of all) {
       const existing = await ctx.db
         .query("notificationReads")
         .withIndex("by_notificationId_userId", (q) =>
@@ -355,100 +365,94 @@ export const markAllNotificationsRead = internalMutation({
         .first();
       if (existing) {
         if (!existing.read) {
-          await ctx.db.patch(existing._id, { read: true, readAt: Date.now() });
-          count++;
+          await ctx.db.patch(existing._id, { read: true, readAt: now });
+          updated++;
         }
       } else {
         await ctx.db.insert("notificationReads", {
           notificationId: n._id,
           userId: args.userId,
           read: true,
-          readAt: Date.now(),
+          readAt: now,
         });
-        count++;
+        updated++;
       }
     }
-    return userNotifs.length + count;
+    return updated;
   },
 });
 
 // ============================================================
-// 10. DELETE OLD NOTIFICATIONS (CRON)
+// 10. CRON: DELETE OLD NOTIFICATIONS
+//     Read status lives in notificationReads, so we clean up by age.
 // ============================================================
 export const deleteOldNotifications = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const oneDayMs = 24 * 60 * 60 * 1000;
-    const threeDaysMs = 3 * oneDayMs;
-    const sevenDaysMs = 7 * oneDayMs;
+    const oneDay = 24 * 60 * 60 * 1000;
+    const threeDays = 3 * oneDay;
+    const sevenDays = 7 * oneDay;
 
-    // Delete read user-specific notifications older than 24h
-    const readCutoff = now - oneDayMs;
+    // Delete read user-specific notifications older than 1 day
+    const readCutoff = now - oneDay;
     const readNotifs = await ctx.db
       .query("notifications")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("read"), true),
-          q.lt(q.field("createdAt"), readCutoff)
-        )
-      )
+      .withIndex("by_createdAt", (q) => q.lt("createdAt", readCutoff))
       .collect();
+
+    let deletedRead = 0;
+    let deletedUnread = 0;
+    let deletedGlobal = 0;
+
     for (const n of readNotifs) {
-      await ctx.db.delete(n._id);
-    }
-
-    // Delete unread user-specific notifications older than 3 days
-    const unreadCutoff = now - threeDaysMs;
-    const unreadNotifs = await ctx.db
-      .query("notifications")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("read"), false),
-          q.lt(q.field("createdAt"), unreadCutoff)
-        )
-      )
-      .collect();
-    for (const n of unreadNotifs) {
-      await ctx.db.delete(n._id);
-    }
-
-    // Delete global/group notifications older than 7 days
-    const globalCutoff = now - sevenDaysMs;
-    const globalNotifs = await ctx.db
-      .query("notifications")
-      .filter((q) =>
-        q.and(
-          q.or(
-            q.eq(q.field("targetAll"), true),
-            q.gt(q.field("targetGroups"), [])
-          ),
-          q.lt(q.field("createdAt"), globalCutoff)
-        )
-      )
-      .collect();
-    for (const n of globalNotifs) {
-      // Delete associated reads
       const reads = await ctx.db
         .query("notificationReads")
         .withIndex("by_notificationId", (q) => q.eq("notificationId", n._id))
         .collect();
-      for (const r of reads) {
-        await ctx.db.delete(r._id);
+
+      if (n.userId) {
+        // User-specific: if all readers have read → delete
+        const allRead = reads.length > 0 && reads.every((r) => r.read);
+        if (allRead) {
+          for (const r of reads) await ctx.db.delete(r._id);
+          await ctx.db.delete(n._id);
+          deletedRead++;
+        }
+      } else {
+        // Global/group: age threshold is 7 days
+        if (n.createdAt < now - sevenDays) {
+          for (const r of reads) await ctx.db.delete(r._id);
+          await ctx.db.delete(n._id);
+          deletedGlobal++;
+        }
       }
-      await ctx.db.delete(n._id);
     }
 
-    return {
-      readDeleted: readNotifs.length,
-      unreadDeleted: unreadNotifs.length,
-      globalDeleted: globalNotifs.length,
-    };
+    // Delete unread user-specific notifications older than 3 days
+    const unreadCutoff = now - threeDays;
+    const userNotifs = await ctx.db.query("notifications").collect();
+    for (const n of userNotifs) {
+      if (!n.userId) continue;
+      if (n.createdAt < unreadCutoff) {
+        const reads = await ctx.db
+          .query("notificationReads")
+          .withIndex("by_notificationId", (q) => q.eq("notificationId", n._id))
+          .collect();
+        if (!reads.some((r) => r.read)) {
+          for (const r of reads) await ctx.db.delete(r._id);
+          await ctx.db.delete(n._id);
+          deletedUnread++;
+        }
+      }
+    }
+
+    return { deletedRead, deletedUnread, deletedGlobal };
   },
 });
 
 // ============================================================
-// 11. ADMIN: GET ALL NOTIFICATIONS
+// 11. ADMIN: GET ALL NOTIFICATIONS (with optional user filter)
 // ============================================================
 export const adminGetAllNotifications = internalQuery({
   args: {
@@ -457,16 +461,20 @@ export const adminGetAllNotifications = internalQuery({
     userId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query("notifications").order("desc");
+    let query;
     if (args.userId) {
       query = ctx.db
         .query("notifications")
         .withIndex("by_userId", (q) => q.eq("userId", args.userId))
         .order("desc");
+    } else {
+      query = ctx.db.query("notifications").withIndex("by_createdAt").order("desc");
     }
+
     if (args.cursor) {
       query = query.filter((q) => q.lt(q.field("_id"), args.cursor));
     }
+
     const items = await query.take(args.limit + 1);
     const hasMore = items.length > args.limit;
     const result = items.slice(0, args.limit);
