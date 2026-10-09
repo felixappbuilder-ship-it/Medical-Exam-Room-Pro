@@ -252,7 +252,7 @@ export const shareExamResult = action({
       success: true,
       data: {
         shareToken,
-        shareUrl: `/shared/exam/${shareToken}`,
+        shareUrl: `/shared-exam/?=${shareToken}`,
         expiry,
       },
     };

@@ -367,7 +367,7 @@ export const shareNote = action({
         details: { shareToken, shareWith: args.shareWith },
       });
 
-      const baseUrl = process.env.PUBLIC_URL || "https://medvix.edgeone.app";
+      const baseUrl = process.env.PUBLIC_URL || "https://app.medvix.co.ke";
       const shareUrl = `${baseUrl}/shared-note/?token=${shareToken}`;
 
       console.log("[shareNote] Success, shareUrl:", shareUrl);

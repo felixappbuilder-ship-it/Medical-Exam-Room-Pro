@@ -238,7 +238,7 @@ export const createChallenge = action({
 
       await ctx.runMutation(internal.challenges.internal.updateUserLastSeen, { userId: user._id });
 
-      const shareLink = `/exam-settings/?challenge=${challengeCode}`;
+      const shareLink = `/exam-settings/?exam=${challengeCode}`;
       await notificationTriggers.notifyChallengeCreated(
         ctx,
         user._id,
@@ -419,7 +419,7 @@ export const inviteFriend = action({
         expiresAt,
       });
 
-      const inviteLink = `/exam-settings/?invite=${inviteToken}`;
+      const inviteLink = `/exam-settings/?exam=${inviteToken}`;
       await notificationTriggers.notifyChallengeInvite(
         ctx,
         invitee._id,
